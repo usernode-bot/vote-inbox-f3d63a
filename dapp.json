@@ -1,4 +1,24 @@
 {
   "description": "One inbox for all open proposals with vote counts. Vote fast, track mine.",
-  "secrets": []
+  "secrets": [],
+  "tests": [
+    {
+      "id": "inbox.demo-list",
+      "name": "Inbox lists open proposals",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card]",
+      "expectText": "Staging demo proposal",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "my-votes.demo",
+      "name": "My Votes shows history with status",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "[data-vote-row]",
+      "expectText": "You voted yes",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    }
+  ]
 }

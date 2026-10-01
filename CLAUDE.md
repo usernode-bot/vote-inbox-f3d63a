@@ -90,11 +90,21 @@ tables you've marked private), etc.
 
 One inbox for all open proposals with vote counts. Vote fast, track mine.
 
-_(add a sentence or two more of product context here so Claude Code has a
-shared understanding of what this app is for)_
+The app is a client over the platform's own proposal APIs: it discovers
+apps, lists each app's promoted (open) proposals via
+`GET /api/apps/:slug/promoted`, and votes via `POST /api/sessions/:id/vote`,
+always authenticated as the signed-in user by forwarding their iframe
+token as a Bearer token. It keeps no proposal data of its own except the
+user's vote history.
 
 ## App-specific conventions
 
-_(optional — e.g. "all currency values stored as integer cents, not
-floats"; "the `posts` table is append-only"; "avoid adding new
-dependencies"; etc.)_
+- `my_votes` is the only local table and is marked `staging:private`
+  (one person's vote history). No other tables — proposal data stays on
+  the platform.
+- Platform responses are normalised server-side (`normalizeProposal`) so
+  the frontend deals with one shape; keep field-spelling tolerance there.
+- `?demo=1` (staging only) serves obviously-fake fixture data for the
+  Inbox and My Votes screens; production never serves demo data.
+- Keep the inbox fetch bounded: parallel with concurrency limit 8 and a
+  10 s overall budget, plus short TTL caches (apps 60 s, promoted 30 s).

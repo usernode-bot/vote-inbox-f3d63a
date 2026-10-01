@@ -1,27 +1,39 @@
 # Vote Inbox
 
-> **Starter template** — this repo was scaffolded by Homeroom Social
-> Vibecoding. Everything in it is placeholder example code until the
-> app's first real feature is built.
+One inbox for all open proposals across Homeroom apps. See what's up for
+a vote, how the counts stand, and cast your vote with one tap.
 
-The scaffold is a small working demo that proves the plumbing works:
+## How it works
 
-- **Sign-in** — the server verifies the platform-issued user token
-  (an RS256 JWT) on every request, so the app already knows who is
-  using it. No accounts to build.
-- **Database** — the app has its own private Postgres database; the
-  demo stores button presses in a `presses` table.
-- **Live API** — two example routes (`/api/press`,
-  `/api/leaderboard`) read and write through a real Express server.
-- **Styling** — Tailwind CSS, precompiled by `npm run build` during
-  image creation with either Kubernetes/Paketo or standalone Docker.
+- **Inbox** — the server asks the platform for the list of apps and each
+  app's open (promoted) proposals (`GET /api/apps/:slug/promoted`),
+  normalises them into one list sorted by votes still needed, and keeps a
+  short-lived cache so refreshes are fast. Proposals are fetched in
+  parallel with a bounded budget, so one slow app can't stall the page.
+- **Voting** — the Yes/No buttons call `POST /api/sessions/:id/vote` on
+  the platform, authenticated as the signed-in user (the app forwards the
+  user's own platform token; it never holds credentials of its own). The
+  UI updates optimistically and rolls back with an explanatory toast if
+  the platform rejects the vote (already voted, expired, and so on).
+- **My Votes** — every vote cast through this app is recorded in the
+  app's own `my_votes` table (the platform exposes no cross-app "my
+  votes" feed to apps). The tab shows the history with each proposal's
+  outcome, refreshed against the platform's open-proposal lists: still
+  listed means still voting; dropped means the vote ended.
+- **Staging** — staging containers may lack a platform credential, so
+  `?demo=1` serves obviously-fake fixture data ("Staging demo …") to keep
+  the screens reviewable and checks deterministic. It never serves in
+  production.
 
-## Replacing the template
+`my_votes` is marked `staging:private`: it is one person's vote history,
+which strangers opening a staging preview should not see. Staging seeds
+only fake-identity rows.
 
-Open the app on Homeroom, tap **Improve** in the header, and describe
-the app you want in plain English — the template will be replaced with
-your real app. You can also run Claude Code against this repo directly;
-start with `CLAUDE.md`, which carries the app-specific notes and
-points at the platform rules.
+## Development
 
-Once the real app exists, rewrite this README to describe it.
+- `npm ci --include=dev && npm run build` compiles the Tailwind
+  stylesheet to `public/tailwind.css` (the Docker build does this too).
+- `npm start` runs the server on port 3000.
+
+The app runs on Homeroom; see `CLAUDE.md` for app-specific notes and the
+platform conventions it follows.
