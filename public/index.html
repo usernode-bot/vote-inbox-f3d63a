@@ -2,8 +2,8 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
   <script>
   // usernode-dev-console@1
   (function () {
@@ -27,7 +27,7 @@
             seen.add(val);
           }
           if (typeof val === 'function') return '[Function ' + (val.name || 'anonymous') + ']';
-          if (val instanceof Error) return val.stack || (val.name + ': ' + val.message);
+          if (typeof val === 'object' && val !== null && val instanceof Error) return val.stack || (val.name + ': ' + val.message);
           return val;
         });
       } catch (e) { try { return String(v); } catch (_) { return '[unserializable]'; } }
@@ -64,131 +64,407 @@
   })();
   </script>
   <title>Vote Inbox</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%237c3aed'/><circle cx='50' cy='50' r='18' fill='white'/></svg>">
-  <!-- Tailwind, PRECOMPILED for this app (was cdn.tailwindcss.com's
-       in-browser engine plus an inline tailwind.config here). The config
-       moved to tailwind.config.js in the repo root; npm run build compiles
-       it to public/tailwind.css with Docker or Paketo on every image build, so the
-       stylesheet is regenerated from THIS commit's markup every deploy and
-       can never drift behind the code. ~7 KB of CSS instead of a ~400 KB
-       engine, and no flash of unstyled content.
-       Writing class names as whole literals is what keeps this working — a
-       class assembled from fragments at runtime (e.g. "bg-" + tone + "-500")
-       is invisible to the compiler. If you genuinely need runtime-generated
-       classes, swap this link for the platform-hosted engine instead:
-       <script src="/usernode-tailwind/v1/tailwind.js"></script> -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%237c3aed'/><path d='M28 52l14 14 30-30' stroke='white' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <!-- Tailwind, PRECOMPILED for this app. The config lives in
+       tailwind.config.js in the repo root; npm run build compiles it to
+       public/tailwind.css on every image build, so the stylesheet is
+       regenerated from THIS commit's markup and can never drift behind the
+       code. Class names must be written as whole literals (including ones
+       inside JS strings) for the compiler to see them. -->
   <link rel="stylesheet" href="/tailwind.css">
-  <!-- The platform bridge, centrally hosted and loaded by RELATIVE path (the
-       handler in server.js serves it under a plain "node server.js"; the
-       platform's edge answers it everywhere else). Never vendor it and never
-       write a hostname in front of it.
-       It is NOT conditional on this app calling a bridge API: it is also how
-       the app ANSWERS the shell, so a scaffold without it is invisible to
-       anything that asks the frame a question. Offline launch is one of those.
-       Another is the page's colour: the bridge reports this document's opaque
-       ground to the shell (#1581), which is what makes the platform bar above
-       the app take the app's tone instead of the viewer's theme (#1945). This
-       scaffold paints a dark page (bg-zinc-950 on the body element), so
-       without this tag a brand-new app sits under a light bar. -->
+  <!-- The platform bridge, centrally hosted and loaded by RELATIVE path.
+       Not conditional on calling a bridge API: it is also how the app
+       ANSWERS the shell, and how the shell learns this document's ground
+       colour so the platform bar above the app takes the app's tone. -->
   <script src="/usernode-bridge/v1/bridge.js"></script>
+  <!-- The native UI kit: pressed states, pull-to-refresh and toasts for the
+       inbox list. Centrally hosted, relative path, never vendored. -->
+  <link rel="stylesheet" href="/usernode-native/v1/native.css">
+  <script src="/usernode-native/v1/native.js"></script>
 </head>
 <body class="bg-zinc-950 text-zinc-100 min-h-screen">
-  <main class="max-w-md mx-auto px-4 py-10 flex flex-col gap-6">
+  <main class="max-w-md mx-auto px-4 pb-20">
+    <header class="pt-5 pb-3 flex items-center justify-between gap-2">
+      <h1 data-app-title class="text-xl font-bold tracking-tight">Vote Inbox</h1>
+      <button id="refresh-btn" class="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-300">Refresh</button>
+    </header>
+    <div id="demo-banner" class="hidden mb-3 rounded-lg border border-zinc-700 bg-zinc-800/70 px-3 py-1.5 text-xs text-zinc-300">Staging demo data, not real proposals</div>
 
-    <!-- usernode-starter-notice@1 — starter-template messaging. When building
-         the user's real app, replace this whole screen and delete this block,
-         both sentinel comments included. -->
-    <section class="rounded-2xl border border-violet-500/30 bg-gradient-to-b from-violet-600/20 to-transparent p-6 text-center flex flex-col items-center gap-3">
-      <span class="inline-block rounded-full bg-violet-600/20 text-violet-300 text-xs font-semibold uppercase tracking-wide px-3 py-1">Starter template</span>
-      <h1 class="text-2xl font-bold">Vote Inbox</h1>
-      <p class="text-sm text-zinc-300 leading-relaxed">Welcome to your new app! Everything on this screen is placeholder content that came with it.</p>
-      <p class="text-sm text-zinc-300 leading-relaxed">Tap <strong class="text-violet-300 font-semibold">Improve</strong> in the header, describe what you'd like in plain English, and it will be turned into your real app.</p>
-    </section>
-
-    <section>
-      <h2 class="text-sm font-medium text-zinc-500 mb-2 px-1">What's already working</h2>
-      <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 divide-y divide-zinc-800">
-        <div class="flex items-start gap-3 p-4">
-          <svg class="w-5 h-5 text-violet-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-          <div>
-            <p class="text-sm font-semibold text-zinc-100">Sign-in</p>
-            <p class="text-sm text-zinc-400">You're signed in through Homeroom automatically — no accounts to build.</p>
-          </div>
-        </div>
-        <div class="flex items-start gap-3 p-4">
-          <svg class="w-5 h-5 text-violet-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-          <div>
-            <p class="text-sm font-semibold text-zinc-100">Database</p>
-            <p class="text-sm text-zinc-400">Your app has its own private database, ready to store things.</p>
-          </div>
-        </div>
-        <div class="flex items-start gap-3 p-4">
-          <svg class="w-5 h-5 text-violet-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-          <div>
-            <p class="text-sm font-semibold text-zinc-100">Live API</p>
-            <p class="text-sm text-zinc-400">The example below talks to a real server — try it.</p>
-          </div>
-        </div>
+    <div class="sticky top-0 z-20 -mx-4 bg-zinc-950/95 px-4 pb-3 pt-1 backdrop-blur">
+      <div class="flex rounded-full bg-zinc-900 p-1" role="tablist" aria-label="Sections">
+        <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold">Inbox</button>
+        <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold">My Votes</button>
       </div>
-    </section>
-    <!-- /usernode-starter-notice@1 -->
-
-    <section class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 flex flex-col items-center gap-5">
-      <div class="w-full flex items-baseline justify-between gap-2">
-        <h2 class="text-sm font-medium text-zinc-500">Try the example</h2>
-        <span class="text-xs text-zinc-600">This example will be replaced</span>
+      <div id="filter-row" class="mt-2">
+        <label for="app-filter" class="sr-only">Filter by app</label>
+        <select id="app-filter" class="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200">
+          <option value="">All apps</option>
+        </select>
       </div>
+    </div>
 
-      <button id="press-btn" class="w-32 h-32 rounded-full bg-violet-600 hover:bg-violet-500 active:scale-95 transition-all text-white text-xl font-bold shadow-lg shadow-violet-600/30">
-        Press!
-      </button>
-
-      <div id="count" class="text-lg text-zinc-400">0 total presses</div>
-
-      <div class="w-full max-w-sm">
-        <h3 class="text-sm font-medium text-zinc-500 mb-2 text-center">Leaderboard</h3>
-        <div id="leaderboard" class="space-y-1"></div>
-      </div>
-    </section>
-
-    <p class="text-center text-xs text-zinc-600">Built on Homeroom — this template screen disappears once you build your real app.</p>
+    <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
   </main>
 
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token') || '';
-    const headers = token ? { 'x-usernode-token': token } : {};
+  (function () {
+    'use strict';
 
-    async function loadLeaderboard() {
-      const res = await fetch('/api/leaderboard', { headers });
-      if (!res.ok) return;
-      const { leaderboard } = await res.json();
-      const el = document.getElementById('leaderboard');
-      if (!leaderboard.length) {
-        el.innerHTML = '<p class="text-center text-zinc-600 text-sm">No presses yet</p>';
-        return;
-      }
-      el.innerHTML = leaderboard.map((r, i) =>
-        '<div class="flex justify-between px-3 py-1 rounded ' + (i === 0 ? 'bg-violet-600/20 text-violet-300' : 'text-zinc-400') + '">' +
-        '<span>' + (i + 1) + '. ' + r.username + '</span>' +
-        '<span class="font-mono">' + r.presses + '</span></div>'
-      ).join('');
-      const total = leaderboard.reduce((s, r) => s + parseInt(r.presses), 0);
-      document.getElementById('count').textContent = total + ' total presses';
+    var params = new URLSearchParams(location.search);
+    var TOKEN = params.get('token') || '';
+    var DEMO = params.get('demo') === '1' ? '1' : '';
+
+    var state = {
+      tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
+      inbox: null,
+      votes: null,
+      filter: '',
+      loadingInbox: false,
+      loadingVotes: false,
+      errorInbox: null,
+      errorVotes: null,
+      pending: {},
+    };
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+
+    function headers(extra) {
+      var h = { accept: 'application/json' };
+      if (TOKEN) h['x-usernode-token'] = TOKEN;
+      if (extra) for (var k in extra) h[k] = extra[k];
+      return h;
     }
 
-    document.getElementById('press-btn').addEventListener('click', async () => {
-      try {
-        const res = await fetch('/api/press', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...headers },
+    function api(path, options) {
+      options = options || {};
+      options.headers = headers(options.headers);
+      return fetch(path, options).then(function (res) {
+        return res.json().catch(function () { return null; }).then(function (data) {
+          if (!res.ok) {
+            var err = new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+            err.status = res.status;
+            throw err;
+          }
+          return data;
         });
-        if (res.ok) loadLeaderboard();
-        else if (res.status === 401) document.getElementById('count').textContent = 'Sign in to press!';
-      } catch {}
+      });
+    }
+
+    function esc(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function toast(message) {
+      try {
+        if (window.unNative && unNative.toast) { unNative.toast(message); return; }
+      } catch (e) { /* fall through */ }
+      console.log(message);
+    }
+
+    // ------------------------------------------------------------------
+    // Rendering. Class strings are whole literals so the Tailwind compiler
+    // extracts them from this file.
+    // ------------------------------------------------------------------
+
+    var TAB_ACTIVE = 'bg-violet-600 text-white';
+    var TAB_IDLE = 'text-zinc-400';
+
+    var STATUS_STYLE = {
+      voting: ['Voting', 'bg-violet-600/15 text-violet-300'],
+      merging: ['Merging', 'bg-violet-600/15 text-violet-300'],
+      merged: ['Merged', 'bg-emerald-500/15 text-emerald-300'],
+      closed: ['Ended', 'bg-zinc-800 text-zinc-400'],
+    };
+
+    function neededLabel(p) {
+      if (p.needed == null) return '';
+      if (p.needed === 0) return 'Count met';
+      return p.needed + (p.needed === 1 ? ' vote needed' : ' votes needed');
+    }
+
+    function proposalCard(p) {
+      var voted = p.myVote === 'yes' || p.myVote === 'no';
+      var actions;
+      if (voted) {
+        actions = '<div class="rounded-lg border border-violet-500/40 bg-violet-600/10 py-2 text-center text-sm font-semibold text-violet-300">'
+          + 'You voted ' + p.myVote + '</div>';
+      } else {
+        var busy = state.pending[p.sessionId];
+        actions = '<div class="flex gap-2">'
+          + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
+          + ' class="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-semibold text-white transition-transform active:scale-95 disabled:opacity-50"'
+          + (busy ? ' disabled' : '') + '>Yes</button>'
+          + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
+          + ' class="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 py-2 text-sm font-semibold text-zinc-100 transition-transform active:scale-95 disabled:opacity-50"'
+          + (busy ? ' disabled' : '') + '>No</button>'
+          + '</div>';
+      }
+      return '<article data-proposal-card class="flex flex-col gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<span class="truncate rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-300">' + esc(p.appName) + '</span>'
+        + '<span class="whitespace-nowrap text-xs font-semibold text-violet-300">' + esc(neededLabel(p)) + '</span>'
+        + '</div>'
+        + '<h2 class="text-sm font-semibold leading-snug text-zinc-100">' + esc(p.title) + '</h2>'
+        + '<p class="text-xs text-zinc-400">Yes ' + p.yes + ' · No ' + p.no
+        + (p.author ? ' · by @' + esc(p.author) : '') + '</p>'
+        + actions
+        + '</article>';
+    }
+
+    function voteRow(v) {
+      var style = STATUS_STYLE[v.status] || STATUS_STYLE.closed;
+      var date = '';
+      if (v.created_at) {
+        try { date = new Date(v.created_at).toLocaleDateString(); } catch (e) { date = ''; }
+      }
+      var counts = 'Yes ' + v.votes_for + ' · No ' + v.votes_against;
+      if (v.votes_required != null && v.status === 'voting') {
+        var needed = Math.max(0, v.votes_required - v.votes_for);
+        if (needed > 0) counts += ' · ' + needed + ' still needed';
+      }
+      return '<article data-vote-row class="flex flex-col gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">'
+        + '<div class="flex items-start justify-between gap-2">'
+        + '<h2 class="text-sm font-semibold leading-snug text-zinc-100">' + esc(v.title) + '</h2>'
+        + '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
+        + '</div>'
+        + '<p class="text-xs text-zinc-400">' + esc(v.app_name || v.app_slug)
+        + ' · You voted ' + v.choice + ' · ' + esc(counts) + '</p>'
+        + (date ? '<p class="text-xs text-zinc-500">Voted ' + esc(date) + '</p>' : '')
+        + '</article>';
+    }
+
+    function errorHtml(message) {
+      return '<div class="flex flex-col items-center gap-3 py-10 text-center">'
+        + '<p class="text-sm text-zinc-400">' + esc(message) + '</p>'
+        + '<button id="retry-btn" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white">Try again</button>'
+        + '</div>';
+    }
+
+    function renderTabs() {
+      var buttons = document.querySelectorAll('.tab-btn');
+      for (var i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        var active = btn.getAttribute('data-tab') === state.tab;
+        btn.className = 'tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold '
+          + (active ? TAB_ACTIVE : TAB_IDLE);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      }
+      document.getElementById('filter-row').className =
+        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+    }
+
+    function renderDemoBanner() {
+      var demo = (state.inbox && state.inbox.demo) || (state.votes && state.votes.demo);
+      document.getElementById('demo-banner').className = demo
+        ? 'mb-3 rounded-lg border border-zinc-700 bg-zinc-800/70 px-3 py-1.5 text-xs text-zinc-300'
+        : 'hidden';
+    }
+
+    function renderInbox() {
+      if (state.errorInbox) return errorHtml(state.errorInbox);
+      if (!state.inbox) {
+        return '<p class="py-10 text-center text-sm text-zinc-500">Loading proposals…</p>';
+      }
+      var proposals = state.inbox.proposals || [];
+      var filtered = state.filter
+        ? proposals.filter(function (p) { return p.appSlug === state.filter; })
+        : proposals;
+      if (!filtered.length) {
+        return '<p class="py-10 text-center text-sm text-zinc-500">'
+          + (proposals.length
+             ? 'No open proposals for this app.'
+             : 'No open proposals right now. Check back soon.')
+          + '</p>';
+      }
+      var html = '';
+      for (var i = 0; i < filtered.length; i++) html += proposalCard(filtered[i]);
+      return html;
+    }
+
+    function renderVotes() {
+      if (state.errorVotes) return errorHtml(state.errorVotes);
+      if (!state.votes) {
+        return '<p class="py-10 text-center text-sm text-zinc-500">Loading your votes…</p>';
+      }
+      var votes = state.votes.votes || [];
+      if (!votes.length) {
+        return '<div class="flex flex-col items-center gap-2 py-10 text-center">'
+          + '<p class="text-sm text-zinc-500">No votes yet.</p>'
+          + '<p class="text-xs text-zinc-600">Votes you cast in the Inbox show up here with their outcome.</p>'
+          + '</div>';
+      }
+      var html = '';
+      for (var i = 0; i < votes.length; i++) html += voteRow(votes[i]);
+      return html;
+    }
+
+    function render() {
+      renderTabs();
+      renderDemoBanner();
+      document.getElementById('view').innerHTML =
+        state.tab === 'inbox' ? renderInbox() : renderVotes();
+    }
+
+    // ------------------------------------------------------------------
+    // Data
+    // ------------------------------------------------------------------
+
+    function fillFilter() {
+      var select = document.getElementById('app-filter');
+      var current = state.filter;
+      var options = '<option value="">All apps</option>';
+      var apps = (state.inbox && state.inbox.apps) || [];
+      for (var i = 0; i < apps.length; i++) {
+        options += '<option value="' + esc(apps[i].slug) + '">' + esc(apps[i].name) + '</option>';
+      }
+      select.innerHTML = options;
+      select.value = current;
+      if (select.value !== current) { state.filter = ''; select.value = ''; }
+    }
+
+    function loadInbox(force) {
+      if (state.loadingInbox) return Promise.resolve();
+      state.loadingInbox = true;
+      state.errorInbox = null;
+      if (force) state.inbox = null;
+      render();
+      return api('/api/inbox' + (DEMO ? '?demo=1' : ''))
+        .then(function (data) {
+          state.inbox = data;
+          fillFilter();
+        })
+        .catch(function (err) {
+          state.errorInbox = err.message || 'Could not load proposals.';
+        })
+        .then(function () {
+          state.loadingInbox = false;
+          render();
+        });
+    }
+
+    function loadVotes(force) {
+      if (state.loadingVotes) return Promise.resolve();
+      state.loadingVotes = true;
+      state.errorVotes = null;
+      if (force) state.votes = null;
+      render();
+      return api('/api/my-votes' + (DEMO ? '?demo=1' : ''))
+        .then(function (data) { state.votes = data; })
+        .catch(function (err) {
+          state.errorVotes = err.message || 'Could not load your votes.';
+        })
+        .then(function () {
+          state.loadingVotes = false;
+          render();
+        });
+    }
+
+    function refreshCurrent() {
+      return state.tab === 'inbox' ? loadInbox(true) : loadVotes(true);
+    }
+
+    // ------------------------------------------------------------------
+    // Voting
+    // ------------------------------------------------------------------
+
+    function findProposal(sessionId) {
+      var proposals = (state.inbox && state.inbox.proposals) || [];
+      for (var i = 0; i < proposals.length; i++) {
+        if (proposals[i].sessionId === sessionId) return proposals[i];
+      }
+      return null;
+    }
+
+    function castVote(sessionId, choice) {
+      var p = findProposal(sessionId);
+      if (!p || state.pending[sessionId]) return;
+      var snapshot = { myVote: p.myVote, yes: p.yes, no: p.no };
+      state.pending[sessionId] = true;
+      // Optimistic: show the vote immediately, roll back on failure.
+      p.myVote = choice;
+      if (choice === 'yes') p.yes += 1; else p.no += 1;
+      render();
+      api('/api/vote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({
+          sessionId: sessionId,
+          choice: choice,
+          appSlug: p.appSlug,
+          appName: p.appName,
+          title: p.title,
+          proposalId: p.proposalId,
+          yes: snapshot.yes,
+          no: snapshot.no,
+          required: p.required,
+          demo: !!(state.inbox && state.inbox.demo),
+        }),
+      }).then(function () {
+        state.votes = null; // history refetches next time the tab opens
+        toast('Vote recorded');
+      }).catch(function (err) {
+        p.myVote = snapshot.myVote;
+        p.yes = snapshot.yes;
+        p.no = snapshot.no;
+        toast(err.message || 'Vote failed');
+      }).then(function () {
+        delete state.pending[sessionId];
+        render();
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // Events
+    // ------------------------------------------------------------------
+
+    document.getElementById('view').addEventListener('click', function (event) {
+      var target = event.target;
+      if (target.id === 'retry-btn') { refreshCurrent(); return; }
+      var voteBtn = target.closest ? target.closest('[data-vote]') : null;
+      if (voteBtn) castVote(voteBtn.getAttribute('data-session'), voteBtn.getAttribute('data-vote'));
     });
 
-    loadLeaderboard();
+    document.getElementById('app-filter').addEventListener('change', function (event) {
+      state.filter = event.target.value;
+      render();
+    });
+
+    document.getElementById('refresh-btn').addEventListener('click', function () {
+      refreshCurrent();
+    });
+
+    var tabButtons = document.querySelectorAll('.tab-btn');
+    for (var i = 0; i < tabButtons.length; i++) {
+      tabButtons[i].addEventListener('click', function (event) {
+        var tab = event.currentTarget.getAttribute('data-tab');
+        if (tab === state.tab) return;
+        state.tab = tab;
+        var url = new URL(location.href);
+        url.searchParams.set('tab', tab);
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+        render();
+        if (tab === 'votes') loadVotes(!state.votes);
+      });
+    }
+
+    // Pull down on the list to refresh (native kit; no-op on desktop).
+    if (window.unNative && unNative.attachPullToRefresh) {
+      try {
+        unNative.attachPullToRefresh(window, function () { return refreshCurrent(); });
+      } catch (e) { /* kit unavailable; the Refresh button still works */ }
+    }
+
+    // ------------------------------------------------------------------
+    // Boot: render the shell instantly, then fetch the active tab's data.
+    // ------------------------------------------------------------------
+
+    render();
+    if (state.tab === 'votes') loadVotes(true); else loadInbox(true);
+  })();
   </script>
 </body>
 </html>
