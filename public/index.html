@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -18,7 +18,7 @@
         if (typeof v === 'string') return v;
         if (typeof v === 'number' || typeof v === 'boolean') return String(v);
         if (typeof v === 'function') return '[Function ' + (v.name || 'anonymous') + ']';
-        if (v instanceof Error) return (v.stack || (v.name + ': ' + v.message));
+        if (v instanceof Error) return (v.stack || (v.name || 'Error') + ': ' + v.message);
         if (depth > 3) return '[…]';
         var seen = new WeakSet();
         return JSON.stringify(v, function (k, val) {
@@ -27,7 +27,7 @@
             seen.add(val);
           }
           if (typeof val === 'function') return '[Function ' + (val.name || 'anonymous') + ']';
-          if (typeof val === 'object' && val !== null && val instanceof Error) return val.stack || (val.name + ': ' + val.message);
+          if (typeof val === 'object' && val !== null && val instanceof Error) return val.stack || (val.name || 'Error') + ': ' + val.message;
           return val;
         });
       } catch (e) { try { return String(v); } catch (_) { return '[unserializable]'; } }
@@ -77,29 +77,59 @@
        ANSWERS the shell, and how the shell learns this document's ground
        colour so the platform bar above the app takes the app's tone. -->
   <script src="/usernode-bridge/v1/bridge.js"></script>
+  <!-- The platform's light/dark choice, applied before first paint.
+       usernode.theme is set synchronously when the bridge loads; the OS
+       preference is the fallback when the app is opened standalone. -->
+  <script>
+  (function () {
+    var media = window.matchMedia('(prefers-color-scheme: dark)');
+    function applyTheme() {
+      var theme = (window.usernode && window.usernode.theme)
+        || (media.matches ? 'dark' : 'light');
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+      document.documentElement.style.colorScheme = theme;
+    }
+    applyTheme();
+    window.addEventListener('usernode:theme-changed', applyTheme);
+    if (media.addEventListener) media.addEventListener('change', applyTheme);
+  })();
+  </script>
   <!-- The native UI kit: pressed states, pull-to-refresh and toasts for the
        inbox list. Centrally hosted, relative path, never vendored. -->
   <link rel="stylesheet" href="/usernode-native/v1/native.css">
   <script src="/usernode-native/v1/native.js"></script>
 </head>
-<body class="bg-zinc-950 text-zinc-100 min-h-screen">
-  <main class="max-w-md mx-auto px-4 pb-20">
-    <header class="pt-5 pb-3 flex items-center justify-between gap-2">
-      <h1 data-app-title class="text-xl font-bold tracking-tight">Vote Inbox</h1>
-      <button id="refresh-btn" class="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-300">Refresh</button>
+<body class="min-h-screen bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
+  <main class="mx-auto max-w-md px-4 pb-20">
+    <header class="flex items-center justify-between gap-2 pb-3 pt-5">
+      <div class="flex min-w-0 items-center gap-2.5">
+        <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-600 shadow-sm">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>
+        </span>
+        <div class="min-w-0">
+          <h1 data-app-title class="truncate text-lg font-bold tracking-tight">Vote Inbox</h1>
+          <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">Open proposals across Homeroom</p>
+        </div>
+      </div>
+      <button id="refresh-btn" aria-label="Refresh" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+        <svg id="refresh-icon" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
     </header>
-    <div id="demo-banner" class="hidden mb-3 rounded-lg border border-zinc-700 bg-zinc-800/70 px-3 py-1.5 text-xs text-zinc-300">Staging demo data, not real proposals</div>
+    <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
-    <div class="sticky top-0 z-20 -mx-4 bg-zinc-950/95 px-4 pb-3 pt-1 backdrop-blur">
-      <div class="flex rounded-full bg-zinc-900 p-1" role="tablist" aria-label="Sections">
-        <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold">Inbox</button>
-        <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold">My Votes</button>
+    <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
+      <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
+        <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
+        <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
       </div>
       <div id="filter-row" class="mt-2">
         <label for="app-filter" class="sr-only">Filter by app</label>
-        <select id="app-filter" class="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200">
-          <option value="">All apps</option>
-        </select>
+        <div class="relative">
+          <select id="app-filter" class="w-full appearance-none rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-9 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+            <option value="">All apps</option>
+          </select>
+          <svg aria-hidden="true" viewBox="0 0 24 24" class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
       </div>
     </div>
 
@@ -170,46 +200,104 @@
     // extracts them from this file.
     // ------------------------------------------------------------------
 
-    var TAB_ACTIVE = 'bg-violet-600 text-white';
-    var TAB_IDLE = 'text-zinc-400';
+    var TAB_ACTIVE = 'bg-violet-600 text-white shadow-sm';
+    var TAB_IDLE = 'text-zinc-500 dark:text-zinc-400';
+    var BADGE_ACTIVE = 'bg-white/25 text-white';
+    var BADGE_IDLE = 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300';
 
     var STATUS_STYLE = {
-      voting: ['Voting', 'bg-violet-600/15 text-violet-300'],
-      merging: ['Merging', 'bg-violet-600/15 text-violet-300'],
-      merged: ['Merged', 'bg-emerald-500/15 text-emerald-300'],
-      closed: ['Ended', 'bg-zinc-800 text-zinc-400'],
+      voting: ['Voting', 'bg-violet-600/15 text-violet-700 dark:text-violet-300'],
+      merging: ['Merging', 'bg-violet-600/15 text-violet-700 dark:text-violet-300'],
+      merged: ['Merged', 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'],
+      closed: ['Ended', 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'],
     };
 
-    function neededLabel(p) {
-      if (p.needed == null) return '';
-      if (p.needed === 0) return 'Count met';
-      return p.needed + (p.needed === 1 ? ' vote needed' : ' votes needed');
+    // Letter-avatar tints for apps without an icon, picked from the slug so
+    // an app keeps the same colour across loads.
+    var AVATAR_STYLES = [
+      'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300',
+      'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
+      'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+      'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+      'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300',
+    ];
+
+    function avatarClass(slug) {
+      var h = 0;
+      var s = String(slug || '');
+      for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+      return AVATAR_STYLES[h % AVATAR_STYLES.length];
     }
+
+    function appAvatar(p) {
+      var style = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold '
+        + avatarClass(p.appSlug);
+      if (p.icon) {
+        return '<span class="' + style + '" aria-hidden="true">' + esc(p.icon) + '</span>';
+      }
+      var letter = String(p.appName || p.appSlug || '?').trim().charAt(0).toUpperCase() || '?';
+      return '<span class="' + style + '" aria-hidden="true">' + esc(letter) + '</span>';
+    }
+
+    // Votes-needed pill: how far the yes count is from the threshold.
+    function neededPill(p) {
+      if (p.needed == null) return '';
+      var cls, text;
+      if (p.needed === 0) {
+        cls = 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+        text = 'Count met';
+      } else if (p.needed <= 2) {
+        cls = 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
+        text = p.needed + (p.needed === 1 ? ' vote needed' : ' votes needed');
+      } else {
+        cls = 'bg-red-500/15 text-red-700 dark:text-red-300';
+        text = p.needed + ' votes needed';
+      }
+      return '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + cls + '">'
+        + esc(text) + '</span>';
+    }
+
+    // Thin yes/no share bar under the title.
+    function voteBar(p) {
+      var total = p.yes + p.no;
+      var pct = total > 0 ? Math.round((p.yes * 100) / total) : 0;
+      return '<div class="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
+        + ' aria-label="Yes ' + p.yes + ', No ' + p.no + '">'
+        + '<div class="h-full rounded-full bg-violet-500 transition-all" style="width:' + pct + '%"></div>'
+        + '</div>';
+    }
+
+    var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
 
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
       var actions;
       if (voted) {
-        actions = '<div class="rounded-lg border border-violet-500/40 bg-violet-600/10 py-2 text-center text-sm font-semibold text-violet-300">'
+        actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
+          + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>'
           + 'You voted ' + p.myVote + '</div>';
       } else {
         var busy = state.pending[p.sessionId];
         actions = '<div class="flex gap-2">'
           + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
-          + ' class="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-semibold text-white transition-transform active:scale-95 disabled:opacity-50"'
+          + ' class="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50"'
           + (busy ? ' disabled' : '') + '>Yes</button>'
           + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
-          + ' class="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 py-2 text-sm font-semibold text-zinc-100 transition-transform active:scale-95 disabled:opacity-50"'
+          + ' class="flex-1 rounded-xl border border-zinc-300 bg-white py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50"'
           + (busy ? ' disabled' : '') + '>No</button>'
           + '</div>';
       }
-      return '<article data-proposal-card class="flex flex-col gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">'
+      return '<article data-proposal-card class="' + CARD_CLASS + '">'
         + '<div class="flex items-center justify-between gap-2">'
-        + '<span class="truncate rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-300">' + esc(p.appName) + '</span>'
-        + '<span class="whitespace-nowrap text-xs font-semibold text-violet-300">' + esc(neededLabel(p)) + '</span>'
+        + '<span class="flex min-w-0 items-center gap-1.5">'
+        + appAvatar(p)
+        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + '</span>'
+        + neededPill(p)
         + '</div>'
-        + '<h2 class="text-sm font-semibold leading-snug text-zinc-100">' + esc(p.title) + '</h2>'
-        + '<p class="text-xs text-zinc-400">Yes ' + p.yes + ' · No ' + p.no
+        + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
+        + voteBar(p)
+        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no
         + (p.author ? ' · by @' + esc(p.author) : '') + '</p>'
         + actions
         + '</article>';
@@ -226,59 +314,110 @@
         var needed = Math.max(0, v.votes_required - v.votes_for);
         if (needed > 0) counts += ' · ' + needed + ' still needed';
       }
-      return '<article data-vote-row class="flex flex-col gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">'
+      return '<article data-vote-row class="' + CARD_CLASS + '">'
         + '<div class="flex items-start justify-between gap-2">'
-        + '<h2 class="text-sm font-semibold leading-snug text-zinc-100">' + esc(v.title) + '</h2>'
+        + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(v.title) + '</h2>'
         + '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
         + '</div>'
-        + '<p class="text-xs text-zinc-400">' + esc(v.app_name || v.app_slug)
+        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(v.app_name || v.app_slug)
         + ' · You voted ' + v.choice + ' · ' + esc(counts) + '</p>'
-        + (date ? '<p class="text-xs text-zinc-500">Voted ' + esc(date) + '</p>' : '')
+        + (date ? '<p class="text-xs text-zinc-500 dark:text-zinc-500">Voted ' + esc(date) + '</p>' : '')
         + '</article>';
     }
 
+    function skeletonCard() {
+      return '<div class="animate-pulse rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<div class="h-6 w-28 rounded-md bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="h-5 w-20 rounded-full bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '</div>'
+        + '<div class="mt-3 h-3 w-full rounded bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="mt-2 h-3 w-2/3 rounded bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="mt-4 h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="mt-4 h-10 w-full rounded-xl bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '</div>';
+    }
+
+    function skeletons() {
+      return skeletonCard() + skeletonCard() + skeletonCard();
+    }
+
+    function emptyHtml(title, body, cta) {
+      return '<div class="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white/60 px-6 py-10 text-center dark:border-zinc-700 dark:bg-zinc-900/40">'
+        + '<svg viewBox="0 0 24 24" class="h-10 w-10 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
+        + '<p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">' + title + '</p>'
+        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + body + '</p>'
+        + cta
+        + '</div>';
+    }
+
+    var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
+    var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
+    var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
+
     function errorHtml(message) {
-      return '<div class="flex flex-col items-center gap-3 py-10 text-center">'
-        + '<p class="text-sm text-zinc-400">' + esc(message) + '</p>'
-        + '<button id="retry-btn" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white">Try again</button>'
+      return '<div class="flex flex-col items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/5 px-6 py-10 text-center">'
+        + '<svg viewBox="0 0 24 24" class="h-10 w-10 text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>'
+        + '<p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Something went wrong</p>'
+        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(message) + '</p>'
+        + '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Try again</button>'
         + '</div>';
     }
 
     function renderTabs() {
       var buttons = document.querySelectorAll('.tab-btn');
+      var inboxCount = state.inbox && state.inbox.proposals ? state.inbox.proposals.length : null;
+      var votesCount = state.votes && state.votes.votes ? state.votes.votes.length : null;
       for (var i = 0; i < buttons.length; i++) {
         var btn = buttons[i];
         var active = btn.getAttribute('data-tab') === state.tab;
-        btn.className = 'tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold '
+        var badge = btn.querySelector('.tab-badge');
+        var count = btn.getAttribute('data-tab') === 'inbox' ? inboxCount : votesCount;
+        btn.className = 'tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors '
           + (active ? TAB_ACTIVE : TAB_IDLE);
         btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        if (badge) {
+          badge.className = 'tab-badge ml-1.5 hidden rounded-full px-1.5 py-0.5 text-xs font-bold '
+            + (active ? BADGE_ACTIVE : BADGE_IDLE);
+          if (count != null && count > 0) {
+            badge.textContent = count;
+            badge.classList.remove('hidden');
+          }
+        }
       }
       document.getElementById('filter-row').className =
         'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
     }
 
+    function renderRefreshButton() {
+      var busy = state.loadingInbox || state.loadingVotes;
+      var icon = document.getElementById('refresh-icon');
+      if (icon) icon.classList.toggle('animate-spin', busy);
+      document.getElementById('refresh-btn').setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+
     function renderDemoBanner() {
       var demo = (state.inbox && state.inbox.demo) || (state.votes && state.votes.demo);
       document.getElementById('demo-banner').className = demo
-        ? 'mb-3 rounded-lg border border-zinc-700 bg-zinc-800/70 px-3 py-1.5 text-xs text-zinc-300'
+        ? 'mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300'
         : 'hidden';
     }
 
     function renderInbox() {
       if (state.errorInbox) return errorHtml(state.errorInbox);
-      if (!state.inbox) {
-        return '<p class="py-10 text-center text-sm text-zinc-500">Loading proposals…</p>';
-      }
+      if (!state.inbox || state.loadingInbox && !state.inbox.proposals) return skeletons();
       var proposals = state.inbox.proposals || [];
       var filtered = state.filter
         ? proposals.filter(function (p) { return p.appSlug === state.filter; })
         : proposals;
       if (!filtered.length) {
-        return '<p class="py-10 text-center text-sm text-zinc-500">'
-          + (proposals.length
-             ? 'No open proposals for this app.'
-             : 'No open proposals right now. Check back soon.')
-          + '</p>';
+        return emptyHtml(
+          proposals.length ? 'Nothing from this app' : "You're all caught up",
+          proposals.length
+            ? 'No open proposals for this app right now.'
+            : 'No open proposals to vote on. New ones show up here.',
+          proposals.length ? CLEAR_FILTER_CTA : REFRESH_CTA);
       }
       var html = '';
       for (var i = 0; i < filtered.length; i++) html += proposalCard(filtered[i]);
@@ -287,15 +426,13 @@
 
     function renderVotes() {
       if (state.errorVotes) return errorHtml(state.errorVotes);
-      if (!state.votes) {
-        return '<p class="py-10 text-center text-sm text-zinc-500">Loading your votes…</p>';
-      }
+      if (!state.votes || state.loadingVotes && !state.votes.votes) return skeletons();
       var votes = state.votes.votes || [];
       if (!votes.length) {
-        return '<div class="flex flex-col items-center gap-2 py-10 text-center">'
-          + '<p class="text-sm text-zinc-500">No votes yet.</p>'
-          + '<p class="text-xs text-zinc-600">Votes you cast in the Inbox show up here with their outcome.</p>'
-          + '</div>';
+        return emptyHtml(
+          'No votes yet',
+          'Votes you cast in the Inbox show up here with their outcome.',
+          BROWSE_CTA);
       }
       var html = '';
       for (var i = 0; i < votes.length; i++) html += voteRow(votes[i]);
@@ -305,6 +442,7 @@
     function render() {
       renderTabs();
       renderDemoBanner();
+      renderRefreshButton();
       document.getElementById('view').innerHTML =
         state.tab === 'inbox' ? renderInbox() : renderVotes();
     }
@@ -410,7 +548,7 @@
         p.myVote = snapshot.myVote;
         p.yes = snapshot.yes;
         p.no = snapshot.no;
-        toast(err.message || 'Vote failed');
+        toast('Vote failed: ' + (err.message || 'try again'));
       }).then(function () {
         delete state.pending[sessionId];
         render();
@@ -423,7 +561,21 @@
 
     document.getElementById('view').addEventListener('click', function (event) {
       var target = event.target;
-      if (target.id === 'retry-btn') { refreshCurrent(); return; }
+      var actionEl = target.closest ? target.closest('[data-action]') : null;
+      if (actionEl) {
+        var action = actionEl.getAttribute('data-action');
+        if (action === 'refresh') refreshCurrent();
+        else if (action === 'clear-filter') {
+          state.filter = '';
+          document.getElementById('app-filter').value = '';
+          render();
+        } else if (action === 'go-inbox') {
+          state.tab = 'inbox';
+          render();
+          loadInbox(!state.inbox);
+        }
+        return;
+      }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
       if (voteBtn) castVote(voteBtn.getAttribute('data-session'), voteBtn.getAttribute('data-vote'));
     });

@@ -210,7 +210,12 @@ async function loadApps(userToken) {
             : Array.isArray(r.data.apps) ? r.data.apps : null;
           if (list) {
             return list
-              .map((a) => ({ slug: a && a.slug, name: (a && a.name) || (a && a.slug) }))
+              .map((a) => ({
+                slug: a && a.slug,
+                name: (a && a.name) || (a && a.slug),
+                // Optional display icon; absent on apps that have none.
+                icon: a && typeof a.icon_emoji === 'string' && a.icon_emoji ? a.icon_emoji : null,
+              }))
               .filter((a) => a.slug);
           }
         }
@@ -225,7 +230,11 @@ async function loadApps(userToken) {
         if (res.ok) {
           const { apps } = await res.json();
           return (apps || [])
-            .map((a) => ({ slug: a.slug, name: a.name || a.slug }))
+            .map((a) => ({
+              slug: a.slug,
+              name: a.name || a.slug,
+              icon: typeof a.icon_emoji === 'string' && a.icon_emoji ? a.icon_emoji : null,
+            }))
             .filter((a) => a.slug);
         }
       } catch {}
@@ -375,8 +384,8 @@ async function withMyVotes(proposals, userId) {
 
 function demoInbox() {
   const apps = [
-    { slug: 'staging-demo-app', name: 'Staging Demo App' },
-    { slug: 'staging-demo-notes', name: 'Staging Demo Notes' },
+    { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
+    { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
   ];
   const mk = (slug, sessionId, title, yes, no, required, status) => ({
     sessionId,
@@ -387,6 +396,7 @@ function demoInbox() {
     eta: null,
     appSlug: slug,
     appName: apps.find((a) => a.slug === slug).name,
+    icon: apps.find((a) => a.slug === slug).icon,
     yes,
     no,
     required,
@@ -468,7 +478,9 @@ app.get('/api/inbox', async (req, res) => {
     let failures = 0;
     results.forEach((r, i) => {
       if (r.status === 'fulfilled') {
-        for (const p of r.value) proposals.push({ ...p, appName: apps[i].name });
+        for (const p of r.value) {
+          proposals.push({ ...p, appName: apps[i].name, icon: apps[i].icon || null });
+        }
       } else {
         failures++;
       }
@@ -490,7 +502,7 @@ app.get('/api/inbox', async (req, res) => {
     for (const p of proposals) {
       if (!seen.has(p.appSlug)) {
         seen.add(p.appSlug);
-        filterApps.push({ slug: p.appSlug, name: p.appName });
+        filterApps.push({ slug: p.appSlug, name: p.appName, icon: p.icon || null });
       }
     }
 
