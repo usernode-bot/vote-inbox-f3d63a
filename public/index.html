@@ -329,6 +329,59 @@
 
     var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
 
+    // Copy link: a quiet ghost button on each proposal card. Shown only when
+    // the server could build the proposal's canonical platform URL.
+    var COPY_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Copy link</span>';
+    var COPY_DONE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Copied!</span>';
+
+    function copyLinkButton(p) {
+      return '<button data-copy-link data-url="' + esc(p.url) + '"'
+        + ' aria-label="Copy link to this proposal" title="Copy link"'
+        + ' class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">'
+        + COPY_IDLE_HTML + '</button>';
+    }
+
+    // Clipboard write must happen inside the tap (this is called from the
+    // delegated click handler); legacy execCommand fallback for WebViews
+    // without the async clipboard API.
+    function legacyCopy(text) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e) { return false; }
+    }
+
+    function copyProposalLink(btn) {
+      var url = btn.getAttribute('data-url');
+      if (!url) return;
+      var done = function () {
+        btn.innerHTML = COPY_DONE_HTML;
+        if (btn._copyTimer) clearTimeout(btn._copyTimer);
+        btn._copyTimer = setTimeout(function () {
+          if (document.contains(btn)) btn.innerHTML = COPY_IDLE_HTML;
+          btn._copyTimer = null;
+        }, 1600);
+      };
+      var fail = function () { toast('Could not copy the link'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done, function () {
+          if (legacyCopy(url)) done(); else fail();
+        });
+      } else if (legacyCopy(url)) {
+        done();
+      } else {
+        fail();
+      }
+    }
+
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
       var age = relTime(p.proposedAt);
@@ -364,8 +417,11 @@
         + '</div>'
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
         + voteBar(p)
-        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no
         + (p.author ? ' · by @' + esc(p.author) : '') + '</p>'
+        + (p.url ? copyLinkButton(p) : '')
+        + '</div>'
         + actions
         + '</article>';
     }
@@ -684,6 +740,8 @@
       }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
       if (voteBtn) castVote(voteBtn.getAttribute('data-session'), voteBtn.getAttribute('data-vote'));
+      var copyBtn = target.closest ? target.closest('[data-copy-link]') : null;
+      if (copyBtn) copyProposalLink(copyBtn);
     });
 
     document.getElementById('app-filter').addEventListener('change', function (event) {

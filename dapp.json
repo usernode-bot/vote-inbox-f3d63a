@@ -15,6 +15,13 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.copy-link",
+      "name": "Proposal cards offer a copy link",
+      "path": "/?demo=1",
+      "expectSelector": "[data-copy-link]",
+      "expectText": "Copy link"
+    },
+    {
       "id": "inbox.relative-age",
       "name": "Inbox cards show relative proposal age",
       "path": "/?demo=1",
