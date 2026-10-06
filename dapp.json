@@ -37,6 +37,14 @@
       "expectText": "5 open, 8 votes needed"
     },
     {
+      "id": "inbox.updated-line",
+      "name": "Inbox header shows last updated time",
+      "path": "/?demo=1",
+      "expectSelector": "#inbox-updated",
+      "expectText": "Updated",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "inbox.vote-undo",
       "name": "Vote confirmation toast shows Undo",
       "path": "/?demo=1&cast=demo-2:yes",
