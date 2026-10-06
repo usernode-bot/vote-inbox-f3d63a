@@ -30,6 +30,14 @@
       "expectText": "5 open, 8 votes needed"
     },
     {
+      "id": "inbox.updated-line",
+      "name": "Inbox header shows last updated time",
+      "path": "/?demo=1",
+      "expectSelector": "#inbox-updated",
+      "expectText": "Updated",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "my-votes.demo",
       "name": "My Votes shows history with status",
       "path": "/?tab=votes&demo=1",
