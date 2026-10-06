@@ -243,6 +243,15 @@ async function loadApps(userToken) {
   });
 }
 
+// Canonical platform URL for one proposal, used by the cards' Copy link
+// button. Null when there is nothing to link to: no platform origin at
+// runtime, or the platform response carried no proposal id.
+function proposalUrl(appSlug, proposalId) {
+  if (!PLATFORM_ORIGIN || !appSlug || proposalId == null) return null;
+  return PLATFORM_ORIGIN + '/app/' + encodeURIComponent(appSlug)
+    + '/dev/proposals/' + encodeURIComponent(proposalId);
+}
+
 // Promoted (open, up-for-vote) proposals for one app. The platform's field
 // spellings are normalised here so the frontend deals with one shape.
 function normalizeProposal(raw, appItem) {
@@ -251,6 +260,8 @@ function normalizeProposal(raw, appItem) {
     ?? (raw.session && raw.session.id) ?? raw.id;
   if (sessionId === undefined || sessionId === null) return null;
   const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const proposalId = raw.proposal_id != null ? String(raw.proposal_id)
+    : raw.pr_number != null ? String(raw.pr_number) : null;
   const yes = num(raw.votes_for) ?? num(raw.votesFor) ?? num(raw.yes_votes) ?? 0;
   const no = num(raw.votes_against) ?? num(raw.votesAgainst) ?? num(raw.no_votes) ?? 0;
   const required = num(raw.votes_required) ?? num(raw.votesRequired) ?? num(raw.required);
@@ -259,8 +270,8 @@ function normalizeProposal(raw, appItem) {
     || 'Untitled proposal';
   return {
     sessionId: String(sessionId),
-    proposalId: raw.proposal_id != null ? String(raw.proposal_id)
-      : raw.pr_number != null ? String(raw.pr_number) : null,
+    proposalId,
+    url: proposalUrl(appItem.slug, proposalId),
     title,
     author: typeof raw.author === 'string' ? raw.author
       : typeof raw.username === 'string' ? raw.username : null,
@@ -387,9 +398,10 @@ function demoInbox() {
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
   ];
-  const mk = (slug, sessionId, title, yes, no, required, status) => ({
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status) => ({
     sessionId,
-    proposalId: null,
+    proposalId,
+    url: proposalUrl(slug, proposalId),
     title,
     author: 'staging-demo-user',
     status: status || null,
@@ -404,11 +416,11 @@ function demoInbox() {
     myVote: null,
   });
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 'Staging demo proposal: weekly summary email', 1, 0, 4),
-    mk('staging-demo-notes', 'demo-4', 'Staging demo proposal: keyboard shortcuts', 0, 2, 3),
-    mk('staging-demo-app', 'demo-1', 'Staging demo proposal: add a dark mode toggle', 3, 1, 5),
-    mk('staging-demo-app', 'demo-3', 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging'),
-    mk('staging-demo-notes', 'demo-5', 'Staging demo proposal: pinned notes', 2, 1, null),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4),
+    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 0, 2, 3),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging'),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }
