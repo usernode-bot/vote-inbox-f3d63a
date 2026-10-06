@@ -115,6 +115,7 @@
         <svg id="refresh-icon" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
       </button>
     </header>
+    <p id="inbox-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
     <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
@@ -122,9 +123,9 @@
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
       </div>
-      <div id="filter-row" class="mt-2">
+      <div id="filter-row" class="mt-2 flex items-center gap-3">
         <label for="app-filter-trigger" class="sr-only">Filter by app</label>
-        <div class="relative">
+        <div class="relative min-w-0 flex-1">
           <button id="app-filter-trigger" data-app-filter-trigger type="button" aria-haspopup="listbox" aria-expanded="false"
             class="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
             <span id="app-filter-label" class="truncate">All apps</span>
@@ -132,6 +133,10 @@
           </button>
           <div id="app-filter-panel" class="hidden"></div>
         </div>
+        <label for="hide-voted" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+          <span>Hide voted</span>
+          <input id="hide-voted" type="checkbox" class="un-switch">
+        </label>
       </div>
     </div>
 
@@ -145,6 +150,10 @@
     var params = new URLSearchParams(location.search);
     var TOKEN = params.get('token') || '';
     var DEMO = params.get('demo') === '1' ? '1' : '';
+    // Staging-check fixture: ?allvoted=1 asks the demo inbox for a list where
+    // every proposal is already voted on, so the "nothing left" state is
+    // reachable by a check. Never sent without demo data.
+    var ALL_VOTED = params.get('allvoted') === '1';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -152,6 +161,7 @@
       votes: null,
       filter: '',
       filterName: '',
+      hideVoted: false,
       loadingInbox: false,
       loadingVotes: false,
       errorInbox: null,
@@ -191,11 +201,61 @@
       });
     }
 
+    // Relative age ("2h ago") for a proposal's proposed timestamp. Empty
+    // string when the platform did not send one, so nothing renders.
+    function relTime(iso) {
+      if (!iso) return '';
+      var t = new Date(iso).getTime();
+      if (!isFinite(t)) return '';
+      var mins = Math.floor((Date.now() - t) / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return mins + 'm ago';
+      var hours = Math.floor(mins / 60);
+      if (hours < 24) return hours + 'h ago';
+      var days = Math.floor(hours / 24);
+      if (days < 14) return days + 'd ago';
+      return Math.floor(days / 7) + 'w ago';
+    }
+
     function toast(message) {
       try {
         if (window.unNative && unNative.toast) { unNative.toast(message); return; }
       } catch (e) { /* fall through */ }
       console.log(message);
+    }
+
+    // ------------------------------------------------------------------
+    // Hide-voted preference. Persists in localStorage so the choice
+    // survives reloads; ?hide-voted=1|0 overrides it for one load (used by
+    // the staging checks) without writing back. Storage can be refused in
+    // an iframe — the toggle then just doesn't persist.
+    // ------------------------------------------------------------------
+
+    var HIDE_VOTED_KEY = 'vote-inbox:hide-voted';
+
+    function loadHideVoted() {
+      try { return localStorage.getItem(HIDE_VOTED_KEY) === '1'; } catch (e) { return false; }
+    }
+
+    function saveHideVoted(on) {
+      try { localStorage.setItem(HIDE_VOTED_KEY, on ? '1' : '0'); } catch (e) { /* not persistable here */ }
+    }
+
+    var hideVotedParam = params.get('hide-voted');
+    state.hideVoted = loadHideVoted();
+    if (hideVotedParam === '1') state.hideVoted = true;
+    else if (hideVotedParam === '0') state.hideVoted = false;
+
+    function setHideVoted(on) {
+      state.hideVoted = on;
+      saveHideVoted(on);
+      var box = document.getElementById('hide-voted');
+      if (box) box.checked = on;
+      render();
+    }
+
+    function isVoted(p) {
+      return p.myVote === 'yes' || p.myVote === 'no';
     }
 
     // ------------------------------------------------------------------
@@ -279,8 +339,67 @@
 
     var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
 
+    // Copy link: a quiet ghost button on each proposal card. Shown only when
+    // the server could build the proposal's canonical platform URL.
+    var COPY_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Copy link</span>';
+    var COPY_DONE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Copied!</span>';
+
+    function copyLinkButton(p) {
+      return '<button data-copy-link data-url="' + esc(p.url) + '"'
+        + ' aria-label="Copy link to this proposal" title="Copy link"'
+        + ' class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">'
+        + COPY_IDLE_HTML + '</button>';
+    }
+
+    // Clipboard write must happen inside the tap (this is called from the
+    // delegated click handler); legacy execCommand fallback for WebViews
+    // without the async clipboard API.
+    function legacyCopy(text) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch (e) { return false; }
+    }
+
+    function copyProposalLink(btn) {
+      var url = btn.getAttribute('data-url');
+      if (!url) return;
+      var done = function () {
+        btn.innerHTML = COPY_DONE_HTML;
+        if (btn._copyTimer) clearTimeout(btn._copyTimer);
+        btn._copyTimer = setTimeout(function () {
+          if (document.contains(btn)) btn.innerHTML = COPY_IDLE_HTML;
+          btn._copyTimer = null;
+        }, 1600);
+      };
+      var fail = function () { toast('Could not copy the link'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done, function () {
+          if (legacyCopy(url)) done(); else fail();
+        });
+      } else if (legacyCopy(url)) {
+        done();
+      } else {
+        fail();
+      }
+    }
+
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
+      var age = relTime(p.proposedAt);
+      var ageHtml = age
+        ? '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
+          + ' title="Proposed ' + esc(new Date(p.proposedAt).toLocaleString()) + '">'
+          + '· ' + esc(age) + '</span>'
+        : '';
       var actions;
       if (voted) {
         actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
@@ -290,10 +409,10 @@
         var busy = state.pending[p.sessionId];
         actions = '<div class="flex gap-2">'
           + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
-          + ' class="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50"'
+          + ' class="min-h-11 flex-1 rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50"'
           + (busy ? ' disabled' : '') + '>Yes</button>'
           + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
-          + ' class="flex-1 rounded-xl border border-zinc-300 bg-white py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50"'
+          + ' class="min-h-11 flex-1 rounded-xl border border-zinc-300 bg-white py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50"'
           + (busy ? ' disabled' : '') + '>No</button>'
           + '</div>';
       }
@@ -302,13 +421,17 @@
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
         + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + ageHtml
         + '</span>'
         + neededPill(p)
         + '</div>'
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
         + voteBar(p)
-        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no
         + (p.author ? ' · by @' + esc(p.author) : '') + '</p>'
+        + (p.url ? copyLinkButton(p) : '')
+        + '</div>'
         + actions
         + '</article>';
     }
@@ -364,6 +487,7 @@
 
     var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
     var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
+    var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
 
     function errorHtml(message) {
@@ -397,7 +521,7 @@
         }
       }
       document.getElementById('filter-row').className =
-        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+        'mt-2 flex items-center gap-3' + (state.tab === 'inbox' ? '' : ' hidden');
     }
 
     function renderRefreshButton() {
@@ -421,7 +545,16 @@
       var filtered = state.filter
         ? proposals.filter(function (p) { return p.appSlug === state.filter; })
         : proposals;
+      if (state.hideVoted) {
+        filtered = filtered.filter(function (p) { return !isVoted(p); });
+      }
       if (!filtered.length) {
+        if (proposals.length && state.hideVoted) {
+          return emptyHtml(
+            'Nothing left to vote on',
+            'You already voted on every open proposal here. Show voted proposals to see them again.',
+            SHOW_VOTED_CTA);
+        }
         return emptyHtml(
           proposals.length ? 'Nothing from this app' : "You're all caught up",
           proposals.length
@@ -449,11 +582,35 @@
       return html;
     }
 
+    // One-line summary under the header, computed from the loaded inbox
+    // list (no extra request): how many proposals are open and how many
+    // yes votes they still need in total. Proposals without a known
+    // threshold contribute nothing to the needed count.
+    function renderSummary() {
+      var el = document.getElementById('inbox-summary');
+      if (!el) return;
+      var proposals = state.inbox && state.inbox.proposals;
+      var open = proposals ? proposals.length : 0;
+      if (state.tab !== 'inbox' || state.errorInbox || !open) {
+        el.hidden = true;
+        return;
+      }
+      var needed = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        var n = proposals[i].needed;
+        if (n != null && n > 0) needed += n;
+      }
+      el.textContent = open + ' open, ' + needed
+        + (needed === 1 ? ' vote needed' : ' votes needed');
+      el.hidden = false;
+    }
+
     function render() {
       syncFilter();
       renderTabs();
       renderDemoBanner();
       renderRefreshButton();
+      renderSummary();
       document.getElementById('view').innerHTML =
         state.tab === 'inbox' ? renderInbox() : renderVotes();
     }
@@ -651,7 +808,10 @@
       state.errorInbox = null;
       if (force) state.inbox = null;
       render();
-      return api('/api/inbox' + (DEMO ? '?demo=1' : ''))
+      var query = [];
+      if (DEMO) query.push('demo=1');
+      if (ALL_VOTED) query.push('allvoted=1');
+      return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
         })
@@ -748,7 +908,9 @@
         else if (action === 'clear-filter') {
           state.filter = '';
           render();
-        }else if (action === 'go-inbox') {
+        } else if (action === 'show-voted') {
+          setHideVoted(false);
+        } else if (action === 'go-inbox') {
           state.tab = 'inbox';
           render();
           loadInbox(!state.inbox);
@@ -757,10 +919,16 @@
       }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
       if (voteBtn) castVote(voteBtn.getAttribute('data-session'), voteBtn.getAttribute('data-vote'));
+      var copyBtn = target.closest ? target.closest('[data-copy-link]') : null;
+      if (copyBtn) copyProposalLink(copyBtn);
     });
 
     filterTrigger.addEventListener('click', function () {
       if (openFilter) closeFilter(); else openAppFilter();
+    });
+
+    document.getElementById('hide-voted').addEventListener('change', function (event) {
+      setHideVoted(event.target.checked);
     });
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
@@ -793,6 +961,8 @@
     // ------------------------------------------------------------------
 
     render();
+    var hideVotedBox = document.getElementById('hide-voted');
+    if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
     if (state.tab === 'votes') loadVotes(true); else loadInbox(true);
   })();
   </script>

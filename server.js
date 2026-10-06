@@ -243,6 +243,15 @@ async function loadApps(userToken) {
   });
 }
 
+// Canonical platform URL for one proposal, used by the cards' Copy link
+// button. Null when there is nothing to link to: no platform origin at
+// runtime, or the platform response carried no proposal id.
+function proposalUrl(appSlug, proposalId) {
+  if (!PLATFORM_ORIGIN || !appSlug || proposalId == null) return null;
+  return PLATFORM_ORIGIN + '/app/' + encodeURIComponent(appSlug)
+    + '/dev/proposals/' + encodeURIComponent(proposalId);
+}
+
 // Promoted (open, up-for-vote) proposals for one app. The platform's field
 // spellings are normalised here so the frontend deals with one shape.
 function normalizeProposal(raw, appItem) {
@@ -251,21 +260,27 @@ function normalizeProposal(raw, appItem) {
     ?? (raw.session && raw.session.id) ?? raw.id;
   if (sessionId === undefined || sessionId === null) return null;
   const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const proposalId = raw.proposal_id != null ? String(raw.proposal_id)
+    : raw.pr_number != null ? String(raw.pr_number) : null;
   const yes = num(raw.votes_for) ?? num(raw.votesFor) ?? num(raw.yes_votes) ?? 0;
   const no = num(raw.votes_against) ?? num(raw.votesAgainst) ?? num(raw.no_votes) ?? 0;
   const required = num(raw.votes_required) ?? num(raw.votesRequired) ?? num(raw.required);
   const title = (typeof raw.title === 'string' && raw.title.trim())
     || (typeof raw.name === 'string' && raw.name.trim())
     || 'Untitled proposal';
+  // When the proposal was made, for the relative-age label on cards.
+  const proposedAt = [raw.proposed_at, raw.proposedAt, raw.created_at, raw.createdAt]
+    .find((v) => typeof v === 'string' && v) || null;
   return {
     sessionId: String(sessionId),
-    proposalId: raw.proposal_id != null ? String(raw.proposal_id)
-      : raw.pr_number != null ? String(raw.pr_number) : null,
+    proposalId,
+    url: proposalUrl(appItem.slug, proposalId),
     title,
     author: typeof raw.author === 'string' ? raw.author
       : typeof raw.username === 'string' ? raw.username : null,
     status: typeof raw.status === 'string' ? raw.status : null,
     eta: typeof raw.eta === 'string' ? raw.eta : null,
+    proposedAt,
     appSlug: appItem.slug,
     appName: appItem.name,
     yes,
@@ -365,10 +380,13 @@ async function myVotesMap(userId) {
   }
 }
 
-// Stamp each proposal with the caller's own recorded vote, if any.
+// Stamp each proposal with the caller's own recorded vote, if any. A real
+// record always wins; a myVote already on the proposal survives only as a
+// fallback (the demo fixture marks some proposals voted — production
+// proposals never carry the field, so this changes nothing there).
 async function withMyVotes(proposals, userId) {
   const mine = await myVotesMap(userId);
-  for (const p of proposals) p.myVote = mine.get(p.sessionId) || null;
+  for (const p of proposals) p.myVote = mine.get(p.sessionId) || p.myVote || null;
   return proposals;
 }
 
@@ -387,13 +405,15 @@ function demoInbox() {
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
   ];
-  const mk = (slug, sessionId, title, yes, no, required, status) => ({
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote) => ({
     sessionId,
-    proposalId: null,
+    proposalId,
+    url: proposalUrl(slug, proposalId),
     title,
     author: 'staging-demo-user',
     status: status || null,
     eta: null,
+    proposedAt: ageMs != null ? new Date(Date.now() - ageMs).toISOString() : null,
     appSlug: slug,
     appName: apps.find((a) => a.slug === slug).name,
     icon: apps.find((a) => a.slug === slug).icon,
@@ -401,16 +421,33 @@ function demoInbox() {
     no,
     required,
     needed: required != null ? Math.max(0, required - yes) : null,
-    myVote: null,
+    myVote: myVote || null,
   });
+  const H = 3600 * 1000;
+  const D = 24 * H;
+  // Two of the five are marked already voted so the Hide voted toggle has
+  // something to filter in previews.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 'Staging demo proposal: weekly summary email', 1, 0, 4),
-    mk('staging-demo-notes', 'demo-4', 'Staging demo proposal: keyboard shortcuts', 0, 2, 3),
-    mk('staging-demo-app', 'demo-1', 'Staging demo proposal: add a dark mode toggle', 3, 1, 5),
-    mk('staging-demo-app', 'demo-3', 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging'),
-    mk('staging-demo-notes', 'demo-5', 'Staging demo proposal: pinned notes', 2, 1, null),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H),
+    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 0, 2, 3, null, 8 * H),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no'),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes'),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, null, 9 * D),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
+}
+
+// The demo payload, optionally with every proposal marked voted
+// (?allvoted=1) so the Hide voted toggle's empty state is reachable by the
+// declared checks. Staging fixture only.
+function demoInboxPayload(req) {
+  const demo = demoInbox();
+  if (req.query.allvoted === '1') {
+    for (const p of demo.proposals) {
+      if (!p.myVote) p.myVote = 'yes';
+    }
+  }
+  return demo;
 }
 
 function demoVoteRows() {
@@ -449,7 +486,7 @@ app.get('/api/inbox', async (req, res) => {
   const userToken = userTokenFrom(req);
   try {
     if (req.query.demo === '1' && IS_STAGING) {
-      const demo = demoInbox();
+      const demo = demoInboxPayload(req);
       await withMyVotes(demo.proposals, req.user.id);
       return res.json(demo);
     }
@@ -457,7 +494,7 @@ app.get('/api/inbox', async (req, res) => {
       // A staging container without the platform origin only exists under a
       // plain local launch; keep the screen reviewable there with fixtures.
       if (IS_STAGING) {
-        const demo = demoInbox();
+        const demo = demoInboxPayload(req);
         await withMyVotes(demo.proposals, req.user.id);
         return res.json(demo);
       }
