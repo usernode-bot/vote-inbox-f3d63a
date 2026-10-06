@@ -167,6 +167,8 @@
       errorInbox: null,
       errorVotes: null,
       pending: {},
+      queuedInbox: false,
+      queuedVotes: false,
     };
 
     // ------------------------------------------------------------------
@@ -803,7 +805,12 @@
 
 
     function loadInbox(force) {
-      if (state.loadingInbox) return Promise.resolve();
+      if (state.loadingInbox) {
+        // A pull or Refresh tap while a load is still in flight must still
+        // end in a fresh fetch, not a silent no-op: queue one behind it.
+        if (force) state.queuedInbox = true;
+        return Promise.resolve();
+      }
       state.loadingInbox = true;
       state.errorInbox = null;
       if (force) state.inbox = null;
@@ -821,11 +828,20 @@
         .then(function () {
           state.loadingInbox = false;
           render();
+          if (state.queuedInbox) {
+            state.queuedInbox = false;
+            loadInbox(true);
+          }
         });
     }
 
     function loadVotes(force) {
-      if (state.loadingVotes) return Promise.resolve();
+      if (state.loadingVotes) {
+        // Same as loadInbox: a pull while the tab-switch fetch is still
+        // running queues one fresh refetch instead of doing nothing.
+        if (force) state.queuedVotes = true;
+        return Promise.resolve();
+      }
       state.loadingVotes = true;
       state.errorVotes = null;
       if (force) state.votes = null;
@@ -838,6 +854,10 @@
         .then(function () {
           state.loadingVotes = false;
           render();
+          if (state.queuedVotes) {
+            state.queuedVotes = false;
+            loadVotes(true);
+          }
         });
     }
 
@@ -913,6 +933,9 @@
         } else if (action === 'go-inbox') {
           state.tab = 'inbox';
           render();
+          // Land at the top of the list so the pull-to-refresh gesture can
+          // engage right away; the pull only fires at scroll offset 0.
+          window.scrollTo(0, 0);
           loadInbox(!state.inbox);
         }
         return;
@@ -945,6 +968,10 @@
         url.searchParams.set('tab', tab);
         history.replaceState(null, '', url.pathname + url.search + url.hash);
         render();
+        // Land at the top of the newly opened tab so the pull-to-refresh
+        // gesture can engage right away; the pull only fires at offset 0,
+        // and a tab switch used to keep the previous tab's scroll offset.
+        window.scrollTo(0, 0);
         if (tab === 'votes') loadVotes(!state.votes);
       });
     }
