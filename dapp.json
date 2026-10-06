@@ -22,6 +22,15 @@
       "expectText": "You voted yes",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.trigger",
+      "name": "App filter trigger renders",
+      "path": "/?demo=1",
+      "expectSelector": "[data-app-filter-trigger]",
+      "expectText": "All apps",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
     }
   ]
 }

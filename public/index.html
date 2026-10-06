@@ -123,12 +123,14 @@
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
       </div>
       <div id="filter-row" class="mt-2">
-        <label for="app-filter" class="sr-only">Filter by app</label>
+        <label for="app-filter-trigger" class="sr-only">Filter by app</label>
         <div class="relative">
-          <select id="app-filter" class="w-full appearance-none rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-9 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
-            <option value="">All apps</option>
-          </select>
-          <svg aria-hidden="true" viewBox="0 0 24 24" class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          <button id="app-filter-trigger" data-app-filter-trigger type="button" aria-haspopup="listbox" aria-expanded="false"
+            class="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+            <span id="app-filter-label" class="truncate">All apps</span>
+            <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div id="app-filter-panel" class="hidden"></div>
         </div>
       </div>
     </div>
@@ -149,6 +151,7 @@
       inbox: null,
       votes: null,
       filter: '',
+      filterName: '',
       loadingInbox: false,
       loadingVotes: false,
       errorInbox: null,
@@ -204,6 +207,13 @@
     var TAB_IDLE = 'text-zinc-500 dark:text-zinc-400';
     var BADGE_ACTIVE = 'bg-white/25 text-white';
     var BADGE_IDLE = 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300';
+
+    var FILTER_TRIGGER_IDLE = 'flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
+    var FILTER_TRIGGER_ACTIVE = 'flex w-full items-center justify-between gap-2 rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
+    var FILTER_CHECK = '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+    var FILTER_ALL_ICON = '<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400" aria-hidden="true">'
+      + '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'
+      + '</span>';
 
     var STATUS_STYLE = {
       voting: ['Voting', 'bg-violet-600/15 text-violet-700 dark:text-violet-300'],
@@ -440,6 +450,7 @@
     }
 
     function render() {
+      syncFilter();
       renderTabs();
       renderDemoBanner();
       renderRefreshButton();
@@ -451,18 +462,188 @@
     // Data
     // ------------------------------------------------------------------
 
-    function fillFilter() {
-      var select = document.getElementById('app-filter');
-      var current = state.filter;
-      var options = '<option value="">All apps</option>';
-      var apps = (state.inbox && state.inbox.apps) || [];
-      for (var i = 0; i < apps.length; i++) {
-        options += '<option value="' + esc(apps[i].slug) + '">' + esc(apps[i].name) + '</option>';
-      }
-      select.innerHTML = options;
-      select.value = current;
-      if (select.value !== current) { state.filter = ''; select.value = ''; }
+    // ------------------------------------------------------------------
+    // App filter: trigger + searchable dropdown list.
+    // ------------------------------------------------------------------
+
+    var filterTrigger = document.getElementById('app-filter-trigger');
+    var filterPanelEl = document.getElementById('app-filter-panel');
+    var openFilter = null; // { dismiss } from the native kit, or a plain fallback
+
+    function filterApps() {
+      return (state.inbox && state.inbox.apps) || [];
     }
+
+    function findFilterApp(slug) {
+      var apps = filterApps();
+      for (var i = 0; i < apps.length; i++) {
+        if (apps[i].slug === slug) return apps[i];
+      }
+      return null;
+    }
+
+    // Keep the trigger label in step with state.filter; drop a filter whose
+    // app is no longer in the inbox (the old select did the same on fill).
+    // Validation waits for inbox data: mid-refresh (state.inbox null) the
+    // chosen filter survives, as it did before.
+    function syncFilter() {
+      var app = state.filter ? findFilterApp(state.filter) : null;
+      if (state.filter && state.inbox && !app) {
+        state.filter = '';
+        state.filterName = '';
+      } else if (state.filter && !app) {
+        app = { name: state.filterName || state.filter };
+      }
+      document.getElementById('app-filter-label').textContent = app ? app.name : 'All apps';
+      filterTrigger.className = app ? FILTER_TRIGGER_ACTIVE : FILTER_TRIGGER_IDLE;
+      filterTrigger.setAttribute('aria-expanded', openFilter ? 'true' : 'false');
+    }
+
+    function filterRowEl(app, selected) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-selected', selected ? 'true' : 'false');
+      btn.setAttribute('data-app-option', app ? app.slug : '');
+      btn.className = 'flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm '
+        + (selected
+          ? 'bg-violet-600/10 font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+          : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800');
+      if (app) {
+        btn.innerHTML = appAvatar({ appSlug: app.slug, appName: app.name, icon: app.icon })
+          + '<span class="min-w-0 flex-1 truncate">' + esc(app.name) + '</span>'
+          + (selected ? FILTER_CHECK : '');
+      } else {
+        btn.innerHTML = FILTER_ALL_ICON
+          + '<span class="min-w-0 flex-1 truncate">All apps</span>'
+          + (selected ? FILTER_CHECK : '');
+      }
+      return btn;
+    }
+
+    // The dropdown body: a small search box on top, then the app list. The
+    // search narrows the list by case-insensitive substring on the app name;
+    // empty input shows the full list, "All apps" first.
+    function buildFilterContent() {
+      var content = document.createElement('div');
+      content.setAttribute('data-app-filter-panel', '');
+      content.className = 'flex flex-col';
+
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Search apps';
+      input.setAttribute('aria-label', 'Search apps');
+      input.autocomplete = 'off';
+      input.className = 'w-full border-b border-zinc-200 bg-transparent px-3 py-2.5 text-sm text-zinc-800 placeholder:text-zinc-400 focus:outline-none dark:border-zinc-700 dark:text-zinc-100 dark:placeholder:text-zinc-500';
+      content.appendChild(input);
+
+      var list = document.createElement('div');
+      list.setAttribute('role', 'listbox');
+      list.setAttribute('aria-label', 'Apps');
+      list.className = 'max-h-60 overflow-y-auto p-1';
+      content.appendChild(list);
+
+      function renderList() {
+        var query = input.value.trim().toLowerCase();
+        var apps = filterApps();
+        list.innerHTML = '';
+        var shown = 0;
+        if (!query) list.appendChild(filterRowEl(null, state.filter === ''));
+        for (var i = 0; i < apps.length; i++) {
+          if (query && apps[i].name.toLowerCase().indexOf(query) === -1) continue;
+          list.appendChild(filterRowEl(apps[i], apps[i].slug === state.filter));
+          shown++;
+        }
+        if (query && !shown) {
+          var empty = document.createElement('div');
+          empty.className = 'px-3 py-4 text-center text-xs text-zinc-500 dark:text-zinc-400';
+          empty.textContent = 'No apps match';
+          list.appendChild(empty);
+        }
+      }
+
+      content.addEventListener('click', function (event) {
+        var btn = event.target.closest ? event.target.closest('[data-app-option]') : null;
+        if (!btn) return;
+        var slug = btn.getAttribute('data-app-option');
+        pickFilter(slug ? findFilterApp(slug) : null);
+      });
+      input.addEventListener('input', renderList);
+      renderList();
+      return content;
+    }
+
+    function onDocClickClose(event) {
+      if (!openFilter) return;
+      if (filterPanelEl.contains(event.target) || filterTrigger.contains(event.target)) return;
+      closeFilter();
+    }
+
+    function onFilterKeydown(event) {
+      if (event.key === 'Escape') closeFilter();
+    }
+
+    function closeFilter() {
+      if (!openFilter) return;
+      var f = openFilter;
+      openFilter = null;
+      filterTrigger.setAttribute('aria-expanded', 'false');
+      if (f.dismiss) {
+        try { f.dismiss(); } catch (e) { /* already gone */ }
+      } else {
+        filterPanelEl.className = 'hidden';
+        filterPanelEl.innerHTML = '';
+        document.removeEventListener('click', onDocClickClose);
+        document.removeEventListener('keydown', onFilterKeydown);
+      }
+    }
+
+    function openAppFilter() {
+      if (openFilter) return;
+      var content = buildFilterContent();
+      // Width is set before presentation: the kit measures the content to
+      // place and size the popover.
+      content.className = 'flex w-72 max-w-full flex-col';
+      if (window.unNative && unNative.popover) {
+        var handle = null;
+        try {
+          handle = unNative.popover({
+            anchorEl: filterTrigger,
+            contentEl: content,
+            placement: 'bottom-start',
+            onDismiss: function () { openFilter = null; syncFilter(); },
+          });
+        } catch (e) { handle = null; }
+        if (handle) {
+          openFilter = handle;
+          filterTrigger.setAttribute('aria-expanded', 'true');
+          requestAnimationFrame(function () {
+            var input = content.querySelector('input');
+            if (input) input.focus();
+          });
+          return;
+        }
+      }
+      // Fallback (kit unavailable, e.g. standalone): a plain panel under the
+      // trigger with the same content.
+      content.className = 'flex w-full flex-col';
+      filterPanelEl.innerHTML = '';
+      filterPanelEl.appendChild(content);
+      filterPanelEl.className = 'absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900';
+      openFilter = { fallback: true };
+      filterTrigger.setAttribute('aria-expanded', 'true');
+      document.addEventListener('click', onDocClickClose);
+      document.addEventListener('keydown', onFilterKeydown);
+      content.querySelector('input').focus();
+    }
+
+    function pickFilter(app) {
+      state.filter = app ? app.slug : '';
+      state.filterName = app ? app.name : '';
+      closeFilter();
+      render();
+    }
+
 
     function loadInbox(force) {
       if (state.loadingInbox) return Promise.resolve();
@@ -473,7 +654,6 @@
       return api('/api/inbox' + (DEMO ? '?demo=1' : ''))
         .then(function (data) {
           state.inbox = data;
-          fillFilter();
         })
         .catch(function (err) {
           state.errorInbox = err.message || 'Could not load proposals.';
@@ -567,9 +747,8 @@
         if (action === 'refresh') refreshCurrent();
         else if (action === 'clear-filter') {
           state.filter = '';
-          document.getElementById('app-filter').value = '';
           render();
-        } else if (action === 'go-inbox') {
+        }else if (action === 'go-inbox') {
           state.tab = 'inbox';
           render();
           loadInbox(!state.inbox);
@@ -580,9 +759,8 @@
       if (voteBtn) castVote(voteBtn.getAttribute('data-session'), voteBtn.getAttribute('data-vote'));
     });
 
-    document.getElementById('app-filter').addEventListener('change', function (event) {
-      state.filter = event.target.value;
-      render();
+    filterTrigger.addEventListener('click', function () {
+      if (openFilter) closeFilter(); else openAppFilter();
     });
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
