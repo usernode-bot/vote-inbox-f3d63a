@@ -37,6 +37,14 @@
       "expectText": "5 open, 8 votes needed"
     },
     {
+      "id": "inbox.vote-undo",
+      "name": "Vote confirmation toast shows Undo",
+      "path": "/?demo=1&cast=demo-2:yes",
+      "expectText": "Undo",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "my-votes.demo",
       "name": "My Votes shows history with status",
       "path": "/?tab=votes&demo=1",
