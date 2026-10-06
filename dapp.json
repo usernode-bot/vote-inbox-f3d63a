@@ -22,6 +22,21 @@
       "expectText": "Copy link"
     },
     {
+      "id": "inbox.relative-age",
+      "name": "Inbox cards show relative proposal age",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card]",
+      "expectText": "ago",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.summary-line",
+      "name": "Inbox header shows open and votes-needed summary",
+      "path": "/?demo=1",
+      "expectSelector": "#inbox-summary",
+      "expectText": "5 open, 8 votes needed"
+    },
+    {
       "id": "my-votes.demo",
       "name": "My Votes shows history with status",
       "path": "/?tab=votes&demo=1",
