@@ -189,6 +189,22 @@
       });
     }
 
+    // Relative age ("2h ago") for a proposal's proposed timestamp. Empty
+    // string when the platform did not send one, so nothing renders.
+    function relTime(iso) {
+      if (!iso) return '';
+      var t = new Date(iso).getTime();
+      if (!isFinite(t)) return '';
+      var mins = Math.floor((Date.now() - t) / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return mins + 'm ago';
+      var hours = Math.floor(mins / 60);
+      if (hours < 24) return hours + 'h ago';
+      var days = Math.floor(hours / 24);
+      if (days < 14) return days + 'd ago';
+      return Math.floor(days / 7) + 'w ago';
+    }
+
     function toast(message) {
       try {
         if (window.unNative && unNative.toast) { unNative.toast(message); return; }
@@ -272,6 +288,12 @@
 
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
+      var age = relTime(p.proposedAt);
+      var ageHtml = age
+        ? '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
+          + ' title="Proposed ' + esc(new Date(p.proposedAt).toLocaleString()) + '">'
+          + '· ' + esc(age) + '</span>'
+        : '';
       var actions;
       if (voted) {
         actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
@@ -293,6 +315,7 @@
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
         + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + ageHtml
         + '</span>'
         + neededPill(p)
         + '</div>'
