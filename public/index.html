@@ -115,6 +115,7 @@
         <svg id="refresh-icon" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
       </button>
     </header>
+    <p id="inbox-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
     <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
@@ -462,10 +463,34 @@
       return html;
     }
 
+    // One-line summary under the header, computed from the loaded inbox
+    // list (no extra request): how many proposals are open and how many
+    // yes votes they still need in total. Proposals without a known
+    // threshold contribute nothing to the needed count.
+    function renderSummary() {
+      var el = document.getElementById('inbox-summary');
+      if (!el) return;
+      var proposals = state.inbox && state.inbox.proposals;
+      var open = proposals ? proposals.length : 0;
+      if (state.tab !== 'inbox' || state.errorInbox || !open) {
+        el.hidden = true;
+        return;
+      }
+      var needed = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        var n = proposals[i].needed;
+        if (n != null && n > 0) needed += n;
+      }
+      el.textContent = open + ' open, ' + needed
+        + (needed === 1 ? ' vote needed' : ' votes needed');
+      el.hidden = false;
+    }
+
     function render() {
       renderTabs();
       renderDemoBanner();
       renderRefreshButton();
+      renderSummary();
       document.getElementById('view').innerHTML =
         state.tab === 'inbox' ? renderInbox() : renderVotes();
     }
