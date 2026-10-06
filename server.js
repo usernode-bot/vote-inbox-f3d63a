@@ -590,6 +590,26 @@ app.post('/api/vote', async (req, res) => {
   }
 });
 
+// Undo: remove this app's record of the caller's vote on one session, so it
+// no longer shows as cast here and the user can vote again. Only the local
+// history row is deleted; the platform's own tally stays authoritative and
+// is refetched on the next inbox load.
+app.post('/api/unvote', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM my_votes WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, removed: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // My Votes: everything the signed-in user voted on through this app, with a
 // best-effort merge-status refresh for still-open proposals.
 app.get('/api/my-votes', async (req, res) => {
