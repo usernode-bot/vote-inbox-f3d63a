@@ -303,10 +303,10 @@
         var busy = state.pending[p.sessionId];
         actions = '<div class="flex gap-2">'
           + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
-          + ' class="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50"'
+          + ' class="min-h-11 flex-1 rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50"'
           + (busy ? ' disabled' : '') + '>Yes</button>'
           + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
-          + ' class="flex-1 rounded-xl border border-zinc-300 bg-white py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50"'
+          + ' class="min-h-11 flex-1 rounded-xl border border-zinc-300 bg-white py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50"'
           + (busy ? ' disabled' : '') + '>No</button>'
           + '</div>';
       }
