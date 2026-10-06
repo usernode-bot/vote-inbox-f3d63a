@@ -380,10 +380,13 @@ async function myVotesMap(userId) {
   }
 }
 
-// Stamp each proposal with the caller's own recorded vote, if any.
+// Stamp each proposal with the caller's own recorded vote, if any. A real
+// record always wins; a myVote already on the proposal survives only as a
+// fallback (the demo fixture marks some proposals voted — production
+// proposals never carry the field, so this changes nothing there).
 async function withMyVotes(proposals, userId) {
   const mine = await myVotesMap(userId);
-  for (const p of proposals) p.myVote = mine.get(p.sessionId) || null;
+  for (const p of proposals) p.myVote = mine.get(p.sessionId) || p.myVote || null;
   return proposals;
 }
 
@@ -402,7 +405,7 @@ function demoInbox() {
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
   ];
-  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs) => ({
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote) => ({
     sessionId,
     proposalId,
     url: proposalUrl(slug, proposalId),
@@ -418,18 +421,33 @@ function demoInbox() {
     no,
     required,
     needed: required != null ? Math.max(0, required - yes) : null,
-    myVote: null,
+    myVote: myVote || null,
   });
   const H = 3600 * 1000;
   const D = 24 * H;
+  // Two of the five are marked already voted so the Hide voted toggle has
+  // something to filter in previews.
   const proposals = [
     mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 0, 2, 3, null, 8 * H),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no'),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes'),
     mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, null, 9 * D),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
+}
+
+// The demo payload, optionally with every proposal marked voted
+// (?allvoted=1) so the Hide voted toggle's empty state is reachable by the
+// declared checks. Staging fixture only.
+function demoInboxPayload(req) {
+  const demo = demoInbox();
+  if (req.query.allvoted === '1') {
+    for (const p of demo.proposals) {
+      if (!p.myVote) p.myVote = 'yes';
+    }
+  }
+  return demo;
 }
 
 function demoVoteRows() {
@@ -468,7 +486,7 @@ app.get('/api/inbox', async (req, res) => {
   const userToken = userTokenFrom(req);
   try {
     if (req.query.demo === '1' && IS_STAGING) {
-      const demo = demoInbox();
+      const demo = demoInboxPayload(req);
       await withMyVotes(demo.proposals, req.user.id);
       return res.json(demo);
     }
@@ -476,7 +494,7 @@ app.get('/api/inbox', async (req, res) => {
       // A staging container without the platform origin only exists under a
       // plain local launch; keep the screen reviewable there with fixtures.
       if (IS_STAGING) {
-        const demo = demoInbox();
+        const demo = demoInboxPayload(req);
         await withMyVotes(demo.proposals, req.user.id);
         return res.json(demo);
       }

@@ -44,6 +44,14 @@
       "expectText": "You voted yes",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.hide-voted",
+      "name": "Hide voted toggle empties an all-voted inbox",
+      "path": "/?demo=1&hide-voted=1&allvoted=1",
+      "expectText": "Nothing left to vote on",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
     }
   ]
 }
