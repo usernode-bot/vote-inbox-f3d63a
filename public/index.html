@@ -221,11 +221,12 @@
       return Math.floor(days / 7) + 'w ago';
     }
 
-    function toast(message) {
+    function toast(message, opts) {
       try {
-        if (window.unNative && unNative.toast) { unNative.toast(message); return; }
+        if (window.unNative && unNative.toast) { return unNative.toast(message, opts); }
       } catch (e) { /* fall through */ }
       console.log(message);
+      return null;
     }
 
     // ------------------------------------------------------------------
@@ -839,6 +840,7 @@
         .then(function (data) {
           state.inbox = data;
           state.inboxLoadedAt = new Date().toISOString();
+          maybeAutoCast();
         })
         .catch(function (err) {
           state.errorInbox = err.message || 'Could not load proposals.';
@@ -921,7 +923,13 @@
         }),
       }).then(function () {
         state.votes = null; // history refetches next time the tab opens
-        toast('Vote recorded');
+        toast('Vote recorded', {
+          duration: 5000,
+          action: {
+            label: 'Undo',
+            handler: function () { undoVote(sessionId, choice, snapshot); },
+          },
+        });
       }).catch(function (err) {
         p.myVote = snapshot.myVote;
         p.yes = snapshot.yes;
@@ -931,6 +939,50 @@
         delete state.pending[sessionId];
         render();
       });
+    }
+
+    // Undo a just-cast vote: drop this app's record of it and roll the card
+    // back to its pre-vote counts so the user can vote again. The platform's
+    // own tally stays authoritative and is refetched on the next inbox load.
+    function undoVote(sessionId, choice, snapshot) {
+      var p = findProposal(sessionId);
+      api('/api/unvote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ sessionId: sessionId }),
+      }).then(function () {
+        if (p && p.myVote === choice) {
+          p.myVote = snapshot.myVote;
+          p.yes = snapshot.yes;
+          p.no = snapshot.no;
+        }
+        state.votes = null; // history refetches next time the tab opens
+        toast('Vote undone');
+      }).catch(function (err) {
+        toast('Undo failed: ' + (err.message || 'try again'));
+      }).then(render);
+    }
+
+    // Staging demo hook: ?demo=1&cast=<sessionId>:<choice> casts one vote
+    // automatically once the demo inbox is loaded, giving checks and
+    // reviewers a stable URL for the vote → toast → Undo flow. Demo only.
+    // Any earlier demo vote on that session is cleared first so repeated
+    // loads (and repeated check runs) always reach the toast.
+    function maybeAutoCast() {
+      if (!DEMO) return;
+      var m = (params.get('cast') || '').match(/^(.+):(yes|no)$/);
+      if (!m) return;
+      var p = findProposal(m[1]);
+      if (!p) return;
+      api('/api/unvote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ sessionId: m[1] }),
+      }).catch(function () {})
+        .then(function () {
+          p.myVote = null;
+          castVote(m[1], m[2]);
+        });
     }
 
     // ------------------------------------------------------------------
