@@ -257,6 +257,9 @@ function normalizeProposal(raw, appItem) {
   const title = (typeof raw.title === 'string' && raw.title.trim())
     || (typeof raw.name === 'string' && raw.name.trim())
     || 'Untitled proposal';
+  // When the proposal was made, for the relative-age label on cards.
+  const proposedAt = [raw.proposed_at, raw.proposedAt, raw.created_at, raw.createdAt]
+    .find((v) => typeof v === 'string' && v) || null;
   return {
     sessionId: String(sessionId),
     proposalId: raw.proposal_id != null ? String(raw.proposal_id)
@@ -266,6 +269,7 @@ function normalizeProposal(raw, appItem) {
       : typeof raw.username === 'string' ? raw.username : null,
     status: typeof raw.status === 'string' ? raw.status : null,
     eta: typeof raw.eta === 'string' ? raw.eta : null,
+    proposedAt,
     appSlug: appItem.slug,
     appName: appItem.name,
     yes,
@@ -390,13 +394,14 @@ function demoInbox() {
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
   ];
-  const mk = (slug, sessionId, title, yes, no, required, status, myVote) => ({
+  const mk = (slug, sessionId, title, yes, no, required, status, ageMs, myVote) => ({
     sessionId,
     proposalId: null,
     title,
     author: 'staging-demo-user',
     status: status || null,
     eta: null,
+    proposedAt: ageMs != null ? new Date(Date.now() - ageMs).toISOString() : null,
     appSlug: slug,
     appName: apps.find((a) => a.slug === slug).name,
     icon: apps.find((a) => a.slug === slug).icon,
@@ -406,14 +411,16 @@ function demoInbox() {
     needed: required != null ? Math.max(0, required - yes) : null,
     myVote: myVote || null,
   });
+  const H = 3600 * 1000;
+  const D = 24 * H;
   // Two of the five are marked already voted so the Hide voted toggle has
   // something to filter in previews.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 'Staging demo proposal: weekly summary email', 1, 0, 4),
-    mk('staging-demo-notes', 'demo-4', 'Staging demo proposal: keyboard shortcuts', 0, 2, 3),
-    mk('staging-demo-app', 'demo-1', 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 'no'),
-    mk('staging-demo-app', 'demo-3', 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 'yes'),
-    mk('staging-demo-notes', 'demo-5', 'Staging demo proposal: pinned notes', 2, 1, null),
+    mk('staging-demo-app', 'demo-2', 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H),
+    mk('staging-demo-notes', 'demo-4', 'Staging demo proposal: keyboard shortcuts', 0, 2, 3, null, 8 * H),
+    mk('staging-demo-app', 'demo-1', 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no'),
+    mk('staging-demo-app', 'demo-3', 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes'),
+    mk('staging-demo-notes', 'demo-5', 'Staging demo proposal: pinned notes', 2, 1, null, null, 9 * D),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }

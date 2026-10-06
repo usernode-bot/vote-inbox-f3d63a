@@ -115,6 +115,7 @@
         <svg id="refresh-icon" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
       </button>
     </header>
+    <p id="inbox-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
     <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
@@ -195,6 +196,22 @@
       return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
       });
+    }
+
+    // Relative age ("2h ago") for a proposal's proposed timestamp. Empty
+    // string when the platform did not send one, so nothing renders.
+    function relTime(iso) {
+      if (!iso) return '';
+      var t = new Date(iso).getTime();
+      if (!isFinite(t)) return '';
+      var mins = Math.floor((Date.now() - t) / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return mins + 'm ago';
+      var hours = Math.floor(mins / 60);
+      if (hours < 24) return hours + 'h ago';
+      var days = Math.floor(hours / 24);
+      if (days < 14) return days + 'd ago';
+      return Math.floor(days / 7) + 'w ago';
     }
 
     function toast(message) {
@@ -314,6 +331,12 @@
 
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
+      var age = relTime(p.proposedAt);
+      var ageHtml = age
+        ? '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
+          + ' title="Proposed ' + esc(new Date(p.proposedAt).toLocaleString()) + '">'
+          + '· ' + esc(age) + '</span>'
+        : '';
       var actions;
       if (voted) {
         actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
@@ -335,6 +358,7 @@
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
         + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + ageHtml
         + '</span>'
         + neededPill(p)
         + '</div>'
@@ -492,10 +516,34 @@
       return html;
     }
 
+    // One-line summary under the header, computed from the loaded inbox
+    // list (no extra request): how many proposals are open and how many
+    // yes votes they still need in total. Proposals without a known
+    // threshold contribute nothing to the needed count.
+    function renderSummary() {
+      var el = document.getElementById('inbox-summary');
+      if (!el) return;
+      var proposals = state.inbox && state.inbox.proposals;
+      var open = proposals ? proposals.length : 0;
+      if (state.tab !== 'inbox' || state.errorInbox || !open) {
+        el.hidden = true;
+        return;
+      }
+      var needed = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        var n = proposals[i].needed;
+        if (n != null && n > 0) needed += n;
+      }
+      el.textContent = open + ' open, ' + needed
+        + (needed === 1 ? ' vote needed' : ' votes needed');
+      el.hidden = false;
+    }
+
     function render() {
       renderTabs();
       renderDemoBanner();
       renderRefreshButton();
+      renderSummary();
       document.getElementById('view').innerHTML =
         state.tab === 'inbox' ? renderInbox() : renderVotes();
     }
