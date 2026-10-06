@@ -122,14 +122,18 @@
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
       </div>
-      <div id="filter-row" class="mt-2">
-        <label for="app-filter" class="sr-only">Filter by app</label>
-        <div class="relative">
+      <div id="filter-row" class="mt-2 flex items-center gap-3">
+        <div class="relative min-w-0 flex-1">
+          <label for="app-filter" class="sr-only">Filter by app</label>
           <select id="app-filter" class="w-full appearance-none rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-9 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
             <option value="">All apps</option>
           </select>
           <svg aria-hidden="true" viewBox="0 0 24 24" class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </div>
+        <label for="hide-voted" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+          <span>Hide voted</span>
+          <input id="hide-voted" type="checkbox" class="un-switch">
+        </label>
       </div>
     </div>
 
@@ -143,12 +147,17 @@
     var params = new URLSearchParams(location.search);
     var TOKEN = params.get('token') || '';
     var DEMO = params.get('demo') === '1' ? '1' : '';
+    // Staging-check fixture: ?allvoted=1 asks the demo inbox for a list where
+    // every proposal is already voted on, so the "nothing left" state is
+    // reachable by a check. Never sent without demo data.
+    var ALL_VOTED = params.get('allvoted') === '1';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
       inbox: null,
       votes: null,
       filter: '',
+      hideVoted: false,
       loadingInbox: false,
       loadingVotes: false,
       errorInbox: null,
@@ -193,6 +202,40 @@
         if (window.unNative && unNative.toast) { unNative.toast(message); return; }
       } catch (e) { /* fall through */ }
       console.log(message);
+    }
+
+    // ------------------------------------------------------------------
+    // Hide-voted preference. Persists in localStorage so the choice
+    // survives reloads; ?hide-voted=1|0 overrides it for one load (used by
+    // the staging checks) without writing back. Storage can be refused in
+    // an iframe — the toggle then just doesn't persist.
+    // ------------------------------------------------------------------
+
+    var HIDE_VOTED_KEY = 'vote-inbox:hide-voted';
+
+    function loadHideVoted() {
+      try { return localStorage.getItem(HIDE_VOTED_KEY) === '1'; } catch (e) { return false; }
+    }
+
+    function saveHideVoted(on) {
+      try { localStorage.setItem(HIDE_VOTED_KEY, on ? '1' : '0'); } catch (e) { /* not persistable here */ }
+    }
+
+    var hideVotedParam = params.get('hide-voted');
+    state.hideVoted = loadHideVoted();
+    if (hideVotedParam === '1') state.hideVoted = true;
+    else if (hideVotedParam === '0') state.hideVoted = false;
+
+    function setHideVoted(on) {
+      state.hideVoted = on;
+      saveHideVoted(on);
+      var box = document.getElementById('hide-voted');
+      if (box) box.checked = on;
+      render();
+    }
+
+    function isVoted(p) {
+      return p.myVote === 'yes' || p.myVote === 'no';
     }
 
     // ------------------------------------------------------------------
@@ -354,6 +397,7 @@
 
     var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
     var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
+    var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
 
     function errorHtml(message) {
@@ -387,7 +431,7 @@
         }
       }
       document.getElementById('filter-row').className =
-        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+        'mt-2 flex items-center gap-3' + (state.tab === 'inbox' ? '' : ' hidden');
     }
 
     function renderRefreshButton() {
@@ -411,7 +455,16 @@
       var filtered = state.filter
         ? proposals.filter(function (p) { return p.appSlug === state.filter; })
         : proposals;
+      if (state.hideVoted) {
+        filtered = filtered.filter(function (p) { return !isVoted(p); });
+      }
       if (!filtered.length) {
+        if (proposals.length && state.hideVoted) {
+          return emptyHtml(
+            'Nothing left to vote on',
+            'You already voted on every open proposal here. Show voted proposals to see them again.',
+            SHOW_VOTED_CTA);
+        }
         return emptyHtml(
           proposals.length ? 'Nothing from this app' : "You're all caught up",
           proposals.length
@@ -470,7 +523,10 @@
       state.errorInbox = null;
       if (force) state.inbox = null;
       render();
-      return api('/api/inbox' + (DEMO ? '?demo=1' : ''))
+      var query = [];
+      if (DEMO) query.push('demo=1');
+      if (ALL_VOTED) query.push('allvoted=1');
+      return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
           fillFilter();
@@ -569,6 +625,8 @@
           state.filter = '';
           document.getElementById('app-filter').value = '';
           render();
+        } else if (action === 'show-voted') {
+          setHideVoted(false);
         } else if (action === 'go-inbox') {
           state.tab = 'inbox';
           render();
@@ -583,6 +641,10 @@
     document.getElementById('app-filter').addEventListener('change', function (event) {
       state.filter = event.target.value;
       render();
+    });
+
+    document.getElementById('hide-voted').addEventListener('change', function (event) {
+      setHideVoted(event.target.checked);
     });
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
@@ -615,6 +677,8 @@
     // ------------------------------------------------------------------
 
     render();
+    var hideVotedBox = document.getElementById('hide-voted');
+    if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
     if (state.tab === 'votes') loadVotes(true); else loadInbox(true);
   })();
   </script>
