@@ -465,9 +465,13 @@ function demoInbox() {
   const D = 24 * H;
   // Two of the five are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
-  // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries seven yes voters
-  // (required 11, so 4 needed) and must stay the MOST votes-needed proposal:
-  // the default-order check expects it as the inbox's first card, and the
+  // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries
+  // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
+  // avatar row shows its max-5-then-"+N" case in previews and checks. With
+  // required 11 it needs 4 more votes, the most in the list, so it must stay
+  // the MOST votes-needed proposal: the default most-votes-needed-first order
+  // puts it on top (neededFirst breaks ties by fewest yes, so a tie here
+  // would not), and the default-order check expects it as the first card. The
   // header summary's "8 votes needed" depends on 4 + 3 + 1 across
   // demo-4/demo-2/demo-1.
   const proposals = [
@@ -483,7 +487,8 @@ function demoInbox() {
 
 // The demo payload, optionally with every proposal marked voted
 // (?allvoted=1) so the Hide voted toggle's empty state is reachable by the
-// declared checks. Staging fixture only.
+// declared checks, or every proposal marked merged (?allmerged=1) for the
+// Hide merged toggle the same way. Staging fixtures only.
 function demoInboxPayload(req) {
   const demo = demoInbox();
   // Same ordering the production inbox uses, so the demo list's default
@@ -494,6 +499,9 @@ function demoInboxPayload(req) {
     for (const p of demo.proposals) {
       if (!p.myVote) p.myVote = 'yes';
     }
+  }
+  if (req.query.allmerged === '1') {
+    for (const p of demo.proposals) p.status = 'merged';
   }
   return demo;
 }
