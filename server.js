@@ -428,9 +428,14 @@ function demoInbox() {
   // Two of the five are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
   // null (an open proposal, Voting), 'merging' and 'merged'.
+  //
+  // demo-2 sits at 3 of 4 yes votes, so it is the list's single
+  // one-vote-away proposal and the One vote away chip always has exactly
+  // one match in previews. demo-4 takes the votes demo-2 gave up so the
+  // totals still answer the header summary check: 5 open, 8 votes needed.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H),
-    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 0, 2, 3, null, 8 * H),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 3, 0, 4, null, 3 * H),
+    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 0, 2, 5, null, 8 * H),
     mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no'),
     mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes'),
     mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D),
