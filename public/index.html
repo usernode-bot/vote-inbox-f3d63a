@@ -180,6 +180,13 @@
     // toggle. Neither is ever sent without demo data.
     var ALL_VOTED = params.get('allvoted') === '1';
     var ALL_MERGED = params.get('allmerged') === '1';
+    // Staging-check fixture for the confirm-before-No flow: ?tap-no=1 asks
+    // the demo inbox to click the demo-4 card's "No" button once loaded (the
+    // real button, through the real delegated click handler), and
+    // ?confirm-no=1 then presses "No, reject" in the dialog that opens.
+    // Neither is ever sent without demo data.
+    var TAP_NO = params.get('tap-no') === '1';
+    var CONFIRM_NO = params.get('confirm-no') === '1';
     // ?failvote=1 (demo only) makes the NEXT vote cast on this load fail the
     // way an offline device does: the request never leaves the page, the
     // card keeps its vote mark and a Retry pill appears. Gives checks and
@@ -1331,6 +1338,7 @@
         .then(function () {
           state.loadingInbox = false;
           render();
+          maybeTapNo();
           if (state.queuedInbox) {
             state.queuedInbox = false;
             loadInbox(true);
@@ -1542,6 +1550,126 @@
       }).then(render);
     }
 
+    // Confirm before a No vote: rejecting is the direction worth a second
+    // look (it can sink a proposal), so the card's "No" button opens a small
+    // confirm first; "Yes" stays one-tap. The native kit's alert carries the
+    // dialog where it is available (native styling, keyboard avoidance);
+    // standalone or kit-less loads get a plain in-app dialog with the same
+    // two answers. The kit both invokes the button's handler and resolves
+    // its promise, so confirmNo guards against casting twice.
+    function openNoConfirm(sessionId) {
+      var p = findProposal(sessionId);
+      if (!p) return;
+      var title = 'Reject this proposal?';
+      var message = 'Your No vote on "' + p.title + '" will be recorded right away.';
+      var confirmed = false;
+      var confirmNo = function () {
+        if (confirmed) return;
+        confirmed = true;
+        castVote(sessionId, 'no');
+      };
+      if (window.unNative && unNative.alert) {
+        try {
+          var answered = unNative.alert({
+            title: title,
+            message: message,
+            buttons: [
+              { label: 'No, reject', style: 'destructive', handler: confirmNo },
+              { label: 'Cancel', style: 'cancel' },
+            ],
+          });
+          if (answered && typeof answered.then === 'function') {
+            answered.then(function (res) {
+              var label = res && res.button;
+              if (label && typeof label === 'object') label = label.label;
+              if (label === 'No, reject') confirmNo();
+            }).catch(function () { /* dismissed; nothing to cast */ });
+          }
+          return;
+        } catch (e) { /* fall through to the plain dialog */ }
+      }
+      fallbackNoConfirm(title, message, confirmNo);
+    }
+
+    // Plain in-app confirm for loads without the native kit. Same two
+    // answers, same wording; the backdrop tap and Cancel both dismiss.
+    function fallbackNoConfirm(title, message, confirmNo) {
+      var overlay = document.createElement('div');
+      overlay.setAttribute('data-no-confirm', '');
+      overlay.setAttribute('role', 'alertdialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-label', title);
+      overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6';
+      overlay.innerHTML = '<div class="w-64 rounded-2xl bg-white p-4 text-center shadow-xl dark:bg-zinc-900">'
+        + '<p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">' + esc(title) + '</p>'
+        + '<p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">' + esc(message) + '</p>'
+        + '<div class="mt-3 flex flex-col gap-2">'
+        + '<button data-no-confirm-reject class="min-h-9 rounded-xl bg-red-600 py-2 text-sm font-semibold text-white active:scale-95">No, reject</button>'
+        + '<button data-no-confirm-cancel class="min-h-9 rounded-xl bg-zinc-100 py-2 text-sm font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200">Cancel</button>'
+        + '</div></div>';
+      var close = function () {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      };
+      overlay.addEventListener('click', function (event) {
+        if (event.target.closest('[data-no-confirm-reject]')) { close(); confirmNo(); }
+        else if (event.target.closest('[data-no-confirm-cancel]') || event.target === overlay) close();
+      });
+      document.body.appendChild(overlay);
+    }
+
+    // First button whose visible text matches exactly, whatever surface
+    // rendered it (kit alert or fallback dialog). Used by the staging tap
+    // hook below to press the dialog's answer.
+    function findButtonByText(text) {
+      var buttons = document.querySelectorAll('button');
+      for (var i = 0; i < buttons.length; i++) {
+        if (buttons[i].textContent.trim() === text) return buttons[i];
+      }
+      return null;
+    }
+
+    // Staging demo hook: ?demo=1&tap-no=1 clicks the demo-4 card's "No"
+    // button once the demo inbox has rendered — the real button, through the
+    // real delegated click handler — so the confirm-before-No dialog is
+    // reachable by a check. ?confirm-no=1 then presses "No, reject" in the
+    // dialog that opens, casting the vote for real through the demo-mode
+    // POST. Any earlier demo vote on demo-4 is cleared first so repeated
+    // check runs always reach the dialog. Demo only.
+    var TAP_NO_SESSION = 'demo-4';
+    var tapNoDone = false;
+    function maybeTapNo() {
+      if (!DEMO || !TAP_NO || tapNoDone) return;
+      tapNoDone = true;
+      var p = findProposal(TAP_NO_SESSION);
+      if (!p) return;
+      api('/api/unvote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ sessionId: TAP_NO_SESSION }),
+      }).catch(function () {}).then(function () {
+        p.myVote = null;
+        render();
+        var buttons = document.querySelectorAll('[data-vote="no"]');
+        for (var i = 0; i < buttons.length; i++) {
+          if (buttons[i].getAttribute('data-session') === TAP_NO_SESSION) {
+            buttons[i].click();
+            break;
+          }
+        }
+        if (!CONFIRM_NO) return;
+        var tries = 0;
+        var timer = setInterval(function () {
+          var confirmBtn = findButtonByText('No, reject');
+          if (confirmBtn) {
+            clearInterval(timer);
+            confirmBtn.click();
+          } else if (++tries > 40) {
+            clearInterval(timer);
+          }
+        }, 100);
+      });
+    }
+
     // Staging demo hook: ?demo=1&cast=<sessionId>:<choice> casts one vote
     // automatically once the demo inbox is loaded, giving checks and
     // reviewers a stable URL for the vote → toast → Undo flow. Demo only.
@@ -1617,7 +1745,13 @@
         return;
       }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
-      if (voteBtn) castVote(voteBtn.getAttribute('data-session'), voteBtn.getAttribute('data-vote'));
+      if (voteBtn) {
+        var voteSession = voteBtn.getAttribute('data-session');
+        var voteChoice = voteBtn.getAttribute('data-vote');
+        // "No" asks first; "Yes" stays one-tap.
+        if (voteChoice === 'no') openNoConfirm(voteSession);
+        else castVote(voteSession, voteChoice);
+      }
       var retryBtn = target.closest ? target.closest('[data-retry-vote]') : null;
       if (retryBtn) retryVote(retryBtn.getAttribute('data-session'));
       var copyBtn = target.closest ? target.closest('[data-copy-link]') : null;

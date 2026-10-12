@@ -179,6 +179,21 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.no-confirm-dialog",
+      "name": "Tapping No asks for confirmation before rejecting",
+      "path": "/?demo=1&tap-no=1",
+      "expectText": "No, reject",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.no-confirm-cast",
+      "name": "Confirming No, reject records the vote",
+      "path": "/?demo=1&tap-no=1&confirm-no=1",
+      "expectText": "You voted no",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "inbox.title-more",
       "name": "Long titles clamp to two lines with a More control",
       "path": "/?demo=1",
