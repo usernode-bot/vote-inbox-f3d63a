@@ -372,6 +372,62 @@
     }
 
     // ------------------------------------------------------------------
+    // App filter preference. Persists in localStorage so the chosen app
+    // (and its display name, for the trigger label before the inbox loads)
+    // is restored when the app is next opened. Storage can be refused in
+    // an iframe — the filter then just doesn't persist. A saved slug the
+    // inbox no longer lists is dropped by syncFilter once data arrives.
+    // ------------------------------------------------------------------
+
+    var FILTER_KEY = 'vote-inbox:filter';
+
+    function loadFilter() {
+      try {
+        var v = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null');
+        if (v && typeof v.slug === 'string' && v.slug) return v;
+      } catch (e) { /* fall through */ }
+      return null;
+    }
+
+    function saveFilter(v) {
+      try {
+        if (v && v.slug) localStorage.setItem(FILTER_KEY, JSON.stringify(v));
+        else localStorage.removeItem(FILTER_KEY);
+      } catch (e) { /* not persistable here */ }
+    }
+
+    var savedFilter = loadFilter();
+    if (savedFilter) {
+      state.filter = savedFilter.slug;
+      state.filterName = savedFilter.name || '';
+    }
+
+    // One-load cleanup for the set-filter hook below: the reloaded page has
+    // restored the preference into state, then empties it again, so the
+    // hook leaves storage the way it found it (a check run shares one
+    // browser profile across routes; later routes must not inherit it).
+    if (params.get('clear-set-filter') === '1') saveFilter(null);
+
+    // Staging-check hook: ?set-filter=<slug> writes the filter preference
+    // the way a pick in the dropdown would, then reloads without the
+    // parameter, so one check URL observes set → reload → restore.
+    // ?set-filter-name= optionally supplies the display name to save (a
+    // real pick knows it from the app list; a check URL passes it along so
+    // the restored trigger label reads the same with and without data).
+    // The plain routes never touch the preference from a parameter.
+    var setFilterParam = params.get('set-filter');
+    if (setFilterParam) {
+      saveFilter({ slug: setFilterParam, name: params.get('set-filter-name') || '' });
+      var remainingParams = new URLSearchParams(params);
+      remainingParams.delete('set-filter');
+      remainingParams.delete('set-filter-name');
+      remainingParams.set('clear-set-filter', '1');
+      var remainingQ = remainingParams.toString();
+      location.replace(location.pathname + (remainingQ ? '?' + remainingQ : '') + location.hash);
+      return;
+    }
+
+    // ------------------------------------------------------------------
     // Rendering. Class strings are whole literals so the Tailwind compiler
     // extracts them from this file.
     // ------------------------------------------------------------------
@@ -1240,6 +1296,7 @@
     function pickFilter(app) {
       state.filter = app ? app.slug : '';
       state.filterName = app ? app.name : '';
+      saveFilter(app ? { slug: state.filter, name: state.filterName } : null);
       closeFilter();
       render();
     }
@@ -1532,6 +1589,8 @@
         if (action === 'refresh') refreshCurrent();
         else if (action === 'clear-filter') {
           state.filter = '';
+          state.filterName = '';
+          saveFilter(null);
           render();
         } else if (action === 'show-voted') {
           setHideVoted(false);

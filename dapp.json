@@ -106,6 +106,14 @@
       "impact": ["public/index.html", "dapp.json"]
     },
     {
+      "id": "app-filter.persisted",
+      "name": "Chosen app filter is restored after a reload",
+      "path": "/?demo=1&set-filter=staging-demo-archive&set-filter-name=Staging%20Demo%20Archive",
+      "expectText": "Staging Demo Archive",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "inbox.title-search",
       "name": "Title search keeps only matching cards",
       "path": "/?demo=1&q=Keyboard",

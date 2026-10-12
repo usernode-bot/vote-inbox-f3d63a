@@ -435,6 +435,11 @@ function demoInbox() {
   const apps = [
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
+    // A third app with no open proposals, so nothing else on the screen can
+    // carry its name: the filter-persisted check's expectText only matches
+    // when the restored filter names this app in the trigger, and a tester
+    // landing on it sees the "Show all apps" empty state of a real filter.
+    { slug: 'staging-demo-archive', name: 'Staging Demo Archive', icon: '🗄️' },
   ];
   // Fake yes-voter identities for the cards' avatar row; "(demo)" in the
   // display name keeps them obviously made up, matching the seed rules.
