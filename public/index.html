@@ -352,13 +352,31 @@
         + esc(text) + '</span>';
     }
 
-    // Thin yes/no share bar under the title.
+    // Segmented yes/no share bar: green segment for the yes share, red for
+    // the no share, widths proportional to the raw counts; the counts sit
+    // beside the bar so the numbers stay readable and identity never rides
+    // on color alone. Empty grey track when there are no votes yet. Dark
+    // mode uses darker steps of the same hues so contrast holds on the dark
+    // card surface.
     function voteBar(p) {
       var total = p.yes + p.no;
-      var pct = total > 0 ? Math.round((p.yes * 100) / total) : 0;
-      return '<div class="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
+      var yesPct = total > 0 ? Math.round((p.yes * 100) / total) : 0;
+      var noPct = Math.max(0, 100 - yesPct);
+      var segments = '';
+      if (p.yes > 0) {
+        segments += '<div data-vote-segment="yes" class="h-full bg-emerald-500 dark:bg-emerald-600'
+          + (p.no > 0 ? ' mr-0.5' : '')
+          + '" style="width:' + yesPct + '%"></div>';
+      }
+      if (p.no > 0) {
+        segments += '<div data-vote-segment="no" class="h-full bg-red-500 dark:bg-red-600" style="width:' + noPct + '%"></div>';
+      }
+      return '<div class="flex items-center gap-2">'
+        + '<div data-vote-bar class="flex h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
         + ' aria-label="Yes ' + p.yes + ', No ' + p.no + '">'
-        + '<div class="h-full rounded-full bg-violet-500 transition-all" style="width:' + pct + '%"></div>'
+        + segments
+        + '</div>'
+        + '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no + '</span>'
         + '</div>';
     }
 
@@ -487,8 +505,8 @@
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
         + voteBar(p)
         + '<div class="flex items-center justify-between gap-2">'
-        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no
-        + (p.author ? ' · by @' + esc(p.author) : '') + '</p>'
+        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
+        + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
         + (p.url ? copyLinkButton(p) : '')
         + '</div>'
         + statusProgress(p)
@@ -526,7 +544,10 @@
         + '</div>'
         + '<div class="mt-3 h-3 w-full rounded bg-zinc-200 dark:bg-zinc-800"></div>'
         + '<div class="mt-2 h-3 w-2/3 rounded bg-zinc-200 dark:bg-zinc-800"></div>'
-        + '<div class="mt-4 h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="mt-4 flex items-center gap-2">'
+        + '<div class="h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="h-3 w-16 rounded bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '</div>'
         + '<div class="mt-4 h-10 w-full rounded-xl bg-zinc-200 dark:bg-zinc-800"></div>'
         + '</div>';
     }
