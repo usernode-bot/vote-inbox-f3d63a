@@ -85,6 +85,21 @@
       "expectText": "Nothing left to vote on",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.one-vote-chip",
+      "name": "One vote away chip filters to one-yes-short proposals",
+      "path": "/?demo=1&one-vote=1",
+      "expectSelector": "#one-vote-chip[aria-pressed=\"true\"]",
+      "expectText": "1 vote needed",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.one-vote-empty",
+      "name": "One vote away chip empties when nothing is one vote short",
+      "path": "/?demo=1&one-vote=1&hide-voted=1&allvoted=1",
+      "expectText": "None one vote away"
     }
   ]
 }

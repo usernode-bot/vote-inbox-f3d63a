@@ -139,6 +139,13 @@
           <input id="hide-voted" type="checkbox" class="un-switch">
         </label>
       </div>
+      <div id="one-vote-row" class="mt-2 flex">
+        <button id="one-vote-chip" data-one-vote-chip type="button" aria-pressed="false"
+          class="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition-colors active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+          <span>One vote away</span>
+          <span id="one-vote-count" class="hidden rounded-full px-1.5 py-0.5 text-xs font-bold"></span>
+        </button>
+      </div>
     </div>
 
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
@@ -164,6 +171,7 @@
       filter: '',
       filterName: '',
       hideVoted: false,
+      oneVoteAway: false,
       loadingInbox: false,
       loadingVotes: false,
       errorInbox: null,
@@ -264,6 +272,43 @@
     }
 
     // ------------------------------------------------------------------
+    // One-vote-away chip. Toggles a filter down to proposals that need
+    // exactly one more yes vote to reach their threshold, computed from
+    // the already-loaded inbox list (no extra fetch). Like the app filter
+    // it is transient, not a stored preference; ?one-vote=1 pre-activates
+    // it for one load (used by the staging checks).
+    // ------------------------------------------------------------------
+
+    var oneVoteParam = params.get('one-vote');
+    state.oneVoteAway = oneVoteParam === '1';
+    // The chip only makes sense on the inbox; opening the votes tab on a
+    // URL that carried ?one-vote=1 must not leave it secretly armed.
+    if (state.tab !== 'inbox') state.oneVoteAway = false;
+
+    function setOneVoteAway(on) {
+      state.oneVoteAway = on;
+      var chip = document.getElementById('one-vote-chip');
+      if (chip) chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+      render();
+    }
+
+    function isOneVoteAway(p) {
+      return p.needed === 1;
+    }
+
+    // How many loaded proposals are one yes vote short. Null until inbox
+    // data arrives so the badge stays hidden mid-refresh.
+    function oneVoteCount() {
+      var proposals = state.inbox && state.inbox.proposals;
+      if (!proposals) return null;
+      var n = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        if (isOneVoteAway(proposals[i])) n++;
+      }
+      return n;
+    }
+
+    // ------------------------------------------------------------------
     // Rendering. Class strings are whole literals so the Tailwind compiler
     // extracts them from this file.
     // ------------------------------------------------------------------
@@ -272,6 +317,13 @@
     var TAB_IDLE = 'text-zinc-500 dark:text-zinc-400';
     var BADGE_ACTIVE = 'bg-white/25 text-white';
     var BADGE_IDLE = 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300';
+
+    // One-vote-away chip: same violet filled treatment as the active tab
+    // when on, the quiet outlined pill when off.
+    var ONE_VOTE_CHIP_BASE = 'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors active:scale-95 ';
+    var ONE_VOTE_CHIP_ACTIVE = 'border-violet-600 bg-violet-600 text-white shadow-sm dark:border-violet-600 dark:bg-violet-600 dark:text-white';
+    var ONE_VOTE_CHIP_IDLE = 'border-zinc-300 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
+    var ONE_VOTE_BADGE_BASE = 'rounded-full px-1.5 py-0.5 text-xs font-bold ';
 
     var FILTER_TRIGGER_IDLE = 'flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
     var FILTER_TRIGGER_ACTIVE = 'flex w-full items-center justify-between gap-2 rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
@@ -533,6 +585,7 @@
     var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
     var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
     var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
+    var SHOW_ALL_CTA = '<button data-action="one-vote-off" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show every proposal</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
 
     function errorHtml(message) {
@@ -567,6 +620,32 @@
       }
       document.getElementById('filter-row').className =
         'mt-2 flex items-center gap-3' + (state.tab === 'inbox' ? '' : ' hidden');
+      renderOneVoteChip();
+    }
+
+    // The One vote away chip: pressed state, and a count of how many
+    // loaded proposals are one yes vote short. Hidden with the rest of the
+    // filter row on the My Votes tab.
+    function renderOneVoteChip() {
+      var row = document.getElementById('one-vote-row');
+      var chip = document.getElementById('one-vote-chip');
+      var countEl = document.getElementById('one-vote-count');
+      if (!row || !chip || !countEl) return;
+      row.className = 'mt-2 flex' + (state.tab === 'inbox' ? '' : ' hidden');
+      var active = state.oneVoteAway;
+      chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+      chip.className = ONE_VOTE_CHIP_BASE + (active ? ONE_VOTE_CHIP_ACTIVE : ONE_VOTE_CHIP_IDLE);
+      var count = oneVoteCount();
+      // Badge follows the tab-badge convention: show a non-zero count, stay
+      // hidden until inbox data arrives or when nothing is one vote short.
+      if (count != null && count > 0) {
+        countEl.textContent = count;
+        countEl.className = ONE_VOTE_BADGE_BASE
+          + (active ? BADGE_ACTIVE : BADGE_IDLE);
+        countEl.classList.remove('hidden');
+      } else {
+        countEl.className = ONE_VOTE_BADGE_BASE + 'hidden';
+      }
     }
 
     function renderRefreshButton() {
@@ -593,8 +672,18 @@
       if (state.hideVoted) {
         filtered = filtered.filter(function (p) { return !isVoted(p); });
       }
+      if (state.oneVoteAway) {
+        filtered = filtered.filter(isOneVoteAway);
+      }
       if (!filtered.length) {
-        if (proposals.length && state.hideVoted) {
+        var narrowed = proposals.length && (state.filter || state.hideVoted || state.oneVoteAway);
+        if (narrowed && state.oneVoteAway) {
+          return emptyHtml(
+            'None one vote away',
+            'No open proposal here is exactly one yes vote from passing. Turn the chip off to see everything.',
+            SHOW_ALL_CTA);
+        }
+        if (narrowed && state.hideVoted) {
           return emptyHtml(
             'Nothing left to vote on',
             'You already voted on every open proposal here. Show voted proposals to see them again.',
@@ -1040,6 +1129,8 @@
           render();
         } else if (action === 'show-voted') {
           setHideVoted(false);
+        } else if (action === 'one-vote-off') {
+          setOneVoteAway(false);
         } else if (action === 'go-inbox') {
           state.tab = 'inbox';
           render();
@@ -1062,6 +1153,10 @@
 
     document.getElementById('hide-voted').addEventListener('change', function (event) {
       setHideVoted(event.target.checked);
+    });
+
+    document.getElementById('one-vote-chip').addEventListener('click', function () {
+      setOneVoteAway(!state.oneVoteAway);
     });
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
