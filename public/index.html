@@ -187,6 +187,12 @@
     // Neither is ever sent without demo data.
     var TAP_NO = params.get('tap-no') === '1';
     var CONFIRM_NO = params.get('confirm-no') === '1';
+    // ?failvote=1 (demo only) makes the NEXT vote cast on this load fail the
+    // way an offline device does: the request never leaves the page, the
+    // card keeps its vote mark and a Retry pill appears. Gives checks and
+    // reviewers a deterministic URL for the offline-retry state; production
+    // never honours it.
+    var FAILVOTE = DEMO && params.get('failvote') === '1';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -204,8 +210,16 @@
       errorInbox: null,
       errorVotes: null,
       pending: {},
+      // In-memory retry queue for votes that failed offline: sessionId ->
+      // { choice, payload, snapshot }. Never persisted; a page reload
+      // clears it and the next inbox load shows the platform's truth.
+      retryQueue: {},
       queuedInbox: false,
       queuedVotes: false,
+      // Session ids whose card title the user expanded with More. A re-render
+      // (a vote, a filter change) keeps those titles expanded; not persisted,
+      // a reload starts collapsed again.
+      expandedTitles: {},
     };
 
     // ------------------------------------------------------------------
@@ -574,6 +588,13 @@
 
     var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
 
+    // Card title, clamped and expanded spellings (whole literals for the
+    // Tailwind compiler). The clamped one is line-clamp-2; enhanceTitles()
+    // measures overflow against it to decide whether a More control is due.
+    var TITLE_CLAMPED = 'line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100';
+    var TITLE_EXPANDED = 'text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100';
+    var TITLE_TOGGLE = 'self-start rounded-full text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300';
+
     // Copy link: a quiet ghost button on each proposal card. Shown only when
     // the server could build the proposal's canonical platform URL.
     var COPY_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Copy link</span>';
@@ -627,8 +648,24 @@
       }
     }
 
+    // Retry pill for a card whose vote failed offline and is queued
+    // in-memory. Amber warning treatment, matching the demo banner and the
+    // votes-needed pill; tapping the button resends the queued vote as-is.
+    function retryRow(sessionId) {
+      if (!state.retryQueue[sessionId]) return '';
+      var busy = !!state.pending[sessionId];
+      return '<div data-retry-row class="flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">'
+        + '<span class="min-w-0 text-xs font-medium text-amber-700 dark:text-amber-300">Vote not sent: you were offline</span>'
+        + '<button data-retry-vote data-session="' + esc(sessionId) + '"'
+        + ' aria-label="Retry sending this vote" title="Send this vote again"'
+        + ' class="shrink-0 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-700 transition-transform active:scale-95 disabled:opacity-50 dark:text-amber-300"'
+        + (busy ? ' disabled' : '') + '>Retry vote</button>'
+        + '</div>';
+    }
+
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
+      var titleExpanded = !!state.expandedTitles[p.sessionId];
       var age = relTime(p.proposedAt);
       var ageHtml = age
         ? '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
@@ -639,7 +676,8 @@
       if (voted) {
         actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
           + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>'
-          + 'You voted ' + p.myVote + '</div>';
+          + 'You voted ' + p.myVote + '</div>'
+          + retryRow(p.sessionId);
       } else {
         var busy = state.pending[p.sessionId];
         actions = '<div class="flex gap-2">'
@@ -660,7 +698,7 @@
         + '</span>'
         + neededPill(p)
         + '</div>'
-        + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
+        + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">' + esc(p.title) + '</h2>'
         + voteBar(p)
         + voterAvatarRow(p)
         + voterNamesRow(p)
@@ -672,6 +710,52 @@
         + statusProgress(p)
         + actions
         + '</article>';
+    }
+
+    // Long titles: every card title clamps to two lines, so a longer one
+    // hides its tail behind the ellipsis. After each render, measure each
+    // card title; one that overflows its clamp gets a "More" control
+    // appended (an already-expanded one gets "Less", built with the card).
+    // A title that fits on two lines gets nothing. Tapping toggles the
+    // clamp in place, so nothing else on the card moves.
+    function enhanceTitles() {
+      var cards = document.querySelectorAll('#view [data-proposal-card]');
+      for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        var h2 = card.querySelector('[data-proposal-title]');
+        if (!h2 || card.querySelector('[data-title-toggle]')) continue;
+        var sessionId = card.getAttribute('data-session-id');
+        var expanded = !!state.expandedTitles[sessionId];
+        // Overflow check: with line-clamp-2 the element shows two lines
+        // (clientHeight) while scrollHeight still reports the full text
+        // height. The +1 slack ignores sub-pixel rounding.
+        if (!expanded && h2.scrollHeight <= h2.clientHeight + 1) continue;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-title-toggle', '');
+        btn.setAttribute('data-session', sessionId);
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        btn.className = TITLE_TOGGLE;
+        btn.textContent = expanded ? 'Less' : 'More';
+        h2.insertAdjacentElement('afterend', btn);
+      }
+    }
+
+    // More/Less tap on a clamped title: flip the clamp on that one title in
+    // place (no full re-render, so no scroll jump) and remember the choice
+    // for the session so a later re-render keeps it expanded.
+    function toggleTitle(btn) {
+      var sessionId = btn.getAttribute('data-session');
+      var card = btn.closest('[data-proposal-card]');
+      var h2 = card ? card.querySelector('[data-proposal-title]') : null;
+      if (!sessionId || !card || !h2) return;
+      var expanded = !!state.expandedTitles[sessionId];
+      if (expanded) delete state.expandedTitles[sessionId];
+      else state.expandedTitles[sessionId] = true;
+      expanded = !expanded;
+      h2.className = expanded ? TITLE_EXPANDED : TITLE_CLAMPED;
+      btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      btn.textContent = expanded ? 'Less' : 'More';
     }
 
     function voteRow(v) {
@@ -930,6 +1014,7 @@
       renderUpdated();
       document.getElementById('view').innerHTML =
         state.tab === 'inbox' ? renderInbox() : renderVotes();
+      enhanceTitles();
     }
 
     // ------------------------------------------------------------------
@@ -1138,7 +1223,9 @@
         .then(function (data) {
           state.inbox = data;
           state.inboxLoadedAt = new Date().toISOString();
+          reapplyRetryQueue();
           maybeAutoCast();
+          maybeAutoExpand();
         })
         .catch(function (err) {
           state.errorInbox = err.message || 'Could not load proposals.';
@@ -1196,6 +1283,40 @@
       return null;
     }
 
+    // Classify a failed vote request. "Offline" means the request never got
+    // an HTTP answer: the browser reports the device offline, or the fetch
+    // itself rejected (an error carrying no HTTP .status — airplane mode,
+    // no connection, the request never leaving the page). A refusal the
+    // server DID send (4xx/5xx) is not an offline failure and rolls back
+    // exactly as before.
+    function isOfflineFailure(err) {
+      if (navigator.onLine === false) return true;
+      return !err || typeof err.status !== 'number';
+    }
+
+    // ?failvote=1 simulation: reject exactly the way a fetch does when the
+    // device is offline — no HTTP status at all.
+    function simulatedOfflineError() {
+      var err = new Error('Failed to fetch');
+      err.name = 'TypeError';
+      return err;
+    }
+
+    function votePayload(sessionId, choice, p, snapshot) {
+      return {
+        sessionId: sessionId,
+        choice: choice,
+        appSlug: p.appSlug,
+        appName: p.appName,
+        title: p.title,
+        proposalId: p.proposalId,
+        yes: snapshot.yes,
+        no: snapshot.no,
+        required: p.required,
+        demo: !!(state.inbox && state.inbox.demo),
+      };
+    }
+
     function castVote(sessionId, choice) {
       var p = findProposal(sessionId);
       if (!p || state.pending[sessionId]) return;
@@ -1205,22 +1326,20 @@
       p.myVote = choice;
       if (choice === 'yes') p.yes += 1; else p.no += 1;
       render();
-      api('/api/vote', {
-        method: 'POST',
-        headers: headers({ 'content-type': 'application/json' }),
-        body: JSON.stringify({
-          sessionId: sessionId,
-          choice: choice,
-          appSlug: p.appSlug,
-          appName: p.appName,
-          title: p.title,
-          proposalId: p.proposalId,
-          yes: snapshot.yes,
-          no: snapshot.no,
-          required: p.required,
-          demo: !!(state.inbox && state.inbox.demo),
-        }),
-      }).then(function () {
+      var payload = votePayload(sessionId, choice, p, snapshot);
+      var request;
+      if (FAILVOTE && state.inbox && state.inbox.demo) {
+        // Demo fixture only: one simulated offline failure per load.
+        FAILVOTE = false;
+        request = Promise.reject(simulatedOfflineError());
+      } else {
+        request = api('/api/vote', {
+          method: 'POST',
+          headers: headers({ 'content-type': 'application/json' }),
+          body: JSON.stringify(payload),
+        });
+      }
+      request.then(function () {
         state.votes = null; // history refetches next time the tab opens
         toast('Vote recorded', {
           duration: 5000,
@@ -1230,14 +1349,78 @@
           },
         });
       }).catch(function (err) {
-        p.myVote = snapshot.myVote;
-        p.yes = snapshot.yes;
-        p.no = snapshot.no;
-        toast('Vote failed: ' + (err.message || 'try again'));
+        if (isOfflineFailure(err)) {
+          // Offline: keep the card marked and queue an in-memory retry.
+          // The vote never reached the platform, so My Votes stays without
+          // it until a retry succeeds.
+          state.retryQueue[sessionId] = { choice: choice, payload: payload, snapshot: snapshot };
+          toast('Vote not sent: you seem offline. Tap Retry on the card.');
+        } else {
+          p.myVote = snapshot.myVote;
+          p.yes = snapshot.yes;
+          p.no = snapshot.no;
+          toast('Vote failed: ' + (err.message || 'try again'));
+        }
       }).then(function () {
         delete state.pending[sessionId];
         render();
       });
+    }
+
+    // Retry a vote that failed offline: resend the exact same request. On
+    // success the card's optimistic state is now the platform's truth, the
+    // pill goes away and My Votes refetches. Still offline: the card stays
+    // marked and queued. A server refusal (the platform answered and said
+    // no) rolls the card back like any other failed vote.
+    function retryVote(sessionId) {
+      var entry = state.retryQueue[sessionId];
+      var p = findProposal(sessionId);
+      if (!entry || !p || state.pending[sessionId]) return;
+      state.pending[sessionId] = true;
+      render();
+      api('/api/vote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify(entry.payload),
+      }).then(function () {
+        delete state.retryQueue[sessionId];
+        state.votes = null; // history refetches next time the tab opens
+        toast('Vote recorded', {
+          duration: 5000,
+          action: {
+            label: 'Undo',
+            handler: function () { undoVote(sessionId, entry.choice, entry.snapshot); },
+          },
+        });
+      }).catch(function (err) {
+        if (isOfflineFailure(err)) {
+          toast('Still offline. Your vote stays on the card to retry.');
+        } else {
+          delete state.retryQueue[sessionId];
+          p.myVote = entry.snapshot.myVote;
+          p.yes = entry.snapshot.yes;
+          p.no = entry.snapshot.no;
+          toast('Vote failed: ' + (err.message || 'try again'));
+        }
+      }).then(function () {
+        delete state.pending[sessionId];
+        render();
+      });
+    }
+
+    // Reapply the in-memory retry queue to a freshly loaded inbox: a card
+    // whose vote never reached the platform stays marked voted, with its
+    // optimistic count restored, until a retry succeeds. Entries whose
+    // proposal is no longer listed are dropped: there is no card left to
+    // retry them on.
+    function reapplyRetryQueue() {
+      for (var sessionId in state.retryQueue) {
+        var entry = state.retryQueue[sessionId];
+        var p = findProposal(sessionId);
+        if (!p) { delete state.retryQueue[sessionId]; continue; }
+        p.myVote = entry.choice;
+        if (entry.choice === 'yes') p.yes += 1; else p.no += 1;
+      }
     }
 
     // Undo a just-cast vote: drop this app's record of it and roll the card
@@ -1404,6 +1587,19 @@
         });
     }
 
+    // Staging demo hook: ?demo=1&expand=<sessionId> expands one proposal's
+    // clamped title automatically once the demo inbox is loaded, the same
+    // trick ?cast= uses for the vote flow: it gives the checks (which read
+    // the page but cannot tap) and reviewers a stable URL for the expanded
+    // More/Less state. Demo only; a session id not in the list does nothing.
+    function maybeAutoExpand() {
+      if (!DEMO) return;
+      var id = params.get('expand');
+      if (!id) return;
+      if (!findProposal(id)) return;
+      state.expandedTitles[String(id)] = true;
+    }
+
     // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------
@@ -1436,6 +1632,11 @@
         }
         return;
       }
+      var titleBtn = target.closest ? target.closest('[data-title-toggle]') : null;
+      if (titleBtn) {
+        toggleTitle(titleBtn);
+        return;
+      }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
       if (voteBtn) {
         var voteSession = voteBtn.getAttribute('data-session');
@@ -1444,6 +1645,8 @@
         if (voteChoice === 'no') openNoConfirm(voteSession);
         else castVote(voteSession, voteChoice);
       }
+      var retryBtn = target.closest ? target.closest('[data-retry-vote]') : null;
+      if (retryBtn) retryVote(retryBtn.getAttribute('data-session'));
       var copyBtn = target.closest ? target.closest('[data-copy-link]') : null;
       if (copyBtn) copyProposalLink(copyBtn);
     });
