@@ -70,6 +70,14 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "my-votes.copy-summary",
+      "name": "My Votes offers a copyable summary naming voted proposals",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "#copy-summary-btn[data-summary*='Staging demo proposal: weekly summary email']",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "inbox.voter-avatars",
       "name": "Yes-voter avatar circles render on cards with yes votes",
       "path": "/?demo=1",
