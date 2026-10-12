@@ -79,6 +79,15 @@
       "impact": ["public/index.html", "dapp.json"]
     },
     {
+      "id": "inbox.vote-share-bar",
+      "name": "Proposal cards show proportional yes/no vote bar",
+      "path": "/?demo=1",
+      "expectSelector": "[data-vote-bar]",
+      "expectText": "Yes 1 · No 0",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "inbox.hide-voted",
       "name": "Hide voted toggle empties an all-voted inbox",
       "path": "/?demo=1&hide-voted=1&allvoted=1",
