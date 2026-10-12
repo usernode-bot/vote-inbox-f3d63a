@@ -70,6 +70,15 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.voter-avatars",
+      "name": "Yes-voter avatar circles render on cards with yes votes",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card] [data-voter-avatar]",
+      "expectText": "+2",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "app-filter.trigger",
       "name": "App filter trigger renders",
       "path": "/?demo=1",
@@ -77,6 +86,15 @@
       "expectText": "All apps",
       "visual": true,
       "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.vote-share-bar",
+      "name": "Proposal cards show proportional yes/no vote bar",
+      "path": "/?demo=1",
+      "expectSelector": "[data-vote-bar]",
+      "expectText": "Yes 1 · No 0",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
       "id": "inbox.hide-voted",
@@ -102,6 +120,21 @@
       "expectSelector": "[data-action=\"clear-search\"]",
       "expectText": "No proposals match",
       "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-default",
+      "name": "Default inbox order is most votes needed first",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4']:first-child",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-newest",
+      "name": "Newest-first sort puts the most recent proposal on top",
+      "path": "/?demo=1&sort=newest",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2']:first-child",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
     }
   ]
 }
