@@ -94,6 +94,21 @@
       "expectText": "Nothing left to vote on",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-default",
+      "name": "Default inbox order is most votes needed first",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4']:first-child",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-newest",
+      "name": "Newest-first sort puts the most recent proposal on top",
+      "path": "/?demo=1&sort=newest",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2']:first-child",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
     }
   ]
 }
