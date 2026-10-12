@@ -252,6 +252,39 @@ function proposalUrl(appSlug, proposalId) {
     + '/dev/proposals/' + encodeURIComponent(proposalId);
 }
 
+// Display names of the people who already voted yes, when the platform's
+// proposal payload carries them. Spellings and element shapes vary across
+// platform versions, so this stays tolerant and returns plain strings —
+// or null when the payload has no voter names, which is the common case
+// and renders nothing on the card.
+function yesVoterNames(raw) {
+  const namesFrom = (list) => {
+    if (!Array.isArray(list)) return null;
+    const names = [];
+    for (const item of list) {
+      const name = typeof item === 'string' && item.trim()
+        ? item.trim()
+        : item && typeof item === 'object'
+          ? [item.username, item.name, item.user]
+            .find((v) => typeof v === 'string' && v.trim())
+          : null;
+      if (name) names.push(name.trim());
+    }
+    return names.length ? [...new Set(names)] : null;
+  };
+  const direct = ['yes_voters', 'yesVoters', 'voters_yes', 'voted_yes_by', 'yes_by']
+    .map((key) => namesFrom(raw[key]))
+    .find(Boolean);
+  if (direct) return direct;
+  // A combined voters list: keep only the entries marked yes.
+  if (Array.isArray(raw.voters)) {
+    const yesEntries = raw.voters.filter(
+      (v) => v && typeof v === 'object' && v.choice === 'yes');
+    if (yesEntries.length) return namesFrom(yesEntries);
+  }
+  return null;
+}
+
 // Promoted (open, up-for-vote) proposals for one app. The platform's field
 // spellings are normalised here so the frontend deals with one shape.
 function normalizeProposal(raw, appItem) {
@@ -271,6 +304,8 @@ function normalizeProposal(raw, appItem) {
   // When the proposal was made, for the relative-age label on cards.
   const proposedAt = [raw.proposed_at, raw.proposedAt, raw.created_at, raw.createdAt]
     .find((v) => typeof v === 'string' && v) || null;
+  // Who already voted yes, when the platform sends voter names.
+  const yesVoters = yesVoterNames(raw);
   return {
     sessionId: String(sessionId),
     proposalId,
@@ -280,6 +315,7 @@ function normalizeProposal(raw, appItem) {
       : typeof raw.username === 'string' ? raw.username : null,
     status: typeof raw.status === 'string' ? raw.status : null,
     eta: typeof raw.eta === 'string' ? raw.eta : null,
+    yesVoters,
     proposedAt,
     appSlug: appItem.slug,
     appName: appItem.name,
@@ -405,7 +441,7 @@ function demoInbox() {
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
   ];
-  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote) => ({
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, yesVoters) => ({
     sessionId,
     proposalId,
     url: proposalUrl(slug, proposalId),
@@ -421,19 +457,22 @@ function demoInbox() {
     no,
     required,
     needed: required != null ? Math.max(0, required - yes) : null,
+    yesVoters: yesVoters || null,
     myVote: myVote || null,
   });
   const H = 3600 * 1000;
   const D = 24 * H;
   // Two of the five are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
-  // null (an open proposal, Voting), 'merging' and 'merged'.
+  // null (an open proposal, Voting), 'merging' and 'merged'. Every proposal
+  // with yes votes carries matching fake yes-voter names, so the voters row
+  // is reviewable and checkable on each card.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H, null, ['staging-demo-alice']),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 0, 2, 3, null, 8 * H),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no'),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes'),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no', ['staging-demo-alice', 'staging-demo-ben', 'staging-demo-cara']),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', ['staging-demo-alice', 'staging-demo-ben', 'staging-demo-cara', 'staging-demo-dev']),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, ['staging-demo-alice', 'staging-demo-ben']),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }
