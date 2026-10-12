@@ -155,6 +155,10 @@
     // every proposal is already voted on, so the "nothing left" state is
     // reachable by a check. Never sent without demo data.
     var ALL_VOTED = params.get('allvoted') === '1';
+    // Staging-check fixture: ?openfilter=1 opens the app filter dropdown on
+    // load, so a check can assert on the list without clicking. Never sent
+    // without demo data.
+    var OPEN_FILTER = params.get('openfilter') === '1';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -651,6 +655,20 @@
       return (state.inbox && state.inbox.apps) || [];
     }
 
+    // Per-app open counts for the filter list, tallied from the loaded
+    // inbox proposals (no extra request). Counts every loaded proposal,
+    // regardless of the current filter or the Hide voted switch: voted
+    // proposals are still open.
+    function filterCounts() {
+      var counts = {};
+      var proposals = (state.inbox && state.inbox.proposals) || [];
+      for (var i = 0; i < proposals.length; i++) {
+        var slug = proposals[i].appSlug;
+        counts[slug] = (counts[slug] || 0) + 1;
+      }
+      return counts;
+    }
+
     function findFilterApp(slug) {
       var apps = filterApps();
       for (var i = 0; i < apps.length; i++) {
@@ -676,7 +694,7 @@
       filterTrigger.setAttribute('aria-expanded', openFilter ? 'true' : 'false');
     }
 
-    function filterRowEl(app, selected) {
+    function filterRowEl(app, selected, count) {
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.setAttribute('role', 'option');
@@ -689,6 +707,12 @@
       if (app) {
         btn.innerHTML = appAvatar({ appSlug: app.slug, appName: app.name, icon: app.icon })
           + '<span class="min-w-0 flex-1 truncate">' + esc(app.name) + '</span>'
+          // Muted count of the app's loaded proposals; font-normal and the
+          // zinc colour keep it quiet on the selected (semibold, violet) row.
+          + (count > 0
+            ? '<span data-app-count class="shrink-0 text-xs font-normal tabular-nums text-zinc-500 dark:text-zinc-400">('
+              + count + ')</span>'
+            : '')
           + (selected ? FILTER_CHECK : '');
       } else {
         btn.innerHTML = FILTER_ALL_ICON
@@ -723,12 +747,13 @@
       function renderList() {
         var query = input.value.trim().toLowerCase();
         var apps = filterApps();
+        var counts = filterCounts();
         list.innerHTML = '';
         var shown = 0;
         if (!query) list.appendChild(filterRowEl(null, state.filter === ''));
         for (var i = 0; i < apps.length; i++) {
           if (query && apps[i].name.toLowerCase().indexOf(query) === -1) continue;
-          list.appendChild(filterRowEl(apps[i], apps[i].slug === state.filter));
+          list.appendChild(filterRowEl(apps[i], apps[i].slug === state.filter, counts[apps[i].slug] || 0));
           shown++;
         }
         if (query && !shown) {
@@ -848,6 +873,7 @@
         .then(function () {
           state.loadingInbox = false;
           render();
+          maybeAutoOpenFilter();
           if (state.queuedInbox) {
             state.queuedInbox = false;
             loadInbox(true);
@@ -983,6 +1009,18 @@
           p.myVote = null;
           castVote(m[1], m[2]);
         });
+    }
+
+    // Staging check fixture: ?demo=1&openfilter=1 opens the app filter
+    // dropdown automatically once the demo inbox has loaded, so a check can
+    // assert on the app list (and its counts) without clicking. Demo only;
+    // one-shot, and only when the inbox loaded without error.
+    var openFilterSet = OPEN_FILTER;
+    function maybeAutoOpenFilter() {
+      if (!openFilterSet) return;
+      if (!DEMO || !OPEN_FILTER || state.errorInbox || !state.inbox) return;
+      openFilterSet = false;
+      openAppFilter();
     }
 
     // ------------------------------------------------------------------
