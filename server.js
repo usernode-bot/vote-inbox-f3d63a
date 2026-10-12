@@ -463,18 +463,23 @@ function demoInbox() {
   });
   const H = 3600 * 1000;
   const D = 24 * H;
-  // Two of the five are marked already voted so the Hide voted toggle has
-  // something to filter in previews. Statuses cover the three card labels:
-  // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries seven yes voters (with a
-  // matching threshold, so its "needed" pill is unchanged) so the avatar row
-  // shows its max-5-then-"+N" case in previews and checks.
+  // Two are marked already voted so the Hide voted toggle has something to
+  // filter in previews. Statuses cover the three card labels: null (an open
+  // proposal, Voting), 'merging' and 'merged'. demo-4 carries seven yes
+  // voters (with its threshold one past that count, so its "needed" pill
+  // still shows) so the avatar row shows the max-5-then-"+N" case in
+  // previews and checks. Exactly two rows (demo-7, demo-6) need one more
+  // yes vote, which is what the "1 vote away" quick filter and its checks
+  // assert on.
   const proposals = [
     mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H, null, [voter('Maya')]),
-    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 7, 2, 10, null, 8 * H, null,
+    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 7, 2, 11, null, 8 * H, null,
       ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter)),
     mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')]),
     mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')]),
     mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')]),
+    mk('staging-demo-app', 'demo-7', 90206, 'Staging demo proposal: trim notification emails', 2, 0, 3, null, 6 * H, null, [voter('Sara')]),
+    mk('staging-demo-notes', 'demo-6', 90207, 'Staging demo proposal: bump the poll interval', 5, 1, 6, null, 1 * D, null, [voter('Maya'), voter('Quinn'), voter('Tom')]),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }
