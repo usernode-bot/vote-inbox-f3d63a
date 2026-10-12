@@ -146,6 +146,16 @@
       </div>
     </div>
 
+    <div id="sort-row" class="flex items-center gap-2 pt-1">
+      <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Sort</span>
+      <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-800 dark:bg-zinc-900" role="radiogroup" aria-label="Sort order">
+        <button data-sort="needed" type="button" role="radio" aria-checked="true"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Votes needed</button>
+        <button data-sort="newest" type="button" role="radio" aria-checked="false"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Newest</button>
+      </div>
+    </div>
+
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
   </main>
 
@@ -170,6 +180,7 @@
       filterName: '',
       search: '',
       hideVoted: false,
+      sort: 'needed',
       loadingInbox: false,
       loadingVotes: false,
       errorInbox: null,
@@ -275,6 +286,38 @@
     }
 
     // ------------------------------------------------------------------
+    // Sort order preference. Same shape as the hide-voted preference:
+    // persists in localStorage so the choice survives reloads, and
+    // ?sort=needed|newest overrides it for one load (used by the staging
+    // checks) without writing back. Storage can be refused in an iframe —
+    // the choice then just doesn't persist.
+    // ------------------------------------------------------------------
+
+    var SORT_KEY = 'vote-inbox:sort';
+
+    function loadSort() {
+      try {
+        var v = localStorage.getItem(SORT_KEY);
+        return v === 'newest' || v === 'needed' ? v : 'needed';
+      } catch (e) { return 'needed'; }
+    }
+
+    function saveSort(v) {
+      try { localStorage.setItem(SORT_KEY, v); } catch (e) { /* not persistable here */ }
+    }
+
+    var sortParam = params.get('sort');
+    state.sort = loadSort();
+    if (sortParam === 'newest' || sortParam === 'needed') state.sort = sortParam;
+
+    function setSort(v) {
+      if (v !== 'needed' && v !== 'newest' || v === state.sort) return;
+      state.sort = v;
+      saveSort(v);
+      render();
+    }
+
+    // ------------------------------------------------------------------
     // Rendering. Class strings are whole literals so the Tailwind compiler
     // extracts them from this file.
     // ------------------------------------------------------------------
@@ -352,13 +395,31 @@
         + esc(text) + '</span>';
     }
 
-    // Thin yes/no share bar under the title.
+    // Segmented yes/no share bar: green segment for the yes share, red for
+    // the no share, widths proportional to the raw counts; the counts sit
+    // beside the bar so the numbers stay readable and identity never rides
+    // on color alone. Empty grey track when there are no votes yet. Dark
+    // mode uses darker steps of the same hues so contrast holds on the dark
+    // card surface.
     function voteBar(p) {
       var total = p.yes + p.no;
-      var pct = total > 0 ? Math.round((p.yes * 100) / total) : 0;
-      return '<div class="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
+      var yesPct = total > 0 ? Math.round((p.yes * 100) / total) : 0;
+      var noPct = Math.max(0, 100 - yesPct);
+      var segments = '';
+      if (p.yes > 0) {
+        segments += '<div data-vote-segment="yes" class="h-full bg-emerald-500 dark:bg-emerald-600'
+          + (p.no > 0 ? ' mr-0.5' : '')
+          + '" style="width:' + yesPct + '%"></div>';
+      }
+      if (p.no > 0) {
+        segments += '<div data-vote-segment="no" class="h-full bg-red-500 dark:bg-red-600" style="width:' + noPct + '%"></div>';
+      }
+      return '<div class="flex items-center gap-2">'
+        + '<div data-vote-bar class="flex h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
         + ' aria-label="Yes ' + p.yes + ', No ' + p.no + '">'
-        + '<div class="h-full rounded-full bg-violet-500 transition-all" style="width:' + pct + '%"></div>'
+        + segments
+        + '</div>'
+        + '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no + '</span>'
         + '</div>';
     }
 
@@ -471,7 +532,7 @@
           + (busy ? ' disabled' : '') + '>No</button>'
           + '</div>';
       }
-      return '<article data-proposal-card class="' + CARD_CLASS + '">'
+      return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '" class="' + CARD_CLASS + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
@@ -483,8 +544,8 @@
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
         + voteBar(p)
         + '<div class="flex items-center justify-between gap-2">'
-        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no
-        + (p.author ? ' · by @' + esc(p.author) : '') + '</p>'
+        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
+        + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
         + (p.url ? copyLinkButton(p) : '')
         + '</div>'
         + statusProgress(p)
@@ -522,7 +583,10 @@
         + '</div>'
         + '<div class="mt-3 h-3 w-full rounded bg-zinc-200 dark:bg-zinc-800"></div>'
         + '<div class="mt-2 h-3 w-2/3 rounded bg-zinc-200 dark:bg-zinc-800"></div>'
-        + '<div class="mt-4 h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="mt-4 flex items-center gap-2">'
+        + '<div class="h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="h-3 w-16 rounded bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '</div>'
         + '<div class="mt-4 h-10 w-full rounded-xl bg-zinc-200 dark:bg-zinc-800"></div>'
         + '</div>';
     }
@@ -581,6 +645,22 @@
         'mt-2 flex items-center gap-3' + (state.tab === 'inbox' ? '' : ' hidden');
       document.getElementById('search-row').className =
         'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+      var sortRow = document.getElementById('sort-row');
+      if (sortRow) sortRow.className =
+        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' ? '' : ' hidden');
+    }
+
+    // The segmented sort pill: keep each option's fill and aria-checked in
+    // step with state.sort. Same active treatment as the section tabs.
+    function renderSort() {
+      var buttons = document.querySelectorAll('#sort-row [data-sort]');
+      for (var i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        var on = btn.getAttribute('data-sort') === state.sort;
+        btn.className = 'rounded-full px-3 py-1 text-xs font-semibold transition-colors '
+          + (on ? TAB_ACTIVE : TAB_IDLE);
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
     }
 
     function renderRefreshButton() {
@@ -614,6 +694,20 @@
       if (query) {
         filtered = filtered.filter(function (p) {
           return String(p.title || '').toLowerCase().indexOf(query) !== -1;
+        });
+      }
+      if (state.sort === 'newest') {
+        // Newest proposed first; a proposal without a usable timestamp keeps
+        // its loaded order at the end (stable sort). A copy: the loaded
+        // array's order stays canonical for the default sort and the
+        // server's caches.
+        filtered = filtered.slice().sort(function (a, b) {
+          var ta = a.proposedAt ? Date.parse(a.proposedAt) : NaN;
+          var tb = b.proposedAt ? Date.parse(b.proposedAt) : NaN;
+          if (isNaN(ta) && isNaN(tb)) return 0;
+          if (isNaN(ta)) return 1;
+          if (isNaN(tb)) return -1;
+          return tb - ta;
         });
       }
       if (!filtered.length) {
@@ -696,6 +790,7 @@
     function render() {
       syncFilter();
       renderTabs();
+      renderSort();
       renderDemoBanner();
       renderRefreshButton();
       renderSummary();
@@ -1104,6 +1199,13 @@
       state.search = event.target.value;
       render();
     });
+
+    var sortButtons = document.querySelectorAll('#sort-row [data-sort]');
+    for (var si = 0; si < sortButtons.length; si++) {
+      sortButtons[si].addEventListener('click', function (event) {
+        setSort(event.currentTarget.getAttribute('data-sort'));
+      });
+    }
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
       refreshCurrent();
