@@ -85,6 +85,23 @@
       "expectText": "Nothing left to vote on",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.search-filter",
+      "name": "Search box filters proposal cards by title",
+      "path": "/?demo=1&q=csv",
+      "expectSelector": "#view[data-visible-cards=\"1\"] [data-proposal-card]",
+      "expectText": "Staging demo proposal: export to CSV",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.search-empty",
+      "name": "Search with no title match offers Clear search",
+      "path": "/?demo=1&q=zzzz",
+      "expectSelector": "[data-action=\"clear-search\"]",
+      "expectText": "No proposals match",
+      "impact": ["public/index.html", "dapp.json"]
     }
   ]
 }

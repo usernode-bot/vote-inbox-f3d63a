@@ -10,6 +10,9 @@ a vote, how the counts stand, and cast your vote with one tap.
   normalises them into one list sorted by votes still needed, and keeps a
   short-lived cache so refreshes are fast. Proposals are fetched in
   parallel with a bounded budget, so one slow app can't stall the page.
+  A title search box filters the loaded cards in the browser (no new
+  requests); `?q=` carries the search so a reload or shared link opens
+  with it.
 - **Voting** — the Yes/No buttons call `POST /api/sessions/:id/vote` on
   the platform, authenticated as the signed-in user (the app forwards the
   user's own platform token; it never holds credentials of its own). The

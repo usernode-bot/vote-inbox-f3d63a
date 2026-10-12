@@ -124,7 +124,13 @@
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
       </div>
-      <div id="filter-row" class="mt-2 flex items-center gap-3">
+      <div id="filter-row" class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div class="relative w-full">
+          <label for="proposal-search" class="sr-only">Search proposals</label>
+          <svg aria-hidden="true" viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="proposal-search" data-proposal-search type="search" placeholder="Search proposals" autocomplete="off" enterkeyhint="search"
+            class="w-full rounded-xl border border-zinc-300 bg-white py-2 pl-9 pr-3 text-left text-sm font-normal text-zinc-700 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:placeholder:text-zinc-500">
+        </div>
         <label for="app-filter-trigger" class="sr-only">Filter by app</label>
         <div class="relative min-w-0 flex-1">
           <button id="app-filter-trigger" data-app-filter-trigger type="button" aria-haspopup="listbox" aria-expanded="false"
@@ -163,6 +169,7 @@
       inboxLoadedAt: null,
       filter: '',
       filterName: '',
+      search: params.get('q') || '',
       hideVoted: false,
       loadingInbox: false,
       loadingVotes: false,
@@ -261,6 +268,34 @@
 
     function isVoted(p) {
       return p.myVote === 'yes' || p.myVote === 'no';
+    }
+
+    // ------------------------------------------------------------------
+    // Title search. Client-side only: narrows the cards already loaded to
+    // those whose title contains the text (case-insensitive contains). The
+    // text also lives in the URL (?q=) so a reload or shared link opens
+    // with the same search.
+    // ------------------------------------------------------------------
+
+    function searchQuery() {
+      return state.search.trim().toLowerCase();
+    }
+
+    function matchesSearch(p) {
+      var q = searchQuery();
+      return !q || String(p.title || '').toLowerCase().indexOf(q) !== -1;
+    }
+
+    function setSearch(value) {
+      state.search = value;
+      var input = document.getElementById('proposal-search');
+      if (input && input.value !== value) input.value = value;
+      var url = new URL(location.href);
+      var trimmed = value.trim();
+      if (trimmed) url.searchParams.set('q', trimmed);
+      else url.searchParams.delete('q');
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+      render();
     }
 
     // ------------------------------------------------------------------
@@ -533,6 +568,7 @@
     var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
     var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
     var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
+    var CLEAR_SEARCH_CTA = '<button data-action="clear-search" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Clear search</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
 
     function errorHtml(message) {
@@ -566,7 +602,7 @@
         }
       }
       document.getElementById('filter-row').className =
-        'mt-2 flex items-center gap-3' + (state.tab === 'inbox' ? '' : ' hidden');
+        'mt-2 flex flex-wrap items-center gap-x-3 gap-y-2' + (state.tab === 'inbox' ? '' : ' hidden');
     }
 
     function renderRefreshButton() {
@@ -593,6 +629,13 @@
       if (state.hideVoted) {
         filtered = filtered.filter(function (p) { return !isVoted(p); });
       }
+      var shown = filtered.filter(matchesSearch);
+      if (!shown.length && filtered.length) {
+        return emptyHtml(
+          'No proposals match',
+          'Nothing here has “' + esc(state.search.trim()) + '” in its title.',
+          CLEAR_SEARCH_CTA);
+      }
       if (!filtered.length) {
         if (proposals.length && state.hideVoted) {
           return emptyHtml(
@@ -608,7 +651,7 @@
           proposals.length ? CLEAR_FILTER_CTA : REFRESH_CTA);
       }
       var html = '';
-      for (var i = 0; i < filtered.length; i++) html += proposalCard(filtered[i]);
+      for (var i = 0; i < shown.length; i++) html += proposalCard(shown[i]);
       return html;
     }
 
@@ -671,8 +714,12 @@
       renderRefreshButton();
       renderSummary();
       renderUpdated();
-      document.getElementById('view').innerHTML =
-        state.tab === 'inbox' ? renderInbox() : renderVotes();
+      var view = document.getElementById('view');
+      view.innerHTML = state.tab === 'inbox' ? renderInbox() : renderVotes();
+      // How many proposal cards are actually in the DOM right now (0 while
+      // skeletons show, on My Votes, and in empty states). The checks use
+      // it to prove non-matching cards are really gone.
+      view.setAttribute('data-visible-cards', String(view.querySelectorAll('[data-proposal-card]').length));
     }
 
     // ------------------------------------------------------------------
@@ -1038,6 +1085,10 @@
         else if (action === 'clear-filter') {
           state.filter = '';
           render();
+        } else if (action === 'clear-search') {
+          setSearch('');
+          var searchInput = document.getElementById('proposal-search');
+          if (searchInput) searchInput.focus();
         } else if (action === 'show-voted') {
           setHideVoted(false);
         } else if (action === 'go-inbox') {
@@ -1062,6 +1113,10 @@
 
     document.getElementById('hide-voted').addEventListener('change', function (event) {
       setHideVoted(event.target.checked);
+    });
+
+    document.getElementById('proposal-search').addEventListener('input', function (event) {
+      setSearch(event.target.value);
     });
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
@@ -1100,6 +1155,8 @@
     render();
     var hideVotedBox = document.getElementById('hide-voted');
     if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
+    var searchInput = document.getElementById('proposal-search');
+    if (searchInput) searchInput.value = state.search;
     if (state.tab === 'votes') loadVotes(true); else loadInbox(true);
   })();
   </script>
