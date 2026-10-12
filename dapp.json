@@ -42,7 +42,7 @@
       "name": "Inbox header shows open and votes-needed summary",
       "path": "/?demo=1",
       "expectSelector": "#inbox-summary",
-      "expectText": "5 open, 8 votes needed"
+      "expectText": "6 open, 9 votes needed"
     },
     {
       "id": "inbox.updated-line",
@@ -77,6 +77,15 @@
       "expectText": "All apps",
       "visual": true,
       "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.one-vote-away",
+      "name": "One vote away chip shows only one-needed proposals",
+      "path": "/?demo=1&one-away=1",
+      "expectSelector": "body:has([data-one-away-chip][aria-pressed=\"true\"]) #view:not(:has([data-proposal-card]:not([data-needed=\"1\"]))) [data-proposal-card][data-needed=\"1\"]",
+      "expectText": "1 vote needed",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
       "id": "inbox.hide-voted",
