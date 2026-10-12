@@ -453,7 +453,8 @@ function demoInbox() {
   const H = 3600 * 1000;
   const D = 24 * H;
   // Two of the five are marked already voted so the Hide voted toggle has
-  // something to filter in previews. demo-4 carries seven yes voters (with a
+  // something to filter in previews. Statuses cover the three card labels:
+  // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries seven yes voters (with a
   // matching threshold, so its "needed" pill is unchanged) so the avatar row
   // shows its max-5-then-"+N" case in previews and checks.
   const proposals = [
@@ -462,7 +463,7 @@ function demoInbox() {
       ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter)),
     mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')]),
     mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')]),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, null, 9 * D, null, [voter('Quinn'), voter('Raul')]),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')]),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }

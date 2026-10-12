@@ -287,6 +287,15 @@
       closed: ['Ended', 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'],
     };
 
+    // Label-only tint for the status text beside the progress bar (the pill
+    // backgrounds in STATUS_STYLE suit My Votes rows; here it is plain text).
+    var STATUS_LABEL_CLASS = {
+      voting: 'text-violet-700 dark:text-violet-300',
+      merging: 'text-violet-700 dark:text-violet-300',
+      merged: 'text-emerald-700 dark:text-emerald-300',
+      closed: 'text-zinc-500 dark:text-zinc-400',
+    };
+
     // Letter-avatar tints for apps without an icon, picked from the slug so
     // an app keeps the same colour across loads.
     var AVATAR_STYLES = [
@@ -386,6 +395,36 @@
         + '</div>';
     }
 
+    // Status progress under the vote counts: the same thin bar shape with a
+    // status label beside it. Fill shows the yes count against the required
+    // threshold (the yes/no share when no threshold is known, full when the
+    // proposal has merged); the label comes from the proposal status. Open
+    // proposals are up for vote, so a missing status reads as Voting, and
+    // 'proposed' is the platform's just-filed state, also Voting.
+    function statusProgress(p) {
+      var key = p.status === 'proposed' ? 'voting' : (p.status || 'voting');
+      var style = STATUS_STYLE[key] || STATUS_STYLE.voting;
+      var merged = key === 'merged';
+      var pct;
+      if (merged) {
+        pct = 100;
+      } else if (p.required != null && p.required > 0) {
+        pct = Math.min(100, Math.round((p.yes * 100) / p.required));
+      } else {
+        var total = p.yes + p.no;
+        pct = total > 0 ? Math.round((p.yes * 100) / total) : 0;
+      }
+      var fillCls = merged ? 'bg-emerald-500' : 'bg-violet-500';
+      var labelCls = STATUS_LABEL_CLASS[key] || STATUS_LABEL_CLASS.voting;
+      return '<div data-proposal-status class="flex items-center gap-2">'
+        + '<div class="h-1.5 w-full flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
+        + ' aria-label="Status: ' + style[0] + '">'
+        + '<div class="h-full rounded-full ' + fillCls + ' transition-all" style="width:' + pct + '%"></div>'
+        + '</div>'
+        + '<span class="whitespace-nowrap text-xs font-semibold ' + labelCls + '">' + style[0] + '</span>'
+        + '</div>';
+    }
+
     var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
 
     // Copy link: a quiet ghost button on each proposal card. Shown only when
@@ -482,6 +521,7 @@
         + (p.author ? ' · by @' + esc(p.author) : '') + '</p>'
         + (p.url ? copyLinkButton(p) : '')
         + '</div>'
+        + statusProgress(p)
         + actions
         + '</article>';
     }
