@@ -180,6 +180,12 @@
     // toggle. Neither is ever sent without demo data.
     var ALL_VOTED = params.get('allvoted') === '1';
     var ALL_MERGED = params.get('allmerged') === '1';
+    // ?failvote=1 (demo only) makes the NEXT vote cast on this load fail the
+    // way an offline device does: the request never leaves the page, the
+    // card keeps its vote mark and a Retry pill appears. Gives checks and
+    // reviewers a deterministic URL for the offline-retry state; production
+    // never honours it.
+    var FAILVOTE = DEMO && params.get('failvote') === '1';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -197,6 +203,10 @@
       errorInbox: null,
       errorVotes: null,
       pending: {},
+      // In-memory retry queue for votes that failed offline: sessionId ->
+      // { choice, payload, snapshot }. Never persisted; a page reload
+      // clears it and the next inbox load shows the platform's truth.
+      retryQueue: {},
       queuedInbox: false,
       queuedVotes: false,
     };
@@ -620,6 +630,21 @@
       }
     }
 
+    // Retry pill for a card whose vote failed offline and is queued
+    // in-memory. Amber warning treatment, matching the demo banner and the
+    // votes-needed pill; tapping the button resends the queued vote as-is.
+    function retryRow(sessionId) {
+      if (!state.retryQueue[sessionId]) return '';
+      var busy = !!state.pending[sessionId];
+      return '<div data-retry-row class="flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">'
+        + '<span class="min-w-0 text-xs font-medium text-amber-700 dark:text-amber-300">Vote not sent: you were offline</span>'
+        + '<button data-retry-vote data-session="' + esc(sessionId) + '"'
+        + ' aria-label="Retry sending this vote" title="Send this vote again"'
+        + ' class="shrink-0 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-700 transition-transform active:scale-95 disabled:opacity-50 dark:text-amber-300"'
+        + (busy ? ' disabled' : '') + '>Retry vote</button>'
+        + '</div>';
+    }
+
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
       var age = relTime(p.proposedAt);
@@ -632,7 +657,8 @@
       if (voted) {
         actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
           + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>'
-          + 'You voted ' + p.myVote + '</div>';
+          + 'You voted ' + p.myVote + '</div>'
+          + retryRow(p.sessionId);
       } else {
         var busy = state.pending[p.sessionId];
         actions = '<div class="flex gap-2">'
@@ -1131,6 +1157,7 @@
         .then(function (data) {
           state.inbox = data;
           state.inboxLoadedAt = new Date().toISOString();
+          reapplyRetryQueue();
           maybeAutoCast();
         })
         .catch(function (err) {
@@ -1188,6 +1215,40 @@
       return null;
     }
 
+    // Classify a failed vote request. "Offline" means the request never got
+    // an HTTP answer: the browser reports the device offline, or the fetch
+    // itself rejected (an error carrying no HTTP .status — airplane mode,
+    // no connection, the request never leaving the page). A refusal the
+    // server DID send (4xx/5xx) is not an offline failure and rolls back
+    // exactly as before.
+    function isOfflineFailure(err) {
+      if (navigator.onLine === false) return true;
+      return !err || typeof err.status !== 'number';
+    }
+
+    // ?failvote=1 simulation: reject exactly the way a fetch does when the
+    // device is offline — no HTTP status at all.
+    function simulatedOfflineError() {
+      var err = new Error('Failed to fetch');
+      err.name = 'TypeError';
+      return err;
+    }
+
+    function votePayload(sessionId, choice, p, snapshot) {
+      return {
+        sessionId: sessionId,
+        choice: choice,
+        appSlug: p.appSlug,
+        appName: p.appName,
+        title: p.title,
+        proposalId: p.proposalId,
+        yes: snapshot.yes,
+        no: snapshot.no,
+        required: p.required,
+        demo: !!(state.inbox && state.inbox.demo),
+      };
+    }
+
     function castVote(sessionId, choice) {
       var p = findProposal(sessionId);
       if (!p || state.pending[sessionId]) return;
@@ -1197,22 +1258,20 @@
       p.myVote = choice;
       if (choice === 'yes') p.yes += 1; else p.no += 1;
       render();
-      api('/api/vote', {
-        method: 'POST',
-        headers: headers({ 'content-type': 'application/json' }),
-        body: JSON.stringify({
-          sessionId: sessionId,
-          choice: choice,
-          appSlug: p.appSlug,
-          appName: p.appName,
-          title: p.title,
-          proposalId: p.proposalId,
-          yes: snapshot.yes,
-          no: snapshot.no,
-          required: p.required,
-          demo: !!(state.inbox && state.inbox.demo),
-        }),
-      }).then(function () {
+      var payload = votePayload(sessionId, choice, p, snapshot);
+      var request;
+      if (FAILVOTE && state.inbox && state.inbox.demo) {
+        // Demo fixture only: one simulated offline failure per load.
+        FAILVOTE = false;
+        request = Promise.reject(simulatedOfflineError());
+      } else {
+        request = api('/api/vote', {
+          method: 'POST',
+          headers: headers({ 'content-type': 'application/json' }),
+          body: JSON.stringify(payload),
+        });
+      }
+      request.then(function () {
         state.votes = null; // history refetches next time the tab opens
         toast('Vote recorded', {
           duration: 5000,
@@ -1222,14 +1281,78 @@
           },
         });
       }).catch(function (err) {
-        p.myVote = snapshot.myVote;
-        p.yes = snapshot.yes;
-        p.no = snapshot.no;
-        toast('Vote failed: ' + (err.message || 'try again'));
+        if (isOfflineFailure(err)) {
+          // Offline: keep the card marked and queue an in-memory retry.
+          // The vote never reached the platform, so My Votes stays without
+          // it until a retry succeeds.
+          state.retryQueue[sessionId] = { choice: choice, payload: payload, snapshot: snapshot };
+          toast('Vote not sent: you seem offline. Tap Retry on the card.');
+        } else {
+          p.myVote = snapshot.myVote;
+          p.yes = snapshot.yes;
+          p.no = snapshot.no;
+          toast('Vote failed: ' + (err.message || 'try again'));
+        }
       }).then(function () {
         delete state.pending[sessionId];
         render();
       });
+    }
+
+    // Retry a vote that failed offline: resend the exact same request. On
+    // success the card's optimistic state is now the platform's truth, the
+    // pill goes away and My Votes refetches. Still offline: the card stays
+    // marked and queued. A server refusal (the platform answered and said
+    // no) rolls the card back like any other failed vote.
+    function retryVote(sessionId) {
+      var entry = state.retryQueue[sessionId];
+      var p = findProposal(sessionId);
+      if (!entry || !p || state.pending[sessionId]) return;
+      state.pending[sessionId] = true;
+      render();
+      api('/api/vote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify(entry.payload),
+      }).then(function () {
+        delete state.retryQueue[sessionId];
+        state.votes = null; // history refetches next time the tab opens
+        toast('Vote recorded', {
+          duration: 5000,
+          action: {
+            label: 'Undo',
+            handler: function () { undoVote(sessionId, entry.choice, entry.snapshot); },
+          },
+        });
+      }).catch(function (err) {
+        if (isOfflineFailure(err)) {
+          toast('Still offline. Your vote stays on the card to retry.');
+        } else {
+          delete state.retryQueue[sessionId];
+          p.myVote = entry.snapshot.myVote;
+          p.yes = entry.snapshot.yes;
+          p.no = entry.snapshot.no;
+          toast('Vote failed: ' + (err.message || 'try again'));
+        }
+      }).then(function () {
+        delete state.pending[sessionId];
+        render();
+      });
+    }
+
+    // Reapply the in-memory retry queue to a freshly loaded inbox: a card
+    // whose vote never reached the platform stays marked voted, with its
+    // optimistic count restored, until a retry succeeds. Entries whose
+    // proposal is no longer listed are dropped: there is no card left to
+    // retry them on.
+    function reapplyRetryQueue() {
+      for (var sessionId in state.retryQueue) {
+        var entry = state.retryQueue[sessionId];
+        var p = findProposal(sessionId);
+        if (!p) { delete state.retryQueue[sessionId]; continue; }
+        p.myVote = entry.choice;
+        if (entry.choice === 'yes') p.yes += 1; else p.no += 1;
+      }
     }
 
     // Undo a just-cast vote: drop this app's record of it and roll the card
@@ -1310,6 +1433,8 @@
       }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
       if (voteBtn) castVote(voteBtn.getAttribute('data-session'), voteBtn.getAttribute('data-vote'));
+      var retryBtn = target.closest ? target.closest('[data-retry-vote]') : null;
+      if (retryBtn) retryVote(retryBtn.getAttribute('data-session'));
       var copyBtn = target.closest ? target.closest('[data-copy-link]') : null;
       if (copyBtn) copyProposalLink(copyBtn);
     });

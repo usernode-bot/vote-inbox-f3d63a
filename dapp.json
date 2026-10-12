@@ -61,6 +61,15 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.vote-retry",
+      "name": "Failed offline vote keeps the card marked with a Retry pill",
+      "path": "/?demo=1&cast=demo-2:yes&failvote=1",
+      "expectSelector": "[data-retry-vote]",
+      "expectText": "Retry vote",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "my-votes.demo",
       "name": "My Votes shows history with status",
       "path": "/?tab=votes&demo=1",
