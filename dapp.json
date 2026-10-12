@@ -79,6 +79,15 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.voter-names",
+      "name": "Proposal cards list yes-voter display names",
+      "path": "/?demo=1",
+      "expectSelector": "[data-yes-voter-names]",
+      "expectText": "Maya (demo)",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "app-filter.trigger",
       "name": "App filter trigger renders",
       "path": "/?demo=1",

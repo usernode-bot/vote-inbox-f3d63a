@@ -461,6 +461,34 @@
         + chips + '</div>';
     }
 
+    // Yes-voter names line for a proposal card: the display names behind the
+    // avatar circles, as plain read-only text. At most three names, then a
+    // "+N" derived from the authoritative yes tally, so names + N always add
+    // up to the displayed "Yes" count (same rule the avatar row uses).
+    // Renders nothing when the proposal has no yes votes or the platform
+    // response named no voters — voter identities are an optional field and
+    // nothing is invented to fill the row.
+    function voterNamesRow(p) {
+      var voters = Array.isArray(p.yesVoters) ? p.yesVoters : null;
+      if (!voters || !voters.length || !(p.yes > 0)) return '';
+      var shown = voters.slice(0, 3);
+      var names = [];
+      for (var i = 0; i < shown.length; i++) {
+        var voter = shown[i];
+        var username = voter && typeof voter.username === 'string' ? voter.username : '';
+        if (!username) continue;
+        var label = (voter.name && typeof voter.name === 'string' && voter.name) || username;
+        names.push(label);
+      }
+      if (!names.length) return '';
+      var extra = Math.max(0, p.yes - names.length);
+      var text = names.join(', ') + (extra > 0 ? ' +' + extra + ' more' : '');
+      return '<p data-yes-voter-names class="text-xs text-zinc-500 dark:text-zinc-400"'
+        + ' title="Voted yes: ' + esc(names.join(', ')) + '">'
+        + '<span class="font-medium text-zinc-600 dark:text-zinc-300">Voted yes:</span> '
+        + esc(text) + '</p>';
+    }
+
     // Votes-needed pill: how far the yes count is from the threshold.
     function neededPill(p) {
       if (p.needed == null) return '';
@@ -628,6 +656,7 @@
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
         + voteBar(p)
         + voterAvatarRow(p)
+        + voterNamesRow(p)
         + '<div class="flex items-center justify-between gap-2">'
         + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'

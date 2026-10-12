@@ -467,11 +467,13 @@ function demoInbox() {
   // something to filter in previews. Statuses cover the three card labels:
   // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries
   // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
-  // avatar row shows its max-5-then-"+N" case in previews and checks, and
-  // its four votes needed are the most in the list, so the default
-  // most-votes-needed-first order puts it on top (neededFirst breaks ties
-  // by fewest yes, so a tie here would not). The needed total stays at 8
-  // for the inbox summary check.
+  // avatar row shows its max-5-then-"+N" case in previews and checks. With
+  // required 11 it needs 4 more votes, the most in the list, so it must stay
+  // the MOST votes-needed proposal: the default most-votes-needed-first order
+  // puts it on top (neededFirst breaks ties by fewest yes, so a tie here
+  // would not), and the default-order check expects it as the first card. The
+  // header summary's "8 votes needed" depends on 4 + 3 + 1 across
+  // demo-4/demo-2/demo-1.
   const proposals = [
     mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H, null, [voter('Maya')]),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 7, 2, 11, null, 8 * H, null,
