@@ -139,6 +139,11 @@
           <input id="hide-voted" type="checkbox" class="un-switch">
         </label>
       </div>
+      <div id="search-row" class="mt-2">
+        <label for="inbox-search" class="sr-only">Search proposals</label>
+        <input id="inbox-search" type="text" placeholder="Search titles" autocomplete="off"
+          class="w-full rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500">
+      </div>
     </div>
 
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
@@ -163,6 +168,7 @@
       inboxLoadedAt: null,
       filter: '',
       filterName: '',
+      search: '',
       hideVoted: false,
       loadingInbox: false,
       loadingVotes: false,
@@ -250,6 +256,11 @@
     state.hideVoted = loadHideVoted();
     if (hideVotedParam === '1') state.hideVoted = true;
     else if (hideVotedParam === '0') state.hideVoted = false;
+
+    // Title search, ?q= pre-fills it for one load so a deep link (and the
+    // staging checks, which cannot type) land on the filtered list. The
+    // same value the box would hold after typing it.
+    state.search = params.get('q') || '';
 
     function setHideVoted(on) {
       state.hideVoted = on;
@@ -533,6 +544,7 @@
     var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
     var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
     var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
+    var CLEAR_SEARCH_CTA = '<button data-action="clear-search" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Clear search</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
 
     function errorHtml(message) {
@@ -567,6 +579,8 @@
       }
       document.getElementById('filter-row').className =
         'mt-2 flex items-center gap-3' + (state.tab === 'inbox' ? '' : ' hidden');
+      document.getElementById('search-row').className =
+        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
     }
 
     function renderRefreshButton() {
@@ -593,7 +607,22 @@
       if (state.hideVoted) {
         filtered = filtered.filter(function (p) { return !isVoted(p); });
       }
+      // Title search over the loaded cards only: case-insensitive substring,
+      // no refetch. Filters run after the app and hide-voted ones, so the
+      // search narrows whatever is already on screen.
+      var query = state.search.trim().toLowerCase();
+      if (query) {
+        filtered = filtered.filter(function (p) {
+          return String(p.title || '').toLowerCase().indexOf(query) !== -1;
+        });
+      }
       if (!filtered.length) {
+        if (proposals.length && query) {
+          return emptyHtml(
+            'No proposals match',
+            'No loaded proposal title contains "' + esc(state.search.trim()) + '". Clear the search to see everything.',
+            CLEAR_SEARCH_CTA);
+        }
         if (proposals.length && state.hideVoted) {
           return emptyHtml(
             'Nothing left to vote on',
@@ -1040,6 +1069,11 @@
           render();
         } else if (action === 'show-voted') {
           setHideVoted(false);
+        } else if (action === 'clear-search') {
+          state.search = '';
+          var box = document.getElementById('inbox-search');
+          if (box) box.value = '';
+          render();
         } else if (action === 'go-inbox') {
           state.tab = 'inbox';
           render();
@@ -1062,6 +1096,13 @@
 
     document.getElementById('hide-voted').addEventListener('change', function (event) {
       setHideVoted(event.target.checked);
+    });
+
+    // Title search filters the loaded cards live; the input sits outside
+    // #view so re-rendering the list never steals its focus.
+    document.getElementById('inbox-search').addEventListener('input', function (event) {
+      state.search = event.target.value;
+      render();
     });
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
@@ -1100,6 +1141,8 @@
     render();
     var hideVotedBox = document.getElementById('hide-voted');
     if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
+    var searchBox = document.getElementById('inbox-search');
+    if (searchBox && state.search) searchBox.value = state.search;
     if (state.tab === 'votes') loadVotes(true); else loadInbox(true);
   })();
   </script>

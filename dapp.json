@@ -79,6 +79,22 @@
       "impact": ["public/index.html", "dapp.json"]
     },
     {
+      "id": "inbox.title-search",
+      "name": "Title search keeps only matching cards",
+      "path": "/?demo=1&q=Keyboard",
+      "expectSelector": "[data-proposal-card]",
+      "expectText": "keyboard shortcuts",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.title-search-empty",
+      "name": "Title search shows a no-match empty state",
+      "path": "/?demo=1&q=zzz-no-such-title",
+      "expectText": "No proposals match",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "inbox.hide-voted",
       "name": "Hide voted toggle empties an all-voted inbox",
       "path": "/?demo=1&hide-voted=1&allvoted=1",
