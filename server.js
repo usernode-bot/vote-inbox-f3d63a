@@ -467,7 +467,9 @@ function demoInbox() {
   // something to filter in previews. Statuses cover the three card labels:
   // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries
   // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
-  // avatar row shows its max-5-then-"+N" case in previews and checks. With
+  // avatar row shows its max-5-then-"+N" case in previews and checks, and a
+  // deliberately long title (3+ rendered lines) so the expandable-title
+  // More/Less control has something to clamp in every preview. With
   // required 11 it needs 4 more votes, the most in the list, so it must stay
   // the MOST votes-needed proposal: the default most-votes-needed-first order
   // puts it on top (neededFirst breaks ties by fewest yes, so a tie here
@@ -476,7 +478,7 @@ function demoInbox() {
   // demo-4/demo-2/demo-1.
   const proposals = [
     mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H, null, [voter('Maya')]),
-    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 7, 2, 11, null, 8 * H, null,
+    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, 8 * H, null,
       ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter)),
     mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')]),
     mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')]),

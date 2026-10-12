@@ -199,6 +199,10 @@
       pending: {},
       queuedInbox: false,
       queuedVotes: false,
+      // Session ids whose card title the user expanded with More. A re-render
+      // (a vote, a filter change) keeps those titles expanded; not persisted,
+      // a reload starts collapsed again.
+      expandedTitles: {},
     };
 
     // ------------------------------------------------------------------
@@ -567,6 +571,13 @@
 
     var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
 
+    // Card title, clamped and expanded spellings (whole literals for the
+    // Tailwind compiler). The clamped one is line-clamp-2; enhanceTitles()
+    // measures overflow against it to decide whether a More control is due.
+    var TITLE_CLAMPED = 'line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100';
+    var TITLE_EXPANDED = 'text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100';
+    var TITLE_TOGGLE = 'self-start rounded-full text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300';
+
     // Copy link: a quiet ghost button on each proposal card. Shown only when
     // the server could build the proposal's canonical platform URL.
     var COPY_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Copy link</span>';
@@ -622,6 +633,7 @@
 
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
+      var titleExpanded = !!state.expandedTitles[p.sessionId];
       var age = relTime(p.proposedAt);
       var ageHtml = age
         ? '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
@@ -653,7 +665,7 @@
         + '</span>'
         + neededPill(p)
         + '</div>'
-        + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
+        + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">' + esc(p.title) + '</h2>'
         + voteBar(p)
         + voterAvatarRow(p)
         + voterNamesRow(p)
@@ -665,6 +677,52 @@
         + statusProgress(p)
         + actions
         + '</article>';
+    }
+
+    // Long titles: every card title clamps to two lines, so a longer one
+    // hides its tail behind the ellipsis. After each render, measure each
+    // card title; one that overflows its clamp gets a "More" control
+    // appended (an already-expanded one gets "Less", built with the card).
+    // A title that fits on two lines gets nothing. Tapping toggles the
+    // clamp in place, so nothing else on the card moves.
+    function enhanceTitles() {
+      var cards = document.querySelectorAll('#view [data-proposal-card]');
+      for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        var h2 = card.querySelector('[data-proposal-title]');
+        if (!h2 || card.querySelector('[data-title-toggle]')) continue;
+        var sessionId = card.getAttribute('data-session-id');
+        var expanded = !!state.expandedTitles[sessionId];
+        // Overflow check: with line-clamp-2 the element shows two lines
+        // (clientHeight) while scrollHeight still reports the full text
+        // height. The +1 slack ignores sub-pixel rounding.
+        if (!expanded && h2.scrollHeight <= h2.clientHeight + 1) continue;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-title-toggle', '');
+        btn.setAttribute('data-session', sessionId);
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        btn.className = TITLE_TOGGLE;
+        btn.textContent = expanded ? 'Less' : 'More';
+        h2.insertAdjacentElement('afterend', btn);
+      }
+    }
+
+    // More/Less tap on a clamped title: flip the clamp on that one title in
+    // place (no full re-render, so no scroll jump) and remember the choice
+    // for the session so a later re-render keeps it expanded.
+    function toggleTitle(btn) {
+      var sessionId = btn.getAttribute('data-session');
+      var card = btn.closest('[data-proposal-card]');
+      var h2 = card ? card.querySelector('[data-proposal-title]') : null;
+      if (!sessionId || !card || !h2) return;
+      var expanded = !!state.expandedTitles[sessionId];
+      if (expanded) delete state.expandedTitles[sessionId];
+      else state.expandedTitles[sessionId] = true;
+      expanded = !expanded;
+      h2.className = expanded ? TITLE_EXPANDED : TITLE_CLAMPED;
+      btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      btn.textContent = expanded ? 'Less' : 'More';
     }
 
     function voteRow(v) {
@@ -923,6 +981,7 @@
       renderUpdated();
       document.getElementById('view').innerHTML =
         state.tab === 'inbox' ? renderInbox() : renderVotes();
+      enhanceTitles();
     }
 
     // ------------------------------------------------------------------
@@ -1132,6 +1191,7 @@
           state.inbox = data;
           state.inboxLoadedAt = new Date().toISOString();
           maybeAutoCast();
+          maybeAutoExpand();
         })
         .catch(function (err) {
           state.errorInbox = err.message || 'Could not load proposals.';
@@ -1276,6 +1336,19 @@
         });
     }
 
+    // Staging demo hook: ?demo=1&expand=<sessionId> expands one proposal's
+    // clamped title automatically once the demo inbox is loaded, the same
+    // trick ?cast= uses for the vote flow: it gives the checks (which read
+    // the page but cannot tap) and reviewers a stable URL for the expanded
+    // More/Less state. Demo only; a session id not in the list does nothing.
+    function maybeAutoExpand() {
+      if (!DEMO) return;
+      var id = params.get('expand');
+      if (!id) return;
+      if (!findProposal(id)) return;
+      state.expandedTitles[String(id)] = true;
+    }
+
     // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------
@@ -1306,6 +1379,11 @@
           window.scrollTo(0, 0);
           loadInbox(!state.inbox);
         }
+        return;
+      }
+      var titleBtn = target.closest ? target.closest('[data-title-toggle]') : null;
+      if (titleBtn) {
+        toggleTitle(titleBtn);
         return;
       }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
