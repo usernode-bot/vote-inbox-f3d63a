@@ -138,6 +138,15 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.age-groups",
+      "name": "Inbox groups proposals under age headers",
+      "path": "/?demo=1",
+      "expectSelector": "[data-age-group] [data-age-header]",
+      "expectText": "Today",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "inbox.sort-default",
       "name": "Default inbox order is most votes needed first",
       "path": "/?demo=1",

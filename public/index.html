@@ -856,8 +856,56 @@
             : 'No open proposals to vote on. New ones show up here.',
           proposals.length ? CLEAR_FILTER_CTA : REFRESH_CTA);
       }
+      // Age groups: small section headers over the same filtered, sorted
+      // cards. Bucketed on the proposal's proposed date in the viewer's own
+      // calendar days (Today, the six before it, then Older); a proposal the
+      // platform sent no usable timestamp for lands in Older. Cards keep the
+      // existing sort order inside each group.
+      return groupedInboxHtml(filtered);
+    }
+
+    var AGE_GROUPS = [
+      { key: 'today', label: 'Today' },
+      { key: 'week', label: 'This week' },
+      { key: 'older', label: 'Older' },
+    ];
+
+    // Which group a proposal belongs to: whole calendar days back from
+    // today, in the viewer's local time. 0 = Today, 1..6 = This week,
+    // anything further (or an unreadable/missing timestamp) = Older. A
+    // future timestamp (clock skew) reads as Today.
+    function ageBucket(p) {
+      var t = p.proposedAt ? Date.parse(p.proposedAt) : NaN;
+      if (isNaN(t)) return 'older';
+      var now = new Date();
+      var d = new Date(t);
+      var startOfDay = function (x) {
+        return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      };
+      var daysBack = Math.floor((startOfDay(now) - startOfDay(d)) / (24 * 3600 * 1000));
+      if (daysBack <= 0) return 'today';
+      if (daysBack <= 6) return 'week';
+      return 'older';
+    }
+
+    // The grouped list: one section per non-empty age group, the group's
+    // header followed by its cards in a plain flex column (the same spacing
+    // the flat list had). Cards stay direct children of a card container so
+    // the first card in a group is still that container's :first-child.
+    function groupedInboxHtml(filtered) {
+      var buckets = { today: [], week: [], older: [] };
+      for (var i = 0; i < filtered.length; i++) buckets[ageBucket(filtered[i])].push(filtered[i]);
       var html = '';
-      for (var i = 0; i < filtered.length; i++) html += proposalCard(filtered[i]);
+      for (var g = 0; g < AGE_GROUPS.length; g++) {
+        var group = AGE_GROUPS[g];
+        var items = buckets[group.key];
+        if (!items.length) continue;
+        html += '<section data-age-group="' + group.key + '" class="flex flex-col gap-3">'
+          + '<h2 data-age-header class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">' + group.label + '</h2>'
+          + '<div data-age-cards class="flex flex-col gap-3">';
+        for (var j = 0; j < items.length; j++) html += proposalCard(items[j]);
+        html += '</div></section>';
+      }
       return html;
     }
 
