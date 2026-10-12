@@ -38,6 +38,15 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.yes-voters",
+      "name": "Proposal card lists who voted yes",
+      "path": "/?demo=1",
+      "expectSelector": "[data-yes-voters]",
+      "expectText": "staging-demo-alice",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "inbox.summary-line",
       "name": "Inbox header shows open and votes-needed summary",
       "path": "/?demo=1",
