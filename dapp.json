@@ -15,6 +15,15 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.vote-bar",
+      "name": "Inbox cards show a yes/no segmented bar sized to the counts",
+      "path": "/?demo=1",
+      "expectSelector": "[data-vote-bar] [data-vote-seg=\"yes\"][style*=\"width:75%\"] + [data-vote-seg=\"no\"][style*=\"width:25%\"]",
+      "expectText": "Yes 3 · No 1",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "inbox.copy-link",
       "name": "Proposal cards offer a copy link",
       "path": "/?demo=1",
