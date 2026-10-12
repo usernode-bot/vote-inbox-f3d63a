@@ -426,13 +426,14 @@ function demoInbox() {
   const H = 3600 * 1000;
   const D = 24 * H;
   // Two of the five are marked already voted so the Hide voted toggle has
-  // something to filter in previews.
+  // something to filter in previews. Statuses cover the three card labels:
+  // null (an open proposal, Voting), 'merging' and 'merged'.
   const proposals = [
     mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 0, 2, 3, null, 8 * H),
     mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no'),
     mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes'),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, null, 9 * D),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }
