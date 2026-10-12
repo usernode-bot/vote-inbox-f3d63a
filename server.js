@@ -481,7 +481,8 @@ function demoInbox() {
 
 // The demo payload, optionally with every proposal marked voted
 // (?allvoted=1) so the Hide voted toggle's empty state is reachable by the
-// declared checks. Staging fixture only.
+// declared checks, or every proposal marked merged (?allmerged=1) for the
+// Hide merged toggle the same way. Staging fixtures only.
 function demoInboxPayload(req) {
   const demo = demoInbox();
   // Same ordering the production inbox uses, so the demo list's default
@@ -492,6 +493,9 @@ function demoInboxPayload(req) {
     for (const p of demo.proposals) {
       if (!p.myVote) p.myVote = 'yes';
     }
+  }
+  if (req.query.allmerged === '1') {
+    for (const p of demo.proposals) p.status = 'merged';
   }
   return demo;
 }

@@ -121,6 +121,14 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.hide-merged",
+      "name": "Hide merged toggle empties an all-merged inbox",
+      "path": "/?demo=1&hide-merged=1&allmerged=1",
+      "expectText": "Merged proposals hidden",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "inbox.sort-default",
       "name": "Default inbox order is most votes needed first",
       "path": "/?demo=1",
