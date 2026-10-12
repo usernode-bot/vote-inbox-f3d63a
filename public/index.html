@@ -141,6 +141,16 @@
       </div>
     </div>
 
+    <div id="sort-row" class="flex items-center gap-2 pt-1">
+      <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Sort</span>
+      <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-800 dark:bg-zinc-900" role="radiogroup" aria-label="Sort order">
+        <button data-sort="needed" type="button" role="radio" aria-checked="true"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Votes needed</button>
+        <button data-sort="newest" type="button" role="radio" aria-checked="false"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Newest</button>
+      </div>
+    </div>
+
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
   </main>
 
@@ -164,6 +174,7 @@
       filter: '',
       filterName: '',
       hideVoted: false,
+      sort: 'needed',
       loadingInbox: false,
       loadingVotes: false,
       errorInbox: null,
@@ -261,6 +272,38 @@
 
     function isVoted(p) {
       return p.myVote === 'yes' || p.myVote === 'no';
+    }
+
+    // ------------------------------------------------------------------
+    // Sort order preference. Same shape as the hide-voted preference:
+    // persists in localStorage so the choice survives reloads, and
+    // ?sort=needed|newest overrides it for one load (used by the staging
+    // checks) without writing back. Storage can be refused in an iframe —
+    // the choice then just doesn't persist.
+    // ------------------------------------------------------------------
+
+    var SORT_KEY = 'vote-inbox:sort';
+
+    function loadSort() {
+      try {
+        var v = localStorage.getItem(SORT_KEY);
+        return v === 'newest' || v === 'needed' ? v : 'needed';
+      } catch (e) { return 'needed'; }
+    }
+
+    function saveSort(v) {
+      try { localStorage.setItem(SORT_KEY, v); } catch (e) { /* not persistable here */ }
+    }
+
+    var sortParam = params.get('sort');
+    state.sort = loadSort();
+    if (sortParam === 'newest' || sortParam === 'needed') state.sort = sortParam;
+
+    function setSort(v) {
+      if (v !== 'needed' && v !== 'newest' || v === state.sort) return;
+      state.sort = v;
+      saveSort(v);
+      render();
     }
 
     // ------------------------------------------------------------------
@@ -421,7 +464,7 @@
           + (busy ? ' disabled' : '') + '>No</button>'
           + '</div>';
       }
-      return '<article data-proposal-card class="' + CARD_CLASS + '">'
+      return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '" class="' + CARD_CLASS + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
@@ -527,6 +570,22 @@
       }
       document.getElementById('filter-row').className =
         'mt-2 flex items-center gap-3' + (state.tab === 'inbox' ? '' : ' hidden');
+      var sortRow = document.getElementById('sort-row');
+      if (sortRow) sortRow.className =
+        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' ? '' : ' hidden');
+    }
+
+    // The segmented sort pill: keep each option's fill and aria-checked in
+    // step with state.sort. Same active treatment as the section tabs.
+    function renderSort() {
+      var buttons = document.querySelectorAll('#sort-row [data-sort]');
+      for (var i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        var on = btn.getAttribute('data-sort') === state.sort;
+        btn.className = 'rounded-full px-3 py-1 text-xs font-semibold transition-colors '
+          + (on ? TAB_ACTIVE : TAB_IDLE);
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
     }
 
     function renderRefreshButton() {
@@ -552,6 +611,20 @@
         : proposals;
       if (state.hideVoted) {
         filtered = filtered.filter(function (p) { return !isVoted(p); });
+      }
+      if (state.sort === 'newest') {
+        // Newest proposed first; a proposal without a usable timestamp keeps
+        // its loaded order at the end (stable sort). A copy: the loaded
+        // array's order stays canonical for the default sort and the
+        // server's caches.
+        filtered = filtered.slice().sort(function (a, b) {
+          var ta = a.proposedAt ? Date.parse(a.proposedAt) : NaN;
+          var tb = b.proposedAt ? Date.parse(b.proposedAt) : NaN;
+          if (isNaN(ta) && isNaN(tb)) return 0;
+          if (isNaN(ta)) return 1;
+          if (isNaN(tb)) return -1;
+          return tb - ta;
+        });
       }
       if (!filtered.length) {
         if (proposals.length && state.hideVoted) {
@@ -627,6 +700,7 @@
     function render() {
       syncFilter();
       renderTabs();
+      renderSort();
       renderDemoBanner();
       renderRefreshButton();
       renderSummary();
@@ -1023,6 +1097,13 @@
     document.getElementById('hide-voted').addEventListener('change', function (event) {
       setHideVoted(event.target.checked);
     });
+
+    var sortButtons = document.querySelectorAll('#sort-row [data-sort]');
+    for (var si = 0; si < sortButtons.length; si++) {
+      sortButtons[si].addEventListener('click', function (event) {
+        setSort(event.currentTarget.getAttribute('data-sort'));
+      });
+    }
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
       refreshCurrent();

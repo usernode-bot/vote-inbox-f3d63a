@@ -254,6 +254,17 @@ function proposalUrl(appSlug, proposalId) {
 
 // Promoted (open, up-for-vote) proposals for one app. The platform's field
 // spellings are normalised here so the frontend deals with one shape.
+// Most votes-needed first; unknown requirement last, then fewest yes.
+// Shared by the production inbox and the staging demo payload so the demo
+// list's default order mirrors the real one.
+function neededFirst(a, b) {
+  const an = a.needed == null ? -1 : a.needed;
+  const bn = b.needed == null ? -1 : b.needed;
+  if (an !== bn) return bn - an;
+  if (a.yes !== b.yes) return a.yes - b.yes;
+  return a.title.localeCompare(b.title);
+}
+
 function normalizeProposal(raw, appItem) {
   if (!raw || typeof raw !== 'object') return null;
   const sessionId = raw.session_id ?? raw.sessionId
@@ -442,6 +453,10 @@ function demoInbox() {
 // declared checks. Staging fixture only.
 function demoInboxPayload(req) {
   const demo = demoInbox();
+  // Same ordering the production inbox uses, so the demo list's default
+  // order mirrors the real one (and the sort checks are meaningful: the
+  // fixture's authoring order happens to already be newest-first).
+  demo.proposals.sort(neededFirst);
   if (req.query.allvoted === '1') {
     for (const p of demo.proposals) {
       if (!p.myVote) p.myVote = 'yes';
@@ -526,13 +541,7 @@ app.get('/api/inbox', async (req, res) => {
     await withMyVotes(proposals, req.user.id);
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
-    proposals.sort((a, b) => {
-      const an = a.needed == null ? -1 : a.needed;
-      const bn = b.needed == null ? -1 : b.needed;
-      if (an !== bn) return bn - an;
-      if (a.yes !== b.yes) return a.yes - b.yes;
-      return a.title.localeCompare(b.title);
-    });
+    proposals.sort(neededFirst);
 
     const filterApps = [];
     const seen = new Set();
