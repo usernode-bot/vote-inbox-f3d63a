@@ -170,6 +170,10 @@
     // every proposal is already voted on, so the "nothing left" state is
     // reachable by a check. Never sent without demo data.
     var ALL_VOTED = params.get('allvoted') === '1';
+    // Deep link ?app-filter=open opens the app filter once the inbox has
+    // loaded, for shareable links and for the staging checks, which cannot
+    // tap. Same shape as ?q=: a one-load hint read at startup.
+    var APP_FILTER_OPEN = params.get('app-filter') === 'open';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -855,9 +859,26 @@
     var filterTrigger = document.getElementById('app-filter-trigger');
     var filterPanelEl = document.getElementById('app-filter-panel');
     var openFilter = null; // { dismiss } from the native kit, or a plain fallback
+    var openFilterRender = null; // re-render of the open dropdown, for count refreshes
 
     function filterApps() {
       return (state.inbox && state.inbox.apps) || [];
+    }
+
+    // Per-app open counts, derived from the loaded inbox proposals (no
+    // extra request). Ignores hide-voted, title search and the selected
+    // filter: the numbers are how many open proposals each app has, the
+    // same rule the "N open" summary uses. total is the All apps count.
+    function filterCounts() {
+      var proposals = (state.inbox && state.inbox.proposals) || [];
+      var bySlug = {};
+      var total = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        var slug = proposals[i].appSlug;
+        bySlug[slug] = (bySlug[slug] || 0) + 1;
+        total++;
+      }
+      return { bySlug: bySlug, total: total };
     }
 
     function findFilterApp(slug) {
@@ -885,7 +906,7 @@
       filterTrigger.setAttribute('aria-expanded', openFilter ? 'true' : 'false');
     }
 
-    function filterRowEl(app, selected) {
+    function filterRowEl(app, selected, count) {
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.setAttribute('role', 'option');
@@ -895,13 +916,21 @@
         + (selected
           ? 'bg-violet-600/10 font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
           : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800');
+      // Count sits after the name, before the check mark: a bare number in
+      // brackets, in the app's muted secondary text. The name span keeps
+      // min-w-0 flex-1 truncate so a long name cuts off and the count
+      // stays visible.
+      var countHtml = '<span data-app-count class="shrink-0 font-normal tabular-nums text-zinc-500 dark:text-zinc-400">'
+        + '(' + (count == null ? 0 : count) + ')</span>';
       if (app) {
         btn.innerHTML = appAvatar({ appSlug: app.slug, appName: app.name, icon: app.icon })
           + '<span class="min-w-0 flex-1 truncate">' + esc(app.name) + '</span>'
+          + countHtml
           + (selected ? FILTER_CHECK : '');
       } else {
         btn.innerHTML = FILTER_ALL_ICON
           + '<span class="min-w-0 flex-1 truncate">All apps</span>'
+          + countHtml
           + (selected ? FILTER_CHECK : '');
       }
       return btn;
@@ -932,12 +961,13 @@
       function renderList() {
         var query = input.value.trim().toLowerCase();
         var apps = filterApps();
+        var counts = filterCounts();
         list.innerHTML = '';
         var shown = 0;
-        if (!query) list.appendChild(filterRowEl(null, state.filter === ''));
+        if (!query) list.appendChild(filterRowEl(null, state.filter === '', counts.total));
         for (var i = 0; i < apps.length; i++) {
           if (query && apps[i].name.toLowerCase().indexOf(query) === -1) continue;
-          list.appendChild(filterRowEl(apps[i], apps[i].slug === state.filter));
+          list.appendChild(filterRowEl(apps[i], apps[i].slug === state.filter, counts.bySlug[apps[i].slug] || 0));
           shown++;
         }
         if (query && !shown) {
@@ -956,6 +986,9 @@
       });
       input.addEventListener('input', renderList);
       renderList();
+      // While the dropdown is open, a refresh (Refresh button, pull) can
+      // change the counts; loadInbox calls this to re-render the open list.
+      content.renderList = renderList;
       return content;
     }
 
@@ -973,6 +1006,7 @@
       if (!openFilter) return;
       var f = openFilter;
       openFilter = null;
+      openFilterRender = null;
       filterTrigger.setAttribute('aria-expanded', 'false');
       if (f.dismiss) {
         try { f.dismiss(); } catch (e) { /* already gone */ }
@@ -997,11 +1031,12 @@
             anchorEl: filterTrigger,
             contentEl: content,
             placement: 'bottom-start',
-            onDismiss: function () { openFilter = null; syncFilter(); },
+            onDismiss: function () { openFilter = null; openFilterRender = null; syncFilter(); },
           });
         } catch (e) { handle = null; }
         if (handle) {
           openFilter = handle;
+          openFilterRender = content.renderList;
           filterTrigger.setAttribute('aria-expanded', 'true');
           requestAnimationFrame(function () {
             var input = content.querySelector('input');
@@ -1017,6 +1052,7 @@
       filterPanelEl.appendChild(content);
       filterPanelEl.className = 'absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900';
       openFilter = { fallback: true };
+      openFilterRender = content.renderList;
       filterTrigger.setAttribute('aria-expanded', 'true');
       document.addEventListener('click', onDocClickClose);
       document.addEventListener('keydown', onFilterKeydown);
@@ -1030,6 +1066,7 @@
       render();
     }
 
+    var appFilterOpened = false; // ?app-filter=open fires once per page load
 
     function loadInbox(force) {
       if (state.loadingInbox) {
@@ -1057,6 +1094,17 @@
         .then(function () {
           state.loadingInbox = false;
           render();
+          // The dropdown's list is built once at open time; if it is open,
+          // re-render it so per-app counts follow the refreshed inbox.
+          if (openFilterRender) openFilterRender();
+          // ?app-filter=open opens the dropdown once, after the first
+          // successful inbox load, so it has apps to list. For deep links
+          // and for the staging checks, which cannot tap.
+          if (APP_FILTER_OPEN && !appFilterOpened && state.inbox
+            && state.tab === 'inbox' && !state.errorInbox) {
+            appFilterOpened = true;
+            openAppFilter();
+          }
           if (state.queuedInbox) {
             state.queuedInbox = false;
             loadInbox(true);
