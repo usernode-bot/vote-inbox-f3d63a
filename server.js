@@ -650,8 +650,12 @@ app.get('/api/my-votes', async (req, res) => {
     FROM my_votes WHERE user_id = $1 ORDER BY created_at DESC`;
   try {
     if (req.query.demo === '1' && IS_STAGING) {
-      const { rows } = await pool.query(select, [req.user.id]);
-      return res.json({ demo: true, votes: rows.concat(demoVoteRows()) });
+      // Demo mode is a fixed fixture: exactly the three demo rows, so the
+      // summary line and the declared checks ("3 voted, 1 merged") are
+      // deterministic run to run. The caller's real history, including rows
+      // the ?cast= demo hook persists for the vote → Undo check, is served
+      // by the plain route below, not mixed in here.
+      return res.json({ demo: true, votes: demoVoteRows() });
     }
 
     const { rows } = await pool.query(select, [req.user.id]);
