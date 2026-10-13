@@ -117,6 +117,7 @@
     </header>
     <p id="inbox-updated" class="-mt-1.5 pb-1 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="inbox-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
+    <p id="votes-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
     <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
@@ -124,20 +125,45 @@
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
       </div>
-      <div id="filter-row" class="mt-2 flex items-center gap-3">
-        <label for="app-filter-trigger" class="sr-only">Filter by app</label>
-        <div class="relative min-w-0 flex-1">
-          <button id="app-filter-trigger" data-app-filter-trigger type="button" aria-haspopup="listbox" aria-expanded="false"
-            class="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
-            <span id="app-filter-label" class="truncate">All apps</span>
-            <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-          </button>
-          <div id="app-filter-panel" class="hidden"></div>
+      <div id="filter-row" class="mt-2">
+        <div class="flex items-center gap-3">
+          <label for="app-filter-trigger" class="sr-only">Filter by app</label>
+          <div class="relative min-w-0 flex-1">
+            <button id="app-filter-trigger" data-app-filter-trigger type="button" aria-haspopup="listbox" aria-expanded="false"
+              class="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+              <span id="app-filter-label" class="truncate">All apps</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div id="app-filter-panel" class="hidden"></div>
+          </div>
         </div>
-        <label for="hide-voted" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-          <span>Hide voted</span>
-          <input id="hide-voted" type="checkbox" class="un-switch">
-        </label>
+        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <button id="one-away-chip" data-one-away-chip type="button" aria-pressed="false"
+            class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">One vote away</button>
+          <label for="hide-voted" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+            <span>Hide voted</span>
+            <input id="hide-voted" type="checkbox" class="un-switch">
+          </label>
+          <label for="hide-merged" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+            <span>Hide merged</span>
+            <input id="hide-merged" type="checkbox" class="un-switch">
+          </label>
+        </div>
+      </div>
+      <div id="search-row" class="mt-2">
+        <label for="inbox-search" class="sr-only">Search proposals</label>
+        <input id="inbox-search" type="text" placeholder="Search titles" autocomplete="off"
+          class="w-full rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500">
+      </div>
+    </div>
+
+    <div id="sort-row" class="flex items-center gap-2 pt-1">
+      <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Sort</span>
+      <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-800 dark:bg-zinc-900" role="radiogroup" aria-label="Sort order">
+        <button data-sort="needed" type="button" role="radio" aria-checked="true"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Votes needed</button>
+        <button data-sort="newest" type="button" role="radio" aria-checked="false"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Newest</button>
       </div>
     </div>
 
@@ -153,8 +179,23 @@
     var DEMO = params.get('demo') === '1' ? '1' : '';
     // Staging-check fixture: ?allvoted=1 asks the demo inbox for a list where
     // every proposal is already voted on, so the "nothing left" state is
-    // reachable by a check. Never sent without demo data.
+    // reachable by a check. Same idea for ?allmerged=1 and the Hide merged
+    // toggle. Neither is ever sent without demo data.
     var ALL_VOTED = params.get('allvoted') === '1';
+    var ALL_MERGED = params.get('allmerged') === '1';
+    // Staging-check fixture for the confirm-before-No flow: ?tap-no=1 asks
+    // the demo inbox to click the demo-4 card's "No" button once loaded (the
+    // real button, through the real delegated click handler), and
+    // ?confirm-no=1 then presses "No, reject" in the dialog that opens.
+    // Neither is ever sent without demo data.
+    var TAP_NO = params.get('tap-no') === '1';
+    var CONFIRM_NO = params.get('confirm-no') === '1';
+    // ?failvote=1 (demo only) makes the NEXT vote cast on this load fail the
+    // way an offline device does: the request never leaves the page, the
+    // card keeps its vote mark and a Retry pill appears. Gives checks and
+    // reviewers a deterministic URL for the offline-retry state; production
+    // never honours it.
+    var FAILVOTE = DEMO && params.get('failvote') === '1';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -163,14 +204,29 @@
       inboxLoadedAt: null,
       filter: '',
       filterName: '',
+      search: '',
       hideVoted: false,
+      // "One vote away" chip: on when ?one-away=1 (a real deep link, also
+      // how the staging checks activate it). Not persisted, unlike
+      // hideVoted: it starts off on every fresh load.
+      oneAway: params.get('one-away') === '1',
+      hideMerged: false,
+      sort: 'needed',
       loadingInbox: false,
       loadingVotes: false,
       errorInbox: null,
       errorVotes: null,
       pending: {},
+      // In-memory retry queue for votes that failed offline: sessionId ->
+      // { choice, payload, snapshot }. Never persisted; a page reload
+      // clears it and the next inbox load shows the platform's truth.
+      retryQueue: {},
       queuedInbox: false,
       queuedVotes: false,
+      // Session ids whose card title the user expanded with More. A re-render
+      // (a vote, a filter change) keeps those titles expanded; not persisted,
+      // a reload starts collapsed again.
+      expandedTitles: {},
     };
 
     // ------------------------------------------------------------------
@@ -251,6 +307,11 @@
     if (hideVotedParam === '1') state.hideVoted = true;
     else if (hideVotedParam === '0') state.hideVoted = false;
 
+    // Title search, ?q= pre-fills it for one load so a deep link (and the
+    // staging checks, which cannot type) land on the filtered list. The
+    // same value the box would hold after typing it.
+    state.search = params.get('q') || '';
+
     function setHideVoted(on) {
       state.hideVoted = on;
       saveHideVoted(on);
@@ -261,6 +322,123 @@
 
     function isVoted(p) {
       return p.myVote === 'yes' || p.myVote === 'no';
+    }
+
+    // ------------------------------------------------------------------
+    // Hide-merged preference. Same shape as the hide-voted preference:
+    // persists in localStorage, ?hide-merged=1|0 overrides it for one load
+    // (used by the staging checks) without writing back. Default off.
+    // ------------------------------------------------------------------
+
+    var HIDE_MERGED_KEY = 'vote-inbox:hide-merged';
+
+    function loadHideMerged() {
+      try { return localStorage.getItem(HIDE_MERGED_KEY) === '1'; } catch (e) { return false; }
+    }
+
+    function saveHideMerged(on) {
+      try { localStorage.setItem(HIDE_MERGED_KEY, on ? '1' : '0'); } catch (e) { /* not persistable here */ }
+    }
+
+    var hideMergedParam = params.get('hide-merged');
+    state.hideMerged = loadHideMerged();
+    if (hideMergedParam === '1') state.hideMerged = true;
+    else if (hideMergedParam === '0') state.hideMerged = false;
+
+    function setHideMerged(on) {
+      state.hideMerged = on;
+      saveHideMerged(on);
+      var box = document.getElementById('hide-merged');
+      if (box) box.checked = on;
+      render();
+    }
+
+    // ------------------------------------------------------------------
+    // Sort order preference. Same shape as the hide-voted preference:
+    // persists in localStorage so the choice survives reloads, and
+    // ?sort=needed|newest overrides it for one load (used by the staging
+    // checks) without writing back. Storage can be refused in an iframe —
+    // the choice then just doesn't persist.
+    // ------------------------------------------------------------------
+
+    var SORT_KEY = 'vote-inbox:sort';
+
+    function loadSort() {
+      try {
+        var v = localStorage.getItem(SORT_KEY);
+        return v === 'newest' || v === 'needed' ? v : 'needed';
+      } catch (e) { return 'needed'; }
+    }
+
+    function saveSort(v) {
+      try { localStorage.setItem(SORT_KEY, v); } catch (e) { /* not persistable here */ }
+    }
+
+    var sortParam = params.get('sort');
+    state.sort = loadSort();
+    if (sortParam === 'newest' || sortParam === 'needed') state.sort = sortParam;
+
+    function setSort(v) {
+      if (v !== 'needed' && v !== 'newest' || v === state.sort) return;
+      state.sort = v;
+      saveSort(v);
+      render();
+    }
+
+    // ------------------------------------------------------------------
+    // App filter preference. Persists in localStorage so the chosen app
+    // (and its display name, for the trigger label before the inbox loads)
+    // is restored when the app is next opened. Storage can be refused in
+    // an iframe — the filter then just doesn't persist. A saved slug the
+    // inbox no longer lists is dropped by syncFilter once data arrives.
+    // ------------------------------------------------------------------
+
+    var FILTER_KEY = 'vote-inbox:filter';
+
+    function loadFilter() {
+      try {
+        var v = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null');
+        if (v && typeof v.slug === 'string' && v.slug) return v;
+      } catch (e) { /* fall through */ }
+      return null;
+    }
+
+    function saveFilter(v) {
+      try {
+        if (v && v.slug) localStorage.setItem(FILTER_KEY, JSON.stringify(v));
+        else localStorage.removeItem(FILTER_KEY);
+      } catch (e) { /* not persistable here */ }
+    }
+
+    var savedFilter = loadFilter();
+    if (savedFilter) {
+      state.filter = savedFilter.slug;
+      state.filterName = savedFilter.name || '';
+    }
+
+    // One-load cleanup for the set-filter hook below: the reloaded page has
+    // restored the preference into state, then empties it again, so the
+    // hook leaves storage the way it found it (a check run shares one
+    // browser profile across routes; later routes must not inherit it).
+    if (params.get('clear-set-filter') === '1') saveFilter(null);
+
+    // Staging-check hook: ?set-filter=<slug> writes the filter preference
+    // the way a pick in the dropdown would, then reloads without the
+    // parameter, so one check URL observes set → reload → restore.
+    // ?set-filter-name= optionally supplies the display name to save (a
+    // real pick knows it from the app list; a check URL passes it along so
+    // the restored trigger label reads the same with and without data).
+    // The plain routes never touch the preference from a parameter.
+    var setFilterParam = params.get('set-filter');
+    if (setFilterParam) {
+      saveFilter({ slug: setFilterParam, name: params.get('set-filter-name') || '' });
+      var remainingParams = new URLSearchParams(params);
+      remainingParams.delete('set-filter');
+      remainingParams.delete('set-filter-name');
+      remainingParams.set('clear-set-filter', '1');
+      var remainingQ = remainingParams.toString();
+      location.replace(location.pathname + (remainingQ ? '?' + remainingQ : '') + location.hash);
+      return;
     }
 
     // ------------------------------------------------------------------
@@ -275,6 +453,11 @@
 
     var FILTER_TRIGGER_IDLE = 'flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
     var FILTER_TRIGGER_ACTIVE = 'flex w-full items-center justify-between gap-2 rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
+    // One-vote-away chip: the FILTER_TRIGGER_* strings without the trigger's
+    // full-width layout classes, plus its own so it keeps a fixed width and
+    // never wraps — same colours as the app filter's idle/active looks.
+    var ONE_AWAY_IDLE = 'shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
+    var ONE_AWAY_ACTIVE = 'shrink-0 whitespace-nowrap rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
     var FILTER_CHECK = '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
     var FILTER_ALL_ICON = '<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400" aria-hidden="true">'
       + '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'
@@ -323,6 +506,78 @@
       return '<span class="' + style + '" aria-hidden="true">' + esc(letter) + '</span>';
     }
 
+    // Voter avatar chips: the app-avatar look at a smaller, circular size,
+    // tinted from the voter's username so a voter keeps their colour across
+    // loads. The ring matches the card background so an overlapping stack
+    // reads as one cluster. Class strings are whole literals for the
+    // Tailwind compiler.
+    var VOTER_AVATAR_CLASS = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ring-2 ring-white dark:ring-zinc-900 ';
+    var VOTER_MORE_CLASS = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold whitespace-nowrap ring-2 ring-white dark:ring-zinc-900 bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 ';
+    var VOTER_ROW_CLASS = 'flex items-center -space-x-1.5';
+
+    // Yes-voter avatar row for a proposal card: one circle per yes voter,
+    // max five, then a "+N" chip for the rest. Renders nothing when the
+    // proposal has no yes votes or the platform response named no voters —
+    // voter identities are an optional field, and nothing is invented to
+    // fill the row. The extra count comes from the authoritative yes tally,
+    // so circles + N always add up to the displayed "Yes" count.
+    function voterAvatarRow(p) {
+      var voters = Array.isArray(p.yesVoters) ? p.yesVoters : null;
+      if (!voters || !voters.length || !(p.yes > 0)) return '';
+      var shown = voters.slice(0, 5);
+      var chips = '';
+      var names = [];
+      for (var i = 0; i < shown.length; i++) {
+        var voter = shown[i];
+        var username = voter && typeof voter.username === 'string' ? voter.username : '';
+        if (!username) continue;
+        var label = (voter.name && typeof voter.name === 'string' && voter.name) || username;
+        var initial = (label.trim().charAt(0) || '?').toUpperCase() || '?';
+        names.push(label);
+        chips += '<span data-voter-avatar aria-hidden="true" title="' + esc(username) + ' voted yes"'
+          + ' class="' + VOTER_AVATAR_CLASS + avatarClass(username) + '">'
+          + esc(initial) + '</span>';
+      }
+      if (!chips) return '';
+      var extra = Math.max(0, p.yes - shown.length);
+      if (extra > 0) {
+        names.push(extra + ' more');
+        chips += '<span data-voter-more aria-hidden="true" title="' + extra + ' more voted yes"'
+          + ' class="' + VOTER_MORE_CLASS + '">+' + extra + '</span>';
+      }
+      return '<div class="' + VOTER_ROW_CLASS + '" role="img"'
+        + ' aria-label="Voted yes: ' + esc(names.join(', ')) + '">'
+        + chips + '</div>';
+    }
+
+    // Yes-voter names line for a proposal card: the display names behind the
+    // avatar circles, as plain read-only text. At most three names, then a
+    // "+N" derived from the authoritative yes tally, so names + N always add
+    // up to the displayed "Yes" count (same rule the avatar row uses).
+    // Renders nothing when the proposal has no yes votes or the platform
+    // response named no voters — voter identities are an optional field and
+    // nothing is invented to fill the row.
+    function voterNamesRow(p) {
+      var voters = Array.isArray(p.yesVoters) ? p.yesVoters : null;
+      if (!voters || !voters.length || !(p.yes > 0)) return '';
+      var shown = voters.slice(0, 3);
+      var names = [];
+      for (var i = 0; i < shown.length; i++) {
+        var voter = shown[i];
+        var username = voter && typeof voter.username === 'string' ? voter.username : '';
+        if (!username) continue;
+        var label = (voter.name && typeof voter.name === 'string' && voter.name) || username;
+        names.push(label);
+      }
+      if (!names.length) return '';
+      var extra = Math.max(0, p.yes - names.length);
+      var text = names.join(', ') + (extra > 0 ? ' +' + extra + ' more' : '');
+      return '<p data-yes-voter-names class="text-xs text-zinc-500 dark:text-zinc-400"'
+        + ' title="Voted yes: ' + esc(names.join(', ')) + '">'
+        + '<span class="font-medium text-zinc-600 dark:text-zinc-300">Voted yes:</span> '
+        + esc(text) + '</p>';
+    }
+
     // Votes-needed pill: how far the yes count is from the threshold.
     function neededPill(p) {
       if (p.needed == null) return '';
@@ -341,16 +596,29 @@
         + esc(text) + '</span>';
     }
 
-    // Two-segment yes/no share bar with counts beside it.
+    // Segmented yes/no share bar: green segment for the yes share, red for
+    // the no share, widths proportional to the raw counts; the counts sit
+    // beside the bar so the numbers stay readable and identity never rides
+    // on color alone. Empty grey track when there are no votes yet. Dark
+    // mode uses darker steps of the same hues so contrast holds on the dark
+    // card surface.
     function voteBar(p) {
       var total = p.yes + p.no;
       var yesPct = total > 0 ? Math.round((p.yes * 100) / total) : 0;
-      var noPct = total > 0 ? 100 - yesPct : 0;
+      var noPct = Math.max(0, 100 - yesPct);
+      var segments = '';
+      if (p.yes > 0) {
+        segments += '<div data-vote-segment="yes" class="h-full bg-emerald-500 dark:bg-emerald-600'
+          + (p.no > 0 ? ' mr-0.5' : '')
+          + '" style="width:' + yesPct + '%"></div>';
+      }
+      if (p.no > 0) {
+        segments += '<div data-vote-segment="no" class="h-full bg-red-500 dark:bg-red-600" style="width:' + noPct + '%"></div>';
+      }
       return '<div class="flex items-center gap-2">'
-        + '<div data-vote-bar class="flex h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
+        + '<div data-vote-bar class="flex h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
         + ' aria-label="Yes ' + p.yes + ', No ' + p.no + '">'
-        + '<div data-vote-seg="yes" class="h-full bg-emerald-500 transition-all" style="width:' + yesPct + '%"></div>'
-        + '<div data-vote-seg="no" class="h-full bg-red-500 transition-all" style="width:' + noPct + '%"></div>'
+        + segments
         + '</div>'
         + '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no + '</span>'
         + '</div>';
@@ -387,6 +655,13 @@
     }
 
     var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
+
+    // Card title, clamped and expanded spellings (whole literals for the
+    // Tailwind compiler). The clamped one is line-clamp-2; enhanceTitles()
+    // measures overflow against it to decide whether a More control is due.
+    var TITLE_CLAMPED = 'line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100';
+    var TITLE_EXPANDED = 'text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100';
+    var TITLE_TOGGLE = 'self-start rounded-full text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300';
 
     // Copy link: a quiet ghost button on each proposal card. Shown only when
     // the server could build the proposal's canonical platform URL.
@@ -441,19 +716,45 @@
       }
     }
 
+    // Retry pill for a card whose vote failed offline and is queued
+    // in-memory. Amber warning treatment, matching the demo banner and the
+    // votes-needed pill; tapping the button resends the queued vote as-is.
+    function retryRow(sessionId) {
+      if (!state.retryQueue[sessionId]) return '';
+      var busy = !!state.pending[sessionId];
+      return '<div data-retry-row class="flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">'
+        + '<span class="min-w-0 text-xs font-medium text-amber-700 dark:text-amber-300">Vote not sent: you were offline</span>'
+        + '<button data-retry-vote data-session="' + esc(sessionId) + '"'
+        + ' aria-label="Retry sending this vote" title="Send this vote again"'
+        + ' class="shrink-0 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-700 transition-transform active:scale-95 disabled:opacity-50 dark:text-amber-300"'
+        + (busy ? ' disabled' : '') + '>Retry vote</button>'
+        + '</div>';
+    }
+
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
+      var titleExpanded = !!state.expandedTitles[p.sessionId];
       var age = relTime(p.proposedAt);
       var ageHtml = age
         ? '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
           + ' title="Proposed ' + esc(new Date(p.proposedAt).toLocaleString()) + '">'
           + '· ' + esc(age) + '</span>'
         : '';
+      // Promotion date ("Proposed Oct 12") on its own line under the app
+      // name. Empty when the platform did not send a proposed timestamp.
+      var proposedDateHtml = '';
+      if (p.proposedAt && isFinite(new Date(p.proposedAt).getTime())) {
+        proposedDateHtml = '<p data-proposed-date class="text-xs text-zinc-500 dark:text-zinc-400">'
+          + 'Proposed '
+          + esc(new Date(p.proposedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+          + '</p>';
+      }
       var actions;
       if (voted) {
         actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
           + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>'
-          + 'You voted ' + p.myVote + '</div>';
+          + 'You voted ' + p.myVote + '</div>'
+          + retryRow(p.sessionId);
       } else {
         var busy = state.pending[p.sessionId];
         actions = '<div class="flex gap-2">'
@@ -465,7 +766,11 @@
           + (busy ? ' disabled' : '') + '>No</button>'
           + '</div>';
       }
-      return '<article data-proposal-card class="' + CARD_CLASS + '">'
+      // data-needed lets the declared checks (and deep links) assert what the
+      // votes-needed pill shows: omitted when the threshold is unknown.
+      return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '"'
+        + (p.needed != null ? ' data-needed="' + p.needed + '"' : '')
+        + ' class="' + CARD_CLASS + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
@@ -474,17 +779,65 @@
         + '</span>'
         + neededPill(p)
         + '</div>'
-        + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
+        + proposedDateHtml
+        + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">' + esc(p.title) + '</h2>'
         + voteBar(p)
-        + (p.author || p.url
-          ? '<div class="flex items-center justify-between gap-2">'
-            + (p.author ? '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">by @' + esc(p.author) + '</p>' : '')
-            + (p.url ? copyLinkButton(p) : '')
-            + '</div>'
-          : '')
+        + voterAvatarRow(p)
+        + voterNamesRow(p)
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
+        + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
+        + (p.url ? copyLinkButton(p) : '')
+        + '</div>'
         + statusProgress(p)
         + actions
         + '</article>';
+    }
+
+    // Long titles: every card title clamps to two lines, so a longer one
+    // hides its tail behind the ellipsis. After each render, measure each
+    // card title; one that overflows its clamp gets a "More" control
+    // appended (an already-expanded one gets "Less", built with the card).
+    // A title that fits on two lines gets nothing. Tapping toggles the
+    // clamp in place, so nothing else on the card moves.
+    function enhanceTitles() {
+      var cards = document.querySelectorAll('#view [data-proposal-card]');
+      for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        var h2 = card.querySelector('[data-proposal-title]');
+        if (!h2 || card.querySelector('[data-title-toggle]')) continue;
+        var sessionId = card.getAttribute('data-session-id');
+        var expanded = !!state.expandedTitles[sessionId];
+        // Overflow check: with line-clamp-2 the element shows two lines
+        // (clientHeight) while scrollHeight still reports the full text
+        // height. The +1 slack ignores sub-pixel rounding.
+        if (!expanded && h2.scrollHeight <= h2.clientHeight + 1) continue;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-title-toggle', '');
+        btn.setAttribute('data-session', sessionId);
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        btn.className = TITLE_TOGGLE;
+        btn.textContent = expanded ? 'Less' : 'More';
+        h2.insertAdjacentElement('afterend', btn);
+      }
+    }
+
+    // More/Less tap on a clamped title: flip the clamp on that one title in
+    // place (no full re-render, so no scroll jump) and remember the choice
+    // for the session so a later re-render keeps it expanded.
+    function toggleTitle(btn) {
+      var sessionId = btn.getAttribute('data-session');
+      var card = btn.closest('[data-proposal-card]');
+      var h2 = card ? card.querySelector('[data-proposal-title]') : null;
+      if (!sessionId || !card || !h2) return;
+      var expanded = !!state.expandedTitles[sessionId];
+      if (expanded) delete state.expandedTitles[sessionId];
+      else state.expandedTitles[sessionId] = true;
+      expanded = !expanded;
+      h2.className = expanded ? TITLE_EXPANDED : TITLE_CLAMPED;
+      btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      btn.textContent = expanded ? 'Less' : 'More';
     }
 
     function voteRow(v) {
@@ -517,7 +870,10 @@
         + '</div>'
         + '<div class="mt-3 h-3 w-full rounded bg-zinc-200 dark:bg-zinc-800"></div>'
         + '<div class="mt-2 h-3 w-2/3 rounded bg-zinc-200 dark:bg-zinc-800"></div>'
-        + '<div class="mt-4 h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="mt-4 flex items-center gap-2">'
+        + '<div class="h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<div class="h-3 w-16 rounded bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '</div>'
         + '<div class="mt-4 h-10 w-full rounded-xl bg-zinc-200 dark:bg-zinc-800"></div>'
         + '</div>';
     }
@@ -538,7 +894,10 @@
 
     var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
     var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
+    var CLEAR_ONE_AWAY_CTA = '<button data-action="clear-one-away" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all proposals</button>';
     var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
+    var SHOW_MERGED_CTA = '<button data-action="show-merged" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show merged proposals</button>';
+    var CLEAR_SEARCH_CTA = '<button data-action="clear-search" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Clear search</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
 
     function errorHtml(message) {
@@ -572,7 +931,25 @@
         }
       }
       document.getElementById('filter-row').className =
-        'mt-2 flex items-center gap-3' + (state.tab === 'inbox' ? '' : ' hidden');
+        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+      document.getElementById('search-row').className =
+        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+      var sortRow = document.getElementById('sort-row');
+      if (sortRow) sortRow.className =
+        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' ? '' : ' hidden');
+    }
+
+    // The segmented sort pill: keep each option's fill and aria-checked in
+    // step with state.sort. Same active treatment as the section tabs.
+    function renderSort() {
+      var buttons = document.querySelectorAll('#sort-row [data-sort]');
+      for (var i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        var on = btn.getAttribute('data-sort') === state.sort;
+        btn.className = 'rounded-full px-3 py-1 text-xs font-semibold transition-colors '
+          + (on ? TAB_ACTIVE : TAB_IDLE);
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
     }
 
     function renderRefreshButton() {
@@ -599,12 +976,66 @@
       if (state.hideVoted) {
         filtered = filtered.filter(function (p) { return !isVoted(p); });
       }
+      // Hide merged filters the loaded list too, no refetch. Runs after the
+      // app and hide-voted filters, alongside them.
+      if (state.hideMerged) {
+        filtered = filtered.filter(function (p) { return p.status !== 'merged'; });
+      }
+      // Title search over the loaded cards only: case-insensitive substring,
+      // no refetch. Filters run after the app and hide-voted ones, so the
+      // search narrows whatever is already on screen.
+      var query = state.search.trim().toLowerCase();
+      if (query) {
+        filtered = filtered.filter(function (p) {
+          return String(p.title || '').toLowerCase().indexOf(query) !== -1;
+        });
+      }
+      if (state.sort === 'newest') {
+        // Newest proposed first; a proposal without a usable timestamp keeps
+        // its loaded order at the end (stable sort). A copy: the loaded
+        // array's order stays canonical for the default sort and the
+        // server's caches.
+        filtered = filtered.slice().sort(function (a, b) {
+          var ta = a.proposedAt ? Date.parse(a.proposedAt) : NaN;
+          var tb = b.proposedAt ? Date.parse(b.proposedAt) : NaN;
+          if (isNaN(ta) && isNaN(tb)) return 0;
+          if (isNaN(ta)) return 1;
+          if (isNaN(tb)) return -1;
+          return tb - ta;
+        });
+      }
+      // One-vote-away chip: keep only proposals exactly one yes short of
+      // their threshold (the same number the "1 vote needed" pill shows).
+      // Unknown thresholds and "Count met" proposals drop out.
+      if (state.oneAway) {
+        filtered = filtered.filter(function (p) { return p.needed === 1; });
+      }
       if (!filtered.length) {
+        // The chip is the most specific filter, so its empty state wins over
+        // the others when it is on.
+        if (proposals.length && state.oneAway) {
+          return emptyHtml(
+            'Nothing is one vote away',
+            'No open proposal needs exactly one more yes vote right now.',
+            CLEAR_ONE_AWAY_CTA);
+        }
+        if (proposals.length && query) {
+          return emptyHtml(
+            'No proposals match',
+            'No loaded proposal title contains "' + esc(state.search.trim()) + '". Clear the search to see everything.',
+            CLEAR_SEARCH_CTA);
+        }
         if (proposals.length && state.hideVoted) {
           return emptyHtml(
             'Nothing left to vote on',
             'You already voted on every open proposal here. Show voted proposals to see them again.',
             SHOW_VOTED_CTA);
+        }
+        if (proposals.length && state.hideMerged) {
+          return emptyHtml(
+            'Merged proposals hidden',
+            'Every proposal here has already merged. Show merged proposals to see them again.',
+            SHOW_MERGED_CTA);
         }
         return emptyHtml(
           proposals.length ? 'Nothing from this app' : "You're all caught up",
@@ -613,8 +1044,56 @@
             : 'No open proposals to vote on. New ones show up here.',
           proposals.length ? CLEAR_FILTER_CTA : REFRESH_CTA);
       }
+      // Age groups: small section headers over the same filtered, sorted
+      // cards. Bucketed on the proposal's proposed date in the viewer's own
+      // calendar days (Today, the six before it, then Older); a proposal the
+      // platform sent no usable timestamp for lands in Older. Cards keep the
+      // existing sort order inside each group.
+      return groupedInboxHtml(filtered);
+    }
+
+    var AGE_GROUPS = [
+      { key: 'today', label: 'Today' },
+      { key: 'week', label: 'This week' },
+      { key: 'older', label: 'Older' },
+    ];
+
+    // Which group a proposal belongs to: whole calendar days back from
+    // today, in the viewer's local time. 0 = Today, 1..6 = This week,
+    // anything further (or an unreadable/missing timestamp) = Older. A
+    // future timestamp (clock skew) reads as Today.
+    function ageBucket(p) {
+      var t = p.proposedAt ? Date.parse(p.proposedAt) : NaN;
+      if (isNaN(t)) return 'older';
+      var now = new Date();
+      var d = new Date(t);
+      var startOfDay = function (x) {
+        return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      };
+      var daysBack = Math.floor((startOfDay(now) - startOfDay(d)) / (24 * 3600 * 1000));
+      if (daysBack <= 0) return 'today';
+      if (daysBack <= 6) return 'week';
+      return 'older';
+    }
+
+    // The grouped list: one section per non-empty age group, the group's
+    // header followed by its cards in a plain flex column (the same spacing
+    // the flat list had). Cards stay direct children of a card container so
+    // the first card in a group is still that container's :first-child.
+    function groupedInboxHtml(filtered) {
+      var buckets = { today: [], week: [], older: [] };
+      for (var i = 0; i < filtered.length; i++) buckets[ageBucket(filtered[i])].push(filtered[i]);
       var html = '';
-      for (var i = 0; i < filtered.length; i++) html += proposalCard(filtered[i]);
+      for (var g = 0; g < AGE_GROUPS.length; g++) {
+        var group = AGE_GROUPS[g];
+        var items = buckets[group.key];
+        if (!items.length) continue;
+        html += '<section data-age-group="' + group.key + '" class="flex flex-col gap-3">'
+          + '<h2 data-age-header class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">' + group.label + '</h2>'
+          + '<div data-age-cards class="flex flex-col gap-3">';
+        for (var j = 0; j < items.length; j++) html += proposalCard(items[j]);
+        html += '</div></section>';
+      }
       return html;
     }
 
@@ -656,6 +1135,26 @@
       el.hidden = false;
     }
 
+    // One-line summary under the header on the My Votes tab, computed from
+    // the loaded history (no extra request): how many votes are recorded
+    // and how many of their proposals ended up merged.
+    function renderVotesSummary() {
+      var el = document.getElementById('votes-summary');
+      if (!el) return;
+      var votes = state.votes && state.votes.votes;
+      var total = votes ? votes.length : 0;
+      if (state.tab !== 'votes' || state.errorVotes || !total) {
+        el.hidden = true;
+        return;
+      }
+      var merged = 0;
+      for (var i = 0; i < votes.length; i++) {
+        if (votes[i].status === 'merged') merged++;
+      }
+      el.textContent = total + ' voted, ' + merged + ' merged';
+      el.hidden = false;
+    }
+
     // "Updated X ago" under the header, stamped on every successful inbox
     // load so it always reflects the most recent data fetch. Uses the same
     // relative-time wording as the proposal age chips.
@@ -672,13 +1171,17 @@
 
     function render() {
       syncFilter();
+      syncOneAway();
       renderTabs();
+      renderSort();
       renderDemoBanner();
       renderRefreshButton();
       renderSummary();
       renderUpdated();
+      renderVotesSummary();
       document.getElementById('view').innerHTML =
         state.tab === 'inbox' ? renderInbox() : renderVotes();
+      enhanceTitles();
     }
 
     // ------------------------------------------------------------------
@@ -720,6 +1223,16 @@
       document.getElementById('app-filter-label').textContent = app ? app.name : 'All apps';
       filterTrigger.className = app ? FILTER_TRIGGER_ACTIVE : FILTER_TRIGGER_IDLE;
       filterTrigger.setAttribute('aria-expanded', openFilter ? 'true' : 'false');
+    }
+
+    // Keep the chip's look in step with state.oneAway: same idle/active
+    // colours as the app filter trigger, plus aria-pressed for the toggle.
+    var oneAwayChip = document.getElementById('one-away-chip');
+
+    function syncOneAway() {
+      if (!oneAwayChip) return;
+      oneAwayChip.className = state.oneAway ? ONE_AWAY_ACTIVE : ONE_AWAY_IDLE;
+      oneAwayChip.setAttribute('aria-pressed', state.oneAway ? 'true' : 'false');
     }
 
     function filterRowEl(app, selected) {
@@ -863,6 +1376,7 @@
     function pickFilter(app) {
       state.filter = app ? app.slug : '';
       state.filterName = app ? app.name : '';
+      saveFilter(app ? { slug: state.filter, name: state.filterName } : null);
       closeFilter();
       render();
     }
@@ -882,11 +1396,14 @@
       var query = [];
       if (DEMO) query.push('demo=1');
       if (ALL_VOTED) query.push('allvoted=1');
+      if (ALL_MERGED) query.push('allmerged=1');
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
           state.inboxLoadedAt = new Date().toISOString();
+          reapplyRetryQueue();
           maybeAutoCast();
+          maybeAutoExpand();
         })
         .catch(function (err) {
           state.errorInbox = err.message || 'Could not load proposals.';
@@ -894,6 +1411,7 @@
         .then(function () {
           state.loadingInbox = false;
           render();
+          maybeTapNo();
           if (state.queuedInbox) {
             state.queuedInbox = false;
             loadInbox(true);
@@ -943,6 +1461,40 @@
       return null;
     }
 
+    // Classify a failed vote request. "Offline" means the request never got
+    // an HTTP answer: the browser reports the device offline, or the fetch
+    // itself rejected (an error carrying no HTTP .status — airplane mode,
+    // no connection, the request never leaving the page). A refusal the
+    // server DID send (4xx/5xx) is not an offline failure and rolls back
+    // exactly as before.
+    function isOfflineFailure(err) {
+      if (navigator.onLine === false) return true;
+      return !err || typeof err.status !== 'number';
+    }
+
+    // ?failvote=1 simulation: reject exactly the way a fetch does when the
+    // device is offline — no HTTP status at all.
+    function simulatedOfflineError() {
+      var err = new Error('Failed to fetch');
+      err.name = 'TypeError';
+      return err;
+    }
+
+    function votePayload(sessionId, choice, p, snapshot) {
+      return {
+        sessionId: sessionId,
+        choice: choice,
+        appSlug: p.appSlug,
+        appName: p.appName,
+        title: p.title,
+        proposalId: p.proposalId,
+        yes: snapshot.yes,
+        no: snapshot.no,
+        required: p.required,
+        demo: !!(state.inbox && state.inbox.demo),
+      };
+    }
+
     function castVote(sessionId, choice) {
       var p = findProposal(sessionId);
       if (!p || state.pending[sessionId]) return;
@@ -952,22 +1504,20 @@
       p.myVote = choice;
       if (choice === 'yes') p.yes += 1; else p.no += 1;
       render();
-      api('/api/vote', {
-        method: 'POST',
-        headers: headers({ 'content-type': 'application/json' }),
-        body: JSON.stringify({
-          sessionId: sessionId,
-          choice: choice,
-          appSlug: p.appSlug,
-          appName: p.appName,
-          title: p.title,
-          proposalId: p.proposalId,
-          yes: snapshot.yes,
-          no: snapshot.no,
-          required: p.required,
-          demo: !!(state.inbox && state.inbox.demo),
-        }),
-      }).then(function () {
+      var payload = votePayload(sessionId, choice, p, snapshot);
+      var request;
+      if (FAILVOTE && state.inbox && state.inbox.demo) {
+        // Demo fixture only: one simulated offline failure per load.
+        FAILVOTE = false;
+        request = Promise.reject(simulatedOfflineError());
+      } else {
+        request = api('/api/vote', {
+          method: 'POST',
+          headers: headers({ 'content-type': 'application/json' }),
+          body: JSON.stringify(payload),
+        });
+      }
+      request.then(function () {
         state.votes = null; // history refetches next time the tab opens
         toast('Vote recorded', {
           duration: 5000,
@@ -977,14 +1527,78 @@
           },
         });
       }).catch(function (err) {
-        p.myVote = snapshot.myVote;
-        p.yes = snapshot.yes;
-        p.no = snapshot.no;
-        toast('Vote failed: ' + (err.message || 'try again'));
+        if (isOfflineFailure(err)) {
+          // Offline: keep the card marked and queue an in-memory retry.
+          // The vote never reached the platform, so My Votes stays without
+          // it until a retry succeeds.
+          state.retryQueue[sessionId] = { choice: choice, payload: payload, snapshot: snapshot };
+          toast('Vote not sent: you seem offline. Tap Retry on the card.');
+        } else {
+          p.myVote = snapshot.myVote;
+          p.yes = snapshot.yes;
+          p.no = snapshot.no;
+          toast('Vote failed: ' + (err.message || 'try again'));
+        }
       }).then(function () {
         delete state.pending[sessionId];
         render();
       });
+    }
+
+    // Retry a vote that failed offline: resend the exact same request. On
+    // success the card's optimistic state is now the platform's truth, the
+    // pill goes away and My Votes refetches. Still offline: the card stays
+    // marked and queued. A server refusal (the platform answered and said
+    // no) rolls the card back like any other failed vote.
+    function retryVote(sessionId) {
+      var entry = state.retryQueue[sessionId];
+      var p = findProposal(sessionId);
+      if (!entry || !p || state.pending[sessionId]) return;
+      state.pending[sessionId] = true;
+      render();
+      api('/api/vote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify(entry.payload),
+      }).then(function () {
+        delete state.retryQueue[sessionId];
+        state.votes = null; // history refetches next time the tab opens
+        toast('Vote recorded', {
+          duration: 5000,
+          action: {
+            label: 'Undo',
+            handler: function () { undoVote(sessionId, entry.choice, entry.snapshot); },
+          },
+        });
+      }).catch(function (err) {
+        if (isOfflineFailure(err)) {
+          toast('Still offline. Your vote stays on the card to retry.');
+        } else {
+          delete state.retryQueue[sessionId];
+          p.myVote = entry.snapshot.myVote;
+          p.yes = entry.snapshot.yes;
+          p.no = entry.snapshot.no;
+          toast('Vote failed: ' + (err.message || 'try again'));
+        }
+      }).then(function () {
+        delete state.pending[sessionId];
+        render();
+      });
+    }
+
+    // Reapply the in-memory retry queue to a freshly loaded inbox: a card
+    // whose vote never reached the platform stays marked voted, with its
+    // optimistic count restored, until a retry succeeds. Entries whose
+    // proposal is no longer listed are dropped: there is no card left to
+    // retry them on.
+    function reapplyRetryQueue() {
+      for (var sessionId in state.retryQueue) {
+        var entry = state.retryQueue[sessionId];
+        var p = findProposal(sessionId);
+        if (!p) { delete state.retryQueue[sessionId]; continue; }
+        p.myVote = entry.choice;
+        if (entry.choice === 'yes') p.yes += 1; else p.no += 1;
+      }
     }
 
     // Undo a just-cast vote: drop this app's record of it and roll the card
@@ -1009,6 +1623,126 @@
       }).then(render);
     }
 
+    // Confirm before a No vote: rejecting is the direction worth a second
+    // look (it can sink a proposal), so the card's "No" button opens a small
+    // confirm first; "Yes" stays one-tap. The native kit's alert carries the
+    // dialog where it is available (native styling, keyboard avoidance);
+    // standalone or kit-less loads get a plain in-app dialog with the same
+    // two answers. The kit both invokes the button's handler and resolves
+    // its promise, so confirmNo guards against casting twice.
+    function openNoConfirm(sessionId) {
+      var p = findProposal(sessionId);
+      if (!p) return;
+      var title = 'Reject this proposal?';
+      var message = 'Your No vote on "' + p.title + '" will be recorded right away.';
+      var confirmed = false;
+      var confirmNo = function () {
+        if (confirmed) return;
+        confirmed = true;
+        castVote(sessionId, 'no');
+      };
+      if (window.unNative && unNative.alert) {
+        try {
+          var answered = unNative.alert({
+            title: title,
+            message: message,
+            buttons: [
+              { label: 'No, reject', style: 'destructive', handler: confirmNo },
+              { label: 'Cancel', style: 'cancel' },
+            ],
+          });
+          if (answered && typeof answered.then === 'function') {
+            answered.then(function (res) {
+              var label = res && res.button;
+              if (label && typeof label === 'object') label = label.label;
+              if (label === 'No, reject') confirmNo();
+            }).catch(function () { /* dismissed; nothing to cast */ });
+          }
+          return;
+        } catch (e) { /* fall through to the plain dialog */ }
+      }
+      fallbackNoConfirm(title, message, confirmNo);
+    }
+
+    // Plain in-app confirm for loads without the native kit. Same two
+    // answers, same wording; the backdrop tap and Cancel both dismiss.
+    function fallbackNoConfirm(title, message, confirmNo) {
+      var overlay = document.createElement('div');
+      overlay.setAttribute('data-no-confirm', '');
+      overlay.setAttribute('role', 'alertdialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-label', title);
+      overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6';
+      overlay.innerHTML = '<div class="w-64 rounded-2xl bg-white p-4 text-center shadow-xl dark:bg-zinc-900">'
+        + '<p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">' + esc(title) + '</p>'
+        + '<p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">' + esc(message) + '</p>'
+        + '<div class="mt-3 flex flex-col gap-2">'
+        + '<button data-no-confirm-reject class="min-h-9 rounded-xl bg-red-600 py-2 text-sm font-semibold text-white active:scale-95">No, reject</button>'
+        + '<button data-no-confirm-cancel class="min-h-9 rounded-xl bg-zinc-100 py-2 text-sm font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200">Cancel</button>'
+        + '</div></div>';
+      var close = function () {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      };
+      overlay.addEventListener('click', function (event) {
+        if (event.target.closest('[data-no-confirm-reject]')) { close(); confirmNo(); }
+        else if (event.target.closest('[data-no-confirm-cancel]') || event.target === overlay) close();
+      });
+      document.body.appendChild(overlay);
+    }
+
+    // First button whose visible text matches exactly, whatever surface
+    // rendered it (kit alert or fallback dialog). Used by the staging tap
+    // hook below to press the dialog's answer.
+    function findButtonByText(text) {
+      var buttons = document.querySelectorAll('button');
+      for (var i = 0; i < buttons.length; i++) {
+        if (buttons[i].textContent.trim() === text) return buttons[i];
+      }
+      return null;
+    }
+
+    // Staging demo hook: ?demo=1&tap-no=1 clicks the demo-4 card's "No"
+    // button once the demo inbox has rendered — the real button, through the
+    // real delegated click handler — so the confirm-before-No dialog is
+    // reachable by a check. ?confirm-no=1 then presses "No, reject" in the
+    // dialog that opens, casting the vote for real through the demo-mode
+    // POST. Any earlier demo vote on demo-4 is cleared first so repeated
+    // check runs always reach the dialog. Demo only.
+    var TAP_NO_SESSION = 'demo-4';
+    var tapNoDone = false;
+    function maybeTapNo() {
+      if (!DEMO || !TAP_NO || tapNoDone) return;
+      tapNoDone = true;
+      var p = findProposal(TAP_NO_SESSION);
+      if (!p) return;
+      api('/api/unvote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ sessionId: TAP_NO_SESSION }),
+      }).catch(function () {}).then(function () {
+        p.myVote = null;
+        render();
+        var buttons = document.querySelectorAll('[data-vote="no"]');
+        for (var i = 0; i < buttons.length; i++) {
+          if (buttons[i].getAttribute('data-session') === TAP_NO_SESSION) {
+            buttons[i].click();
+            break;
+          }
+        }
+        if (!CONFIRM_NO) return;
+        var tries = 0;
+        var timer = setInterval(function () {
+          var confirmBtn = findButtonByText('No, reject');
+          if (confirmBtn) {
+            clearInterval(timer);
+            confirmBtn.click();
+          } else if (++tries > 40) {
+            clearInterval(timer);
+          }
+        }, 100);
+      });
+    }
+
     // Staging demo hook: ?demo=1&cast=<sessionId>:<choice> casts one vote
     // automatically once the demo inbox is loaded, giving checks and
     // reviewers a stable URL for the vote → toast → Undo flow. Demo only.
@@ -1031,6 +1765,19 @@
         });
     }
 
+    // Staging demo hook: ?demo=1&expand=<sessionId> expands one proposal's
+    // clamped title automatically once the demo inbox is loaded, the same
+    // trick ?cast= uses for the vote flow: it gives the checks (which read
+    // the page but cannot tap) and reviewers a stable URL for the expanded
+    // More/Less state. Demo only; a session id not in the list does nothing.
+    function maybeAutoExpand() {
+      if (!DEMO) return;
+      var id = params.get('expand');
+      if (!id) return;
+      if (!findProposal(id)) return;
+      state.expandedTitles[String(id)] = true;
+    }
+
     // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------
@@ -1043,9 +1790,21 @@
         if (action === 'refresh') refreshCurrent();
         else if (action === 'clear-filter') {
           state.filter = '';
+          state.filterName = '';
+          saveFilter(null);
+          render();
+        } else if (action === 'clear-one-away') {
+          state.oneAway = false;
           render();
         } else if (action === 'show-voted') {
           setHideVoted(false);
+        } else if (action === 'show-merged') {
+          setHideMerged(false);
+        } else if (action === 'clear-search') {
+          state.search = '';
+          var box = document.getElementById('inbox-search');
+          if (box) box.value = '';
+          render();
         } else if (action === 'go-inbox') {
           state.tab = 'inbox';
           render();
@@ -1056,8 +1815,21 @@
         }
         return;
       }
+      var titleBtn = target.closest ? target.closest('[data-title-toggle]') : null;
+      if (titleBtn) {
+        toggleTitle(titleBtn);
+        return;
+      }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
-      if (voteBtn) castVote(voteBtn.getAttribute('data-session'), voteBtn.getAttribute('data-vote'));
+      if (voteBtn) {
+        var voteSession = voteBtn.getAttribute('data-session');
+        var voteChoice = voteBtn.getAttribute('data-vote');
+        // "No" asks first; "Yes" stays one-tap.
+        if (voteChoice === 'no') openNoConfirm(voteSession);
+        else castVote(voteSession, voteChoice);
+      }
+      var retryBtn = target.closest ? target.closest('[data-retry-vote]') : null;
+      if (retryBtn) retryVote(retryBtn.getAttribute('data-session'));
       var copyBtn = target.closest ? target.closest('[data-copy-link]') : null;
       if (copyBtn) copyProposalLink(copyBtn);
     });
@@ -1066,9 +1838,34 @@
       if (openFilter) closeFilter(); else openAppFilter();
     });
 
+    if (oneAwayChip) {
+      oneAwayChip.addEventListener('click', function () {
+        state.oneAway = !state.oneAway;
+        render();
+      });
+    }
+
     document.getElementById('hide-voted').addEventListener('change', function (event) {
       setHideVoted(event.target.checked);
     });
+
+    document.getElementById('hide-merged').addEventListener('change', function (event) {
+      setHideMerged(event.target.checked);
+    });
+
+    // Title search filters the loaded cards live; the input sits outside
+    // #view so re-rendering the list never steals its focus.
+    document.getElementById('inbox-search').addEventListener('input', function (event) {
+      state.search = event.target.value;
+      render();
+    });
+
+    var sortButtons = document.querySelectorAll('#sort-row [data-sort]');
+    for (var si = 0; si < sortButtons.length; si++) {
+      sortButtons[si].addEventListener('click', function (event) {
+        setSort(event.currentTarget.getAttribute('data-sort'));
+      });
+    }
 
     document.getElementById('refresh-btn').addEventListener('click', function () {
       refreshCurrent();
@@ -1106,6 +1903,10 @@
     render();
     var hideVotedBox = document.getElementById('hide-voted');
     if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
+    var hideMergedBox = document.getElementById('hide-merged');
+    if (hideMergedBox) hideMergedBox.checked = state.hideMerged;
+    var searchBox = document.getElementById('inbox-search');
+    if (searchBox && state.search) searchBox.value = state.search;
     if (state.tab === 'votes') loadVotes(true); else loadInbox(true);
   })();
   </script>
