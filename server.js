@@ -450,7 +450,13 @@ function demoInbox() {
   const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters) => ({
     sessionId,
     proposalId,
-    url: proposalUrl(slug, proposalId),
+    // Without a configured platform origin (a bare check worker, not real
+    // staging) proposalUrl is null and the cards would lose their Copy link
+    // button, so the fixture carries a reserved `.invalid` stand-in: same
+    // shape, obviously fake, clipboard-harmless.
+    url: proposalUrl(slug, proposalId)
+      || 'https://staging-demo.invalid/app/' + encodeURIComponent(slug)
+        + '/dev/proposals/' + encodeURIComponent(proposalId),
     title,
     author: 'staging-demo-user',
     status: status || null,
