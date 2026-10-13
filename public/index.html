@@ -137,7 +137,9 @@
             <div id="app-filter-panel" class="hidden"></div>
           </div>
         </div>
-        <div class="mt-2 flex items-center gap-4">
+        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <button id="one-away-chip" data-one-away-chip type="button" aria-pressed="false"
+            class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">One vote away</button>
           <label for="hide-voted" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
             <span>Hide voted</span>
             <input id="hide-voted" type="checkbox" class="un-switch">
@@ -204,6 +206,10 @@
       filterName: '',
       search: '',
       hideVoted: false,
+      // "One vote away" chip: on when ?one-away=1 (a real deep link, also
+      // how the staging checks activate it). Not persisted, unlike
+      // hideVoted: it starts off on every fresh load.
+      oneAway: params.get('one-away') === '1',
       hideMerged: false,
       sort: 'needed',
       loadingInbox: false,
@@ -447,6 +453,11 @@
 
     var FILTER_TRIGGER_IDLE = 'flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
     var FILTER_TRIGGER_ACTIVE = 'flex w-full items-center justify-between gap-2 rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-left text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
+    // One-vote-away chip: the FILTER_TRIGGER_* strings without the trigger's
+    // full-width layout classes, plus its own so it keeps a fixed width and
+    // never wraps — same colours as the app filter's idle/active looks.
+    var ONE_AWAY_IDLE = 'shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
+    var ONE_AWAY_ACTIVE = 'shrink-0 whitespace-nowrap rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
     var FILTER_CHECK = '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
     var FILTER_ALL_ICON = '<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400" aria-hidden="true">'
       + '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'
@@ -755,7 +766,11 @@
           + (busy ? ' disabled' : '') + '>No</button>'
           + '</div>';
       }
-      return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '" class="' + CARD_CLASS + '">'
+      // data-needed lets the declared checks (and deep links) assert what the
+      // votes-needed pill shows: omitted when the threshold is unknown.
+      return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '"'
+        + (p.needed != null ? ' data-needed="' + p.needed + '"' : '')
+        + ' class="' + CARD_CLASS + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
@@ -879,6 +894,7 @@
 
     var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
     var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
+    var CLEAR_ONE_AWAY_CTA = '<button data-action="clear-one-away" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all proposals</button>';
     var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
     var SHOW_MERGED_CTA = '<button data-action="show-merged" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show merged proposals</button>';
     var CLEAR_SEARCH_CTA = '<button data-action="clear-search" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Clear search</button>';
@@ -988,7 +1004,21 @@
           return tb - ta;
         });
       }
+      // One-vote-away chip: keep only proposals exactly one yes short of
+      // their threshold (the same number the "1 vote needed" pill shows).
+      // Unknown thresholds and "Count met" proposals drop out.
+      if (state.oneAway) {
+        filtered = filtered.filter(function (p) { return p.needed === 1; });
+      }
       if (!filtered.length) {
+        // The chip is the most specific filter, so its empty state wins over
+        // the others when it is on.
+        if (proposals.length && state.oneAway) {
+          return emptyHtml(
+            'Nothing is one vote away',
+            'No open proposal needs exactly one more yes vote right now.',
+            CLEAR_ONE_AWAY_CTA);
+        }
         if (proposals.length && query) {
           return emptyHtml(
             'No proposals match',
@@ -1141,6 +1171,7 @@
 
     function render() {
       syncFilter();
+      syncOneAway();
       renderTabs();
       renderSort();
       renderDemoBanner();
@@ -1192,6 +1223,16 @@
       document.getElementById('app-filter-label').textContent = app ? app.name : 'All apps';
       filterTrigger.className = app ? FILTER_TRIGGER_ACTIVE : FILTER_TRIGGER_IDLE;
       filterTrigger.setAttribute('aria-expanded', openFilter ? 'true' : 'false');
+    }
+
+    // Keep the chip's look in step with state.oneAway: same idle/active
+    // colours as the app filter trigger, plus aria-pressed for the toggle.
+    var oneAwayChip = document.getElementById('one-away-chip');
+
+    function syncOneAway() {
+      if (!oneAwayChip) return;
+      oneAwayChip.className = state.oneAway ? ONE_AWAY_ACTIVE : ONE_AWAY_IDLE;
+      oneAwayChip.setAttribute('aria-pressed', state.oneAway ? 'true' : 'false');
     }
 
     function filterRowEl(app, selected) {
@@ -1752,6 +1793,9 @@
           state.filterName = '';
           saveFilter(null);
           render();
+        } else if (action === 'clear-one-away') {
+          state.oneAway = false;
+          render();
         } else if (action === 'show-voted') {
           setHideVoted(false);
         } else if (action === 'show-merged') {
@@ -1793,6 +1837,13 @@
     filterTrigger.addEventListener('click', function () {
       if (openFilter) closeFilter(); else openAppFilter();
     });
+
+    if (oneAwayChip) {
+      oneAwayChip.addEventListener('click', function () {
+        state.oneAway = !state.oneAway;
+        render();
+      });
+    }
 
     document.getElementById('hide-voted').addEventListener('change', function (event) {
       setHideVoted(event.target.checked);
