@@ -603,9 +603,11 @@
     // Segmented yes/no share bar: green segment for the yes share, red for
     // the no share, widths proportional to the raw counts; the counts sit
     // beside the bar so the numbers stay readable and identity never rides
-    // on color alone. When the vote threshold is known, the yes count reads
-    // as X of Y (data-vote-threshold carries the pair for the declared
-    // checks); omitted when the threshold is unknown, like the needed pill.
+    // on color alone. When the vote threshold is known, the progress toward
+    // it (X of Y) is appended after the counts in its own span — the counts
+    // keep their "Yes N · No M" shape, so neither format loses the other
+    // (data-vote-threshold carries the pair for the declared checks); both
+    // omitted when the threshold is unknown, like the needed pill.
     // Empty grey track when there are no votes yet. Dark mode uses darker
     // steps of the same hues so contrast holds on the dark card surface.
     function voteBar(p) {
@@ -622,14 +624,18 @@
         segments += '<div data-vote-segment="no" class="h-full bg-red-500 dark:bg-red-600" style="width:' + noPct + '%"></div>';
       }
       var hasThreshold = p.required != null && p.required > 0;
-      var yesText = hasThreshold ? 'Yes ' + p.yes + ' of ' + p.required : 'Yes ' + p.yes;
-      var thresholdAttr = hasThreshold ? ' data-vote-threshold="' + p.yes + ' of ' + p.required + '"' : '';
+      var counts = 'Yes ' + p.yes + ' · No ' + p.no;
+      var countsText = counts + (hasThreshold ? ' · ' + p.yes + ' of ' + p.required : '');
       return '<div class="flex items-center gap-2">'
         + '<div data-vote-bar class="flex h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
-        + ' aria-label="' + yesText + ', No ' + p.no + '">'
+        + ' aria-label="' + countsText + '">'
         + segments
         + '</div>'
-        + '<span' + thresholdAttr + ' class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">' + yesText + ' · No ' + p.no + '</span>'
+        + '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">' + counts
+        + (hasThreshold
+          ? ' · <span data-vote-threshold="' + p.yes + ' of ' + p.required + '">' + p.yes + ' of ' + p.required + '</span>'
+          : '')
+        + '</span>'
         + '</div>';
     }
 
