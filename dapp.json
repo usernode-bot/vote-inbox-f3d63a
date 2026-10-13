@@ -79,6 +79,13 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "my-votes.summary",
+      "name": "My Votes header shows voted and merged counts",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "#votes-summary",
+      "expectText": "3 voted, 1 merged"
+    },
+    {
       "id": "inbox.voter-avatars",
       "name": "Yes-voter avatar circles render on cards with yes votes",
       "path": "/?demo=1",
