@@ -61,11 +61,45 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.vote-retry",
+      "name": "Failed offline vote keeps the card marked with a Retry pill",
+      "path": "/?demo=1&cast=demo-2:yes&failvote=1",
+      "expectSelector": "[data-retry-vote]",
+      "expectText": "Retry vote",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "my-votes.demo",
       "name": "My Votes shows history with status",
       "path": "/?tab=votes&demo=1",
       "expectSelector": "[data-vote-row]",
       "expectText": "You voted yes",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "my-votes.summary",
+      "name": "My Votes header shows voted and merged counts",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "#votes-summary",
+      "expectText": "3 voted, 1 merged"
+    },
+    {
+      "id": "inbox.voter-avatars",
+      "name": "Yes-voter avatar circles render on cards with yes votes",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card] [data-voter-avatar]",
+      "expectText": "+2",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.voter-names",
+      "name": "Proposal cards list yes-voter display names",
+      "path": "/?demo=1",
+      "expectSelector": "[data-yes-voter-names]",
+      "expectText": "Maya (demo)",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
@@ -88,6 +122,30 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "app-filter.persisted",
+      "name": "Chosen app filter is restored after a reload",
+      "path": "/?demo=1&set-filter=staging-demo-archive&set-filter-name=Staging%20Demo%20Archive",
+      "expectText": "Staging Demo Archive",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.title-search",
+      "name": "Title search keeps only matching cards",
+      "path": "/?demo=1&q=Keyboard",
+      "expectSelector": "[data-proposal-card]",
+      "expectText": "keyboard shortcuts",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.title-search-empty",
+      "name": "Title search shows a no-match empty state",
+      "path": "/?demo=1&q=zzz-no-such-title",
+      "expectText": "No proposals match",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "inbox.vote-share-bar",
       "name": "Proposal cards show proportional yes/no vote bar",
       "path": "/?demo=1",
@@ -101,6 +159,79 @@
       "name": "Hide voted toggle empties an all-voted inbox",
       "path": "/?demo=1&hide-voted=1&allvoted=1",
       "expectText": "Nothing left to vote on",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.hide-merged",
+      "name": "Hide merged toggle empties an all-merged inbox",
+      "path": "/?demo=1&hide-merged=1&allmerged=1",
+      "expectText": "Merged proposals hidden",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.age-groups",
+      "name": "Inbox groups proposals under age headers",
+      "path": "/?demo=1",
+      "expectSelector": "[data-age-group] [data-age-header]",
+      "expectText": "Today",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-default",
+      "name": "Default inbox order is most votes needed first",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4']:first-child",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-newest",
+      "name": "Newest-first sort puts the most recent proposal on top",
+      "path": "/?demo=1&sort=newest",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2']:first-child",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.no-confirm-dialog",
+      "name": "Tapping No asks for confirmation before rejecting",
+      "path": "/?demo=1&tap-no=1",
+      "expectText": "No, reject",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.no-confirm-cast",
+      "name": "Confirming No, reject records the vote",
+      "path": "/?demo=1&tap-no=1&confirm-no=1",
+      "expectText": "You voted no",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.title-more",
+      "name": "Long titles clamp to two lines with a More control",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card] [data-title-toggle]",
+      "expectText": "More",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.title-expand",
+      "name": "More expands a clamped title to its full text",
+      "path": "/?demo=1&expand=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-title-toggle][aria-expanded='true']",
+      "expectText": "Less",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.proposed-date",
+      "name": "Proposal cards show the promotion date under the app name",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card] [data-proposed-date]",
+      "expectText": "Proposed",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
     }
