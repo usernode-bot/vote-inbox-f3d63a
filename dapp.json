@@ -3,7 +3,15 @@
   "icon": {
     "emoji": "📥"
   },
-  "secrets": [],
+  "secrets": [
+    {
+      "key": "USERNODE_PLATFORM_ORIGIN",
+      "description": "Origin of the Homeroom platform, used to build the canonical link each proposal card offers to share or copy (e.g. https://app.onhomeroom.com).",
+      "required": false,
+      "private": false,
+      "default": "https://app.onhomeroom.com"
+    }
+  ],
   "tests": [
     {
       "id": "inbox.demo-list",
@@ -20,6 +28,14 @@
       "path": "/?demo=1",
       "expectSelector": "[data-copy-link]",
       "expectText": "Copy link"
+    },
+    {
+      "id": "inbox.share-button",
+      "name": "Proposal cards offer a share button with a copy fallback",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card] [data-copy-link][data-share-mode='copy'][data-url]",
+      "expectText": "Copy link",
+      "impact": ["public/index.html", "dapp.json"]
     },
     {
       "id": "inbox.status-bar",
