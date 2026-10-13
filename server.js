@@ -254,6 +254,17 @@ function proposalUrl(appSlug, proposalId) {
 
 // Promoted (open, up-for-vote) proposals for one app. The platform's field
 // spellings are normalised here so the frontend deals with one shape.
+// Most votes-needed first; unknown requirement last, then fewest yes.
+// Shared by the production inbox and the staging demo payload so the demo
+// list's default order mirrors the real one.
+function neededFirst(a, b) {
+  const an = a.needed == null ? -1 : a.needed;
+  const bn = b.needed == null ? -1 : b.needed;
+  if (an !== bn) return bn - an;
+  if (a.yes !== b.yes) return a.yes - b.yes;
+  return a.title.localeCompare(b.title);
+}
+
 function normalizeProposal(raw, appItem) {
   if (!raw || typeof raw !== 'object') return null;
   const sessionId = raw.session_id ?? raw.sessionId
@@ -271,6 +282,25 @@ function normalizeProposal(raw, appItem) {
   // When the proposal was made, for the relative-age label on cards.
   const proposedAt = [raw.proposed_at, raw.proposedAt, raw.created_at, raw.createdAt]
     .find((v) => typeof v === 'string' && v) || null;
+  // The proposal's yes voters, when the platform response names them: an
+  // optional field under any of the usual spellings, entries either plain
+  // username strings or objects carrying a username. Normalised to
+  // { username, name } for the cards' avatar row; null when the response
+  // carries no usable list (the row simply does not render then). Capped to
+  // keep a pathological payload from bloating the inbox response.
+  const rawVoters = [raw.yes_voters, raw.yesVoters, raw.voters_for, raw.votersFor]
+    .find(Array.isArray) || null;
+  const yesVoters = rawVoters === null ? null : rawVoters
+    .map((v) => {
+      if (typeof v === 'string') return { username: v.trim(), name: '' };
+      if (v && typeof v === 'object' && typeof v.username === 'string') {
+        const name = typeof v.name === 'string' ? v.name.trim() : '';
+        return { username: v.username.trim(), name };
+      }
+      return null;
+    })
+    .filter((v) => v && v.username)
+    .slice(0, 50);
   return {
     sessionId: String(sessionId),
     proposalId,
@@ -286,6 +316,7 @@ function normalizeProposal(raw, appItem) {
     yes,
     no,
     required,
+    yesVoters,
     needed: required != null ? Math.max(0, required - yes) : null,
   };
 }
@@ -404,8 +435,19 @@ function demoInbox() {
   const apps = [
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
+    // A third app with no open proposals, so nothing else on the screen can
+    // carry its name: the filter-persisted check's expectText only matches
+    // when the restored filter names this app in the trigger, and a tester
+    // landing on it sees the "Show all apps" empty state of a real filter.
+    { slug: 'staging-demo-archive', name: 'Staging Demo Archive', icon: '🗄️' },
   ];
-  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote) => ({
+  // Fake yes-voter identities for the cards' avatar row; "(demo)" in the
+  // display name keeps them obviously made up, matching the seed rules.
+  const voter = (u) => ({
+    username: 'staging-demo-' + u.toLowerCase(),
+    name: u + ' (demo)',
+  });
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters) => ({
     sessionId,
     proposalId,
     url: proposalUrl(slug, proposalId),
@@ -420,32 +462,53 @@ function demoInbox() {
     yes,
     no,
     required,
+    yesVoters: voters || null,
     needed: required != null ? Math.max(0, required - yes) : null,
     myVote: myVote || null,
   });
   const H = 3600 * 1000;
   const D = 24 * H;
   // Two of the five are marked already voted so the Hide voted toggle has
-  // something to filter in previews.
+  // something to filter in previews. Statuses cover the three card labels:
+  // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries
+  // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
+  // avatar row shows its max-5-then-"+N" case in previews and checks, and a
+  // deliberately long title (3+ rendered lines) so the expandable-title
+  // More/Less control has something to clamp in every preview. With
+  // required 11 it needs 4 more votes, the most in the list, so it must stay
+  // the MOST votes-needed proposal: the default most-votes-needed-first order
+  // puts it on top (neededFirst breaks ties by fewest yes, so a tie here
+  // would not), and the default-order check expects it as the first card. The
+  // header summary's "8 votes needed" depends on 4 + 3 + 1 across
+  // demo-4/demo-2/demo-1.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H),
-    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts', 0, 2, 3, null, 8 * H),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 5, null, 2 * D, 'no'),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes'),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, null, 9 * D),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H, null, [voter('Maya')]),
+    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, 8 * H, null,
+      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter)),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')]),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')]),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')]),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }
 
 // The demo payload, optionally with every proposal marked voted
 // (?allvoted=1) so the Hide voted toggle's empty state is reachable by the
-// declared checks. Staging fixture only.
+// declared checks, or every proposal marked merged (?allmerged=1) for the
+// Hide merged toggle the same way. Staging fixtures only.
 function demoInboxPayload(req) {
   const demo = demoInbox();
+  // Same ordering the production inbox uses, so the demo list's default
+  // order mirrors the real one (and the sort checks are meaningful: the
+  // fixture's authoring order happens to already be newest-first).
+  demo.proposals.sort(neededFirst);
   if (req.query.allvoted === '1') {
     for (const p of demo.proposals) {
       if (!p.myVote) p.myVote = 'yes';
     }
+  }
+  if (req.query.allmerged === '1') {
+    for (const p of demo.proposals) p.status = 'merged';
   }
   return demo;
 }
@@ -526,13 +589,7 @@ app.get('/api/inbox', async (req, res) => {
     await withMyVotes(proposals, req.user.id);
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
-    proposals.sort((a, b) => {
-      const an = a.needed == null ? -1 : a.needed;
-      const bn = b.needed == null ? -1 : b.needed;
-      if (an !== bn) return bn - an;
-      if (a.yes !== b.yes) return a.yes - b.yes;
-      return a.title.localeCompare(b.title);
-    });
+    proposals.sort(neededFirst);
 
     const filterApps = [];
     const seen = new Set();
