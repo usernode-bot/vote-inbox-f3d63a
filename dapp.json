@@ -1,6 +1,7 @@
 {
   "description": "One inbox for all open proposals with vote counts. Vote fast, track mine.",
   "icon": {
+    "image": "brand/icon.png",
     "emoji": "📥"
   },
   "secrets": [],
