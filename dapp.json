@@ -216,6 +216,15 @@
       "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-title-toggle][aria-expanded='true']",
       "expectText": "Less",
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.proposed-date",
+      "name": "Proposal cards show the promotion date under the app name",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card] [data-proposed-date]",
+      "expectText": "Proposed",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
     }
   ]
 }

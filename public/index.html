@@ -729,6 +729,15 @@
           + ' title="Proposed ' + esc(new Date(p.proposedAt).toLocaleString()) + '">'
           + '· ' + esc(age) + '</span>'
         : '';
+      // Promotion date ("Proposed Oct 12") on its own line under the app
+      // name. Empty when the platform did not send a proposed timestamp.
+      var proposedDateHtml = '';
+      if (p.proposedAt && isFinite(new Date(p.proposedAt).getTime())) {
+        proposedDateHtml = '<p data-proposed-date class="text-xs text-zinc-500 dark:text-zinc-400">'
+          + 'Proposed '
+          + esc(new Date(p.proposedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+          + '</p>';
+      }
       var actions;
       if (voted) {
         actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
@@ -755,6 +764,7 @@
         + '</span>'
         + neededPill(p)
         + '</div>'
+        + proposedDateHtml
         + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">' + esc(p.title) + '</h2>'
         + voteBar(p)
         + voterAvatarRow(p)
