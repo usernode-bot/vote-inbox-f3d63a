@@ -857,19 +857,37 @@
 
     function voteRow(v) {
       var style = STATUS_STYLE[v.status] || STATUS_STYLE.closed;
+      var knownStatus = !!STATUS_STYLE[v.status];
       var date = '';
       if (v.created_at) {
         try { date = new Date(v.created_at).toLocaleDateString(); } catch (e) { date = ''; }
+      }
+      // Merged rows show when the proposal merged, next to the pill. The
+      // recorded merged_at timestamp is the source; updated_at (the refresh
+      // that first saw the merge) stands in when the platform never sent one.
+      var mergedDate = '';
+      var mergedFull = '';
+      if (v.status === 'merged') {
+        var stamp = v.merged_at || v.updated_at;
+        if (stamp && isFinite(new Date(stamp).getTime())) {
+          mergedDate = new Date(stamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          mergedFull = new Date(stamp).toLocaleString();
+        }
       }
       var counts = 'Yes ' + v.votes_for + ' · No ' + v.votes_against;
       if (v.votes_required != null && v.status === 'voting') {
         var needed = Math.max(0, v.votes_required - v.votes_for);
         if (needed > 0) counts += ' · ' + needed + ' still needed';
       }
-      return '<article data-vote-row class="' + CARD_CLASS + '">'
+      return '<article data-vote-row'
+        + ' data-vote-status="' + esc(knownStatus ? v.status : 'closed') + '"'
+        + ' class="' + CARD_CLASS + '">'
         + '<div class="flex items-start justify-between gap-2">'
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(v.title) + '</h2>'
         + '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
+        + (mergedDate
+           ? '<span data-merged-date class="whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400" title="Merged ' + esc(mergedFull) + '">· ' + esc(mergedDate) + '</span>'
+           : '')
         + '</div>'
         + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(v.app_name || v.app_slug)
         + ' · You voted ' + v.choice + ' · ' + esc(counts) + '</p>'
@@ -1418,6 +1436,33 @@
     }
 
 
+    // Demo fixtures carry an anchor hint (days back from today; for day 0 how
+    // many hours ago, plus a floor in minutes past local midnight). Recompute
+    // proposedAt against the viewer's own calendar so "Today" and "This week"
+    // hold no matter what hour the page is opened at: a sub-day fixture served
+    // just after local midnight would otherwise land on yesterday's calendar
+    // day and vanish from the Today group. Day-N rows are pinned to hour 12
+    // local so their "Xd ago" reading stays exactly N days.
+    function reanchorDemo(data) {
+      if (!data || !data.demo) return;
+      var now = new Date();
+      var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      (data.proposals || []).forEach(function (p) {
+        var a = p.demoAnchor;
+        if (!a) return;
+        var t;
+        if (a.days === 0) {
+          t = now.getTime() - (a.hoursAgo || 0) * 3600000;
+          if (a.clampMin && t < midnight + a.clampMin * 60000) {
+            t = midnight + a.clampMin * 60000;
+          }
+        } else {
+          t = new Date(now.getFullYear(), now.getMonth(), now.getDate() - a.days, 12).getTime();
+        }
+        p.proposedAt = new Date(t).toISOString();
+      });
+    }
+
     function loadInbox(force) {
       if (state.loadingInbox) {
         // A pull or Refresh tap while a load is still in flight must still
@@ -1436,6 +1481,7 @@
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
+          if (data.demo) reanchorDemo(data);
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
           maybeAutoCast();

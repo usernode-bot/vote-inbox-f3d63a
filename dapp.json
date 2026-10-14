@@ -86,6 +86,14 @@
       "expectText": "3 voted, 1 merged"
     },
     {
+      "id": "my-votes.merged-date",
+      "name": "My Votes shows the merged date on a merged row",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "[data-vote-row][data-vote-status='merged'] [data-merged-date]",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "inbox.voter-avatars",
       "name": "Yes-voter avatar circles render on cards with yes votes",
       "path": "/?demo=1",
