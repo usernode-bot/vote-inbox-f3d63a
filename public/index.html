@@ -200,14 +200,14 @@
     // reviewers a deterministic URL for the offline-retry state; production
     // never honours it.
     var FAILVOTE = DEMO && params.get('failvote') === '1';
-        // ?share=copy|sheet (demo only) forces which path the share button uses,
-        // so the automated checks can pin either label without depending on
-        // whether the headless browser exposes navigator.share.
-        var SHARE_MODE = DEMO && (params.get('share') === 'copy' || params.get('share') === 'sheet')
-          ? params.get('share') : '';
-        // ?tap-share=<sessionId> (demo only) taps that card's share button once
-        // the inbox has rendered, the way ?tap-no=1 taps a vote button.
-        var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
+    // ?share=copy|sheet (demo only) forces which path the share button uses,
+    // so the automated checks can pin either label without depending on
+    // whether the headless browser exposes navigator.share.
+    var SHARE_MODE = DEMO && (params.get('share') === 'copy' || params.get('share') === 'sheet')
+      ? params.get('share') : '';
+    // ?tap-share=<sessionId> (demo only) taps that card's share button once
+    // the inbox has rendered, the way ?tap-no=1 taps a vote button.
+    var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
