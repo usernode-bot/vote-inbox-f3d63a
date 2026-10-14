@@ -626,9 +626,13 @@
     // Segmented yes/no share bar: green segment for the yes share, red for
     // the no share, widths proportional to the raw counts; the counts sit
     // beside the bar so the numbers stay readable and identity never rides
-    // on color alone. Empty grey track when there are no votes yet. Dark
-    // mode uses darker steps of the same hues so contrast holds on the dark
-    // card surface.
+    // on color alone. When the vote threshold is known, the progress toward
+    // it (X of Y) is appended after the counts in its own span — the counts
+    // keep their "Yes N · No M" shape, so neither format loses the other
+    // (data-vote-threshold carries the pair for the declared checks); both
+    // omitted when the threshold is unknown, like the needed pill.
+    // Empty grey track when there are no votes yet. Dark mode uses darker
+    // steps of the same hues so contrast holds on the dark card surface.
     function voteBar(p) {
       var total = p.yes + p.no;
       var yesPct = total > 0 ? Math.round((p.yes * 100) / total) : 0;
@@ -642,12 +646,19 @@
       if (p.no > 0) {
         segments += '<div data-vote-segment="no" class="h-full bg-red-500 dark:bg-red-600" style="width:' + noPct + '%"></div>';
       }
+      var hasThreshold = p.required != null && p.required > 0;
+      var counts = 'Yes ' + p.yes + ' · No ' + p.no;
+      var countsText = counts + (hasThreshold ? ' · ' + p.yes + ' of ' + p.required : '');
       return '<div class="flex items-center gap-2">'
         + '<div data-vote-bar class="flex h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
-        + ' aria-label="Yes ' + p.yes + ', No ' + p.no + '">'
+        + ' aria-label="' + countsText + '">'
         + segments
         + '</div>'
-        + '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no + '</span>'
+        + '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">' + counts
+        + (hasThreshold
+          ? ' · <span data-vote-threshold="' + p.yes + ' of ' + p.required + '">' + p.yes + ' of ' + p.required + '</span>'
+          : '')
+        + '</span>'
         + '</div>';
     }
 
@@ -869,19 +880,37 @@
 
     function voteRow(v) {
       var style = STATUS_STYLE[v.status] || STATUS_STYLE.closed;
+      var knownStatus = !!STATUS_STYLE[v.status];
       var date = '';
       if (v.created_at) {
         try { date = new Date(v.created_at).toLocaleDateString(); } catch (e) { date = ''; }
+      }
+      // Merged rows show when the proposal merged, next to the pill. The
+      // recorded merged_at timestamp is the source; updated_at (the refresh
+      // that first saw the merge) stands in when the platform never sent one.
+      var mergedDate = '';
+      var mergedFull = '';
+      if (v.status === 'merged') {
+        var stamp = v.merged_at || v.updated_at;
+        if (stamp && isFinite(new Date(stamp).getTime())) {
+          mergedDate = new Date(stamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          mergedFull = new Date(stamp).toLocaleString();
+        }
       }
       var counts = 'Yes ' + v.votes_for + ' · No ' + v.votes_against;
       if (v.votes_required != null && v.status === 'voting') {
         var needed = Math.max(0, v.votes_required - v.votes_for);
         if (needed > 0) counts += ' · ' + needed + ' still needed';
       }
-      return '<article data-vote-row data-session-id="' + esc(v.session_id) + '" class="' + CARD_CLASS + '">'
+      return '<article data-vote-row data-session-id="' + esc(v.session_id) + '"'
+        + ' data-vote-status="' + esc(knownStatus ? v.status : 'closed') + '"'
+        + ' class="' + CARD_CLASS + '">'
         + '<div class="flex items-start justify-between gap-2">'
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(v.title) + '</h2>'
         + '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
+        + (mergedDate
+           ? '<span data-merged-date class="whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400" title="Merged ' + esc(mergedFull) + '">· ' + esc(mergedDate) + '</span>'
+           : '')
         + '</div>'
         + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(v.app_name || v.app_slug)
         + ' · You voted ' + v.choice + ' · ' + esc(counts) + '</p>'
@@ -1461,6 +1490,33 @@
     }
 
 
+    // Demo fixtures carry an anchor hint (days back from today; for day 0 how
+    // many hours ago, plus a floor in minutes past local midnight). Recompute
+    // proposedAt against the viewer's own calendar so "Today" and "This week"
+    // hold no matter what hour the page is opened at: a sub-day fixture served
+    // just after local midnight would otherwise land on yesterday's calendar
+    // day and vanish from the Today group. Day-N rows are pinned to hour 12
+    // local so their "Xd ago" reading stays exactly N days.
+    function reanchorDemo(data) {
+      if (!data || !data.demo) return;
+      var now = new Date();
+      var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      (data.proposals || []).forEach(function (p) {
+        var a = p.demoAnchor;
+        if (!a) return;
+        var t;
+        if (a.days === 0) {
+          t = now.getTime() - (a.hoursAgo || 0) * 3600000;
+          if (a.clampMin && t < midnight + a.clampMin * 60000) {
+            t = midnight + a.clampMin * 60000;
+          }
+        } else {
+          t = new Date(now.getFullYear(), now.getMonth(), now.getDate() - a.days, 12).getTime();
+        }
+        p.proposedAt = new Date(t).toISOString();
+      });
+    }
+
     function loadInbox(force) {
       if (state.loadingInbox) {
         // A pull or Refresh tap while a load is still in flight must still
@@ -1479,6 +1535,7 @@
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
+          if (data.demo) reanchorDemo(data);
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
           maybeAutoCast();
