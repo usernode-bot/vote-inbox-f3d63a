@@ -481,6 +481,15 @@ function demoInbox() {
   });
   const H = 3600 * 1000;
   const D = 24 * H;
+  // The two Today-group fixtures use relative ages (3h, 8h), which cross UTC
+  // midnight every day: between 00:00 and 08:00 UTC a 3h-old timestamp lands
+  // on yesterday, the Today group empties, and the age-groups check loses its
+  // "Today" header. Capping the ages at ms-since-UTC-midnight (the epoch is a
+  // UTC midnight, so Date.now() % D is that) keeps both timestamps inside the
+  // current UTC day at any hour — the age just shrinks near midnight instead
+  // of falling into yesterday. The Other fixtures (1d, 2d, 5d, 9d) are stable
+  // across the boundary and keep their plain ages.
+  const todayCap = () => Date.now() % D;
   // Two of the six are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
   // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries
@@ -496,8 +505,8 @@ function demoInbox() {
   // demo-4/demo-2/demo-1/demo-6. demo-1 and demo-6 each sit exactly one yes
   // vote from their threshold so the One vote away chip has something to show.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H, null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }),
-    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, 8 * H, null,
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }),
+    mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, Math.min(8 * H, todayCap()), null,
       ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }),
     mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }),
     mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }),
