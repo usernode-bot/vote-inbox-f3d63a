@@ -15,11 +15,34 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
-      "id": "inbox.copy-link",
-      "name": "Proposal cards offer a copy link",
+      "id": "inbox.share-button",
+      "name": "Proposal cards offer a share button",
       "path": "/?demo=1",
-      "expectSelector": "[data-copy-link]",
-      "expectText": "Copy link"
+      "expectSelector": "[data-share-link]",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.share-sheet",
+      "name": "Share button shows Share label in sheet mode",
+      "path": "/?demo=1&share=sheet",
+      "expectSelector": "[data-share-link]",
+      "expectText": "Share",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.share-copy",
+      "name": "Share button falls back to Copy link",
+      "path": "/?demo=1&share=copy",
+      "expectSelector": "[data-share-link]",
+      "expectText": "Copy link",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.share-copied",
+      "name": "Tapping Copy link shows Copied!",
+      "path": "/?demo=1&share=copy&tap-share=demo-2",
+      "expectText": "Copied!",
+      "impact": ["public/index.html", "dapp.json"]
     },
     {
       "id": "inbox.status-bar",
