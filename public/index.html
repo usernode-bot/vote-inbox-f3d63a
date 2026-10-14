@@ -167,6 +167,16 @@
       </div>
     </div>
 
+    <div id="votes-order-row" class="hidden flex items-center gap-2 pt-1">
+      <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Sort</span>
+      <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-800 dark:bg-zinc-900" role="radiogroup" aria-label="Vote order">
+        <button data-votes-order="newest" type="button" role="radio" aria-checked="true"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Newest first</button>
+        <button data-votes-order="oldest" type="button" role="radio" aria-checked="false"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Oldest first</button>
+      </div>
+    </div>
+
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
   </main>
 
@@ -224,6 +234,10 @@
       oneAway: params.get('one-away') === '1',
       hideMerged: false,
       sort: 'needed',
+      // My Votes order: 'newest' | 'oldest'. Not persisted; the
+      // ?votes-order= param is a one-load override, the same pattern as
+      // ?sort= (the staging checks use it to reach the reversed order).
+      votesOrder: params.get('votes-order') === 'oldest' ? 'oldest' : 'newest',
       loadingInbox: false,
       loadingVotes: false,
       errorInbox: null,
@@ -394,6 +408,15 @@
       if (v !== 'needed' && v !== 'newest' || v === state.sort) return;
       state.sort = v;
       saveSort(v);
+      render();
+    }
+
+    // My Votes order. Unlike the Inbox sort, this one is not persisted:
+    // it resets to Newest first on reload. It only reorders the votes
+    // already loaded; nothing new is fetched when it flips.
+    function setVotesOrder(v) {
+      if (v !== 'newest' && v !== 'oldest' || v === state.votesOrder) return;
+      state.votesOrder = v;
       render();
     }
 
@@ -945,7 +968,7 @@
         var needed = Math.max(0, v.votes_required - v.votes_for);
         if (needed > 0) counts += ' · ' + needed + ' still needed';
       }
-      return '<article data-vote-row'
+      return '<article data-vote-row data-session-id="' + esc(v.session_id) + '"'
         + ' data-vote-status="' + esc(knownStatus ? v.status : 'closed') + '"'
         + ' class="' + CARD_CLASS + '">'
         + '<div class="flex items-start justify-between gap-2">'
@@ -1036,6 +1059,9 @@
       var sortRow = document.getElementById('sort-row');
       if (sortRow) sortRow.className =
         'flex items-center gap-2 pt-1' + (state.tab === 'inbox' ? '' : ' hidden');
+      var votesOrderRow = document.getElementById('votes-order-row');
+      if (votesOrderRow) votesOrderRow.className =
+        'flex items-center gap-2 pt-1' + (state.tab === 'votes' ? '' : ' hidden');
     }
 
     // The segmented sort pill: keep each option's fill and aria-checked in
@@ -1045,6 +1071,19 @@
       for (var i = 0; i < buttons.length; i++) {
         var btn = buttons[i];
         var on = btn.getAttribute('data-sort') === state.sort;
+        btn.className = 'rounded-full px-3 py-1 text-xs font-semibold transition-colors '
+          + (on ? TAB_ACTIVE : TAB_IDLE);
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
+    }
+
+    // My Votes order pill: same treatment as the Inbox sort pill, driven
+    // by state.votesOrder.
+    function renderVotesOrder() {
+      var buttons = document.querySelectorAll('#votes-order-row [data-votes-order]');
+      for (var i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        var on = btn.getAttribute('data-votes-order') === state.votesOrder;
         btn.className = 'rounded-full px-3 py-1 text-xs font-semibold transition-colors '
           + (on ? TAB_ACTIVE : TAB_IDLE);
         btn.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -1206,6 +1245,20 @@
           'Votes you cast in the Inbox show up here with their outcome.',
           BROWSE_CTA);
       }
+      // Oldest first reorders the already-loaded rows by their Voted
+      // date: ascending, rows without a usable timestamp kept at the end,
+      // ties and missing pairs in loaded order (stable). Newest first is
+      // the loaded order, which /api/my-votes already returns DESC.
+      if (state.votesOrder === 'oldest') {
+        votes = votes.slice().sort(function (a, b) {
+          var ta = a && a.created_at ? Date.parse(a.created_at) : NaN;
+          var tb = b && b.created_at ? Date.parse(b.created_at) : NaN;
+          if (isNaN(ta) && isNaN(tb)) return 0;
+          if (isNaN(ta)) return 1;
+          if (isNaN(tb)) return -1;
+          return ta - tb;
+        });
+      }
       var html = '';
       for (var i = 0; i < votes.length; i++) html += voteRow(votes[i]);
       return html;
@@ -1273,6 +1326,7 @@
       syncOneAway();
       renderTabs();
       renderSort();
+      renderVotesOrder();
       renderDemoBanner();
       renderRefreshButton();
       renderSummary();
@@ -2041,6 +2095,13 @@
     for (var si = 0; si < sortButtons.length; si++) {
       sortButtons[si].addEventListener('click', function (event) {
         setSort(event.currentTarget.getAttribute('data-sort'));
+      });
+    }
+
+    var votesOrderButtons = document.querySelectorAll('#votes-order-row [data-votes-order]');
+    for (var vo = 0; vo < votesOrderButtons.length; vo++) {
+      votesOrderButtons[vo].addEventListener('click', function (event) {
+        setVotesOrder(event.currentTarget.getAttribute('data-votes-order'));
       });
     }
 

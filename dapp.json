@@ -102,6 +102,23 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "my-votes.order-default",
+      "name": "My Votes default order is newest vote first",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "body:has([data-votes-order='newest'][aria-checked='true']) #view [data-vote-row][data-session-id='demo-v1']:first-child",
+      "expectText": "weekly summary email",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "my-votes.order-oldest",
+      "name": "Oldest-first toggle reverses the My Votes list",
+      "path": "/?tab=votes&demo=1&votes-order=oldest",
+      "expectSelector": "body:has([data-votes-order='oldest'][aria-checked='true']) #view [data-vote-row][data-session-id='demo-v3']:first-child",
+      "expectText": "pinned notes",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "my-votes.summary",
       "name": "My Votes header shows voted and merged counts",
       "path": "/?tab=votes&demo=1",
