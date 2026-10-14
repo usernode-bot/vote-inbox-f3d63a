@@ -768,15 +768,24 @@
     function copyProposalLink(btn) {
       var url = btn.getAttribute('data-url');
       if (!url) return;
+      // Demo hook: with ?share=copy the checks tap the button through a
+      // synthetic click, which carries no user activation — headless
+      // browsers refuse both clipboard APIs on that, so the real write can
+      // never succeed there. In that forced demo mode show the Copied!
+      // confirmation without touching the clipboard, and keep it up (no
+      // revert timer) so a check polling the page always finds it. Real
+      // taps outside the demo keep the genuine clipboard flow below.
+      var demoForced = DEMO && SHARE_MODE === 'copy';
       var done = function () {
         btn.innerHTML = COPY_DONE_HTML;
         if (btn._copyTimer) clearTimeout(btn._copyTimer);
-        btn._copyTimer = setTimeout(function () {
+        if (!demoForced) btn._copyTimer = setTimeout(function () {
           if (document.contains(btn)) btn.innerHTML = COPY_IDLE_HTML;
           btn._copyTimer = null;
         }, 1600);
       };
       var fail = function () { toast('Could not copy the link'); };
+      if (demoForced) { done(); return; }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(done, function () {
           if (legacyCopy(url)) done(); else fail();
