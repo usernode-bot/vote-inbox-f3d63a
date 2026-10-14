@@ -86,6 +86,15 @@
       "expectText": "3 voted, 1 merged"
     },
     {
+      "id": "my-votes.oldest-first",
+      "name": "Oldest-first toggle reverses the My Votes row order",
+      "path": "/?tab=votes&demo=1&votes-oldest=1",
+      "expectSelector": "[data-vote-row][data-session-id='demo-v3']:first-child",
+      "expectText": "pinned notes",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "inbox.voter-avatars",
       "name": "Yes-voter avatar circles render on cards with yes votes",
       "path": "/?demo=1",
