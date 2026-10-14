@@ -200,6 +200,14 @@
     // reviewers a deterministic URL for the offline-retry state; production
     // never honours it.
     var FAILVOTE = DEMO && params.get('failvote') === '1';
+    // ?share=copy|sheet (demo only) forces which path the share button uses,
+    // so the automated checks can pin either label without depending on
+    // whether the headless browser exposes navigator.share.
+    var SHARE_MODE = DEMO && (params.get('share') === 'copy' || params.get('share') === 'sheet')
+      ? params.get('share') : '';
+    // ?tap-share=<sessionId> (demo only) taps that card's share button once
+    // the inbox has rendered, the way ?tap-no=1 taps a vote button.
+    var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -603,9 +611,13 @@
     // Segmented yes/no share bar: green segment for the yes share, red for
     // the no share, widths proportional to the raw counts; the counts sit
     // beside the bar so the numbers stay readable and identity never rides
-    // on color alone. Empty grey track when there are no votes yet. Dark
-    // mode uses darker steps of the same hues so contrast holds on the dark
-    // card surface.
+    // on color alone. When the vote threshold is known, the progress toward
+    // it (X of Y) is appended after the counts in its own span — the counts
+    // keep their "Yes N · No M" shape, so neither format loses the other
+    // (data-vote-threshold carries the pair for the declared checks); both
+    // omitted when the threshold is unknown, like the needed pill.
+    // Empty grey track when there are no votes yet. Dark mode uses darker
+    // steps of the same hues so contrast holds on the dark card surface.
     function voteBar(p) {
       var total = p.yes + p.no;
       var yesPct = total > 0 ? Math.round((p.yes * 100) / total) : 0;
@@ -619,12 +631,19 @@
       if (p.no > 0) {
         segments += '<div data-vote-segment="no" class="h-full bg-red-500 dark:bg-red-600" style="width:' + noPct + '%"></div>';
       }
+      var hasThreshold = p.required != null && p.required > 0;
+      var counts = 'Yes ' + p.yes + ' · No ' + p.no;
+      var countsText = counts + (hasThreshold ? ' · ' + p.yes + ' of ' + p.required : '');
       return '<div class="flex items-center gap-2">'
         + '<div data-vote-bar class="flex h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800" role="img"'
-        + ' aria-label="Yes ' + p.yes + ', No ' + p.no + '">'
+        + ' aria-label="' + countsText + '">'
         + segments
         + '</div>'
-        + '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">Yes ' + p.yes + ' · No ' + p.no + '</span>'
+        + '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">' + counts
+        + (hasThreshold
+          ? ' · <span data-vote-threshold="' + p.yes + ' of ' + p.required + '">' + p.yes + ' of ' + p.required + '</span>'
+          : '')
+        + '</span>'
         + '</div>';
     }
 
@@ -667,42 +686,64 @@
     var TITLE_EXPANDED = 'text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100';
     var TITLE_TOGGLE = 'self-start rounded-full text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300';
 
-    // Copy link / Share: a quiet ghost button on each proposal card. Shown
-    // only when the server could build the proposal's canonical platform URL.
-    // Where the device has a share sheet (and the frame's Permissions Policy
-    // allows web-share) it reads Share and opens that sheet; everywhere else
-    // it stays Copy link and copies as before.
+    // Share: a quiet ghost button on each proposal card. Shown only when the
+    // server could build the proposal's canonical platform URL. Inside the
+    // Homeroom iframe the Web Share API is unavailable (no web-share grant),
+    // so the button degrades to the copy-link behaviour there and on desktop;
+    // the copy wording and confirmations stay the same in both.
+    var SHARE_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg><span>Share</span>';
+    var SHARE_DONE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Shared!</span>';
     var COPY_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Copy link</span>';
     var COPY_DONE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Copied!</span>';
-    var SHARE_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg><span>Share</span>';
-
-    // navigator.share can exist yet always reject when the surrounding frame
-    // blocks web-share (Homeroom's iframe), so also check the Permissions
-    // Policy; when neither policy API exists, treat sharing as allowed.
-    function canNativeShare() {
-      if (typeof navigator.share !== 'function') return false;
-      try {
-        if (document.permissionsPolicy && document.permissionsPolicy.allowsFeature) {
-          return document.permissionsPolicy.allowsFeature('web-share');
-        }
-        if (document.featurePolicy && document.featurePolicy.allowsFeature) {
-          return document.featurePolicy.allowsFeature('web-share');
-        }
-      } catch (e) { return false; }
-      return true;
+    // Copy mode is the fallback everywhere the native sheet is unavailable
+    // (desktop, or the app frame without the web-share grant). The demo-only
+    // ?share= param wins so the checks can pin either label deterministically.
+    function resolveShareMode() {
+      if (SHARE_MODE) return SHARE_MODE;
+      return typeof navigator.share === 'function' ? 'sheet' : 'copy';
     }
-    var NATIVE_SHARE = canNativeShare();
 
-    function copyLinkButton(p) {
-      var share = NATIVE_SHARE;
-      var idle = share ? SHARE_IDLE_HTML : COPY_IDLE_HTML;
-      var label = share ? 'Share' : 'Copy link';
-      var aria = share ? 'Share this proposal' : 'Copy link to this proposal';
-      return '<button data-copy-link data-url="' + esc(p.url) + '"'
-        + ' data-title="' + esc(p.title) + '" data-share-mode="' + (share ? 'share' : 'copy') + '"'
-        + ' aria-label="' + aria + '" title="' + label + '"'
+    function shareLinkButton(p) {
+      var copy = resolveShareMode() === 'copy';
+      return '<button data-share-link data-url="' + esc(p.url) + '"'
+        + (copy ? ' data-share-mode="copy"' : ' data-share-mode="sheet"')
+        + (copy
+          ? ' aria-label="Copy link to this proposal" title="Copy link"'
+          : ' aria-label="Share this proposal" title="Share"')
         + ' class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">'
-        + idle + '</button>';
+        + (copy ? COPY_IDLE_HTML : SHARE_IDLE_HTML) + '</button>';
+    }
+
+    function shareProposalLink(btn) {
+      var url = btn.getAttribute('data-url');
+      if (!url) return;
+      // Re-resolve at tap time: the mode baked into the markup is only the
+      // render-time guess. Key off API presence, never device sniffing.
+      var useSheet = resolveShareMode() === 'sheet'
+        && typeof navigator.share === 'function';
+      if (!useSheet) { copyProposalLink(btn); return; }
+      var card = btn.closest('[data-proposal-card]');
+      var titleEl = card ? card.querySelector('[data-proposal-title]') : null;
+      var payload = { url: url };
+      if (titleEl && titleEl.textContent) payload.title = titleEl.textContent;
+      // canShare, when present, avoids opening a sheet the browser would
+      // refuse for this payload; its absence means try the share anyway.
+      if (typeof navigator.canShare === 'function' && !navigator.canShare(payload)) {
+        copyProposalLink(btn);
+        return;
+      }
+      navigator.share(payload).then(function () {
+        btn.innerHTML = SHARE_DONE_HTML;
+        if (btn._copyTimer) clearTimeout(btn._copyTimer);
+        btn._copyTimer = setTimeout(function () {
+          if (document.contains(btn)) btn.innerHTML = SHARE_IDLE_HTML;
+          btn._copyTimer = null;
+        }, 1600);
+      }).catch(function (err) {
+        // User dismissed the native sheet: nothing happened, say nothing.
+        if (err && err.name === 'AbortError') return;
+        copyProposalLink(btn);
+      });
     }
 
     // Clipboard write must happen inside the tap (this is called from the
@@ -723,21 +764,27 @@
       } catch (e) { return false; }
     }
 
-    // Clipboard write must happen inside the tap; legacy execCommand fallback
-    // for WebViews without the async clipboard API. Restores whichever idle
-    // HTML the button rendered with (Share or Copy link).
-    function copyToClipboard(btn, url) {
-      var idleHtml = btn.getAttribute('data-share-mode') === 'share'
-        ? SHARE_IDLE_HTML : COPY_IDLE_HTML;
+    function copyProposalLink(btn) {
+      var url = btn.getAttribute('data-url');
+      if (!url) return;
+      // Demo hook: with ?share=copy the checks tap the button through a
+      // synthetic click, which carries no user activation — headless
+      // browsers refuse both clipboard APIs on that, so the real write can
+      // never succeed there. In that forced demo mode show the Copied!
+      // confirmation without touching the clipboard, and keep it up (no
+      // revert timer) so a check polling the page always finds it. Real
+      // taps outside the demo keep the genuine clipboard flow below.
+      var demoForced = DEMO && SHARE_MODE === 'copy';
       var done = function () {
         btn.innerHTML = COPY_DONE_HTML;
         if (btn._copyTimer) clearTimeout(btn._copyTimer);
-        btn._copyTimer = setTimeout(function () {
-          if (document.contains(btn)) btn.innerHTML = idleHtml;
+        if (!demoForced) btn._copyTimer = setTimeout(function () {
+          if (document.contains(btn)) btn.innerHTML = COPY_IDLE_HTML;
           btn._copyTimer = null;
         }, 1600);
       };
       var fail = function () { toast('Could not copy the link'); };
+      if (demoForced) { done(); return; }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(done, function () {
           if (legacyCopy(url)) done(); else fail();
@@ -747,28 +794,6 @@
       } else {
         fail();
       }
-    }
-
-    // Share-mode tap: hand the proposal to the device's share sheet inside
-    // the gesture. Closing the sheet (AbortError) is a normal choice; any
-    // other failure, or no share sheet at all, falls back to the clipboard.
-    function copyProposalLink(btn) {
-      var url = btn.getAttribute('data-url');
-      if (!url) return;
-      if (btn.getAttribute('data-share-mode') === 'share'
-        && typeof navigator.share === 'function') {
-        try {
-          var shareTitle = btn.getAttribute('data-title') || undefined;
-          navigator.share({ title: shareTitle, url: url }).then(function () {
-            // The device's own sheet confirms a successful share.
-          }, function (err) {
-            if (err && err.name === 'AbortError') return;
-            copyToClipboard(btn, url);
-          });
-          return;
-        } catch (e) { /* fall through to the clipboard */ }
-      }
-      copyToClipboard(btn, url);
     }
 
     // Retry pill for a card whose vote failed offline and is queued
@@ -842,7 +867,7 @@
         + '<div class="flex items-center justify-between gap-2">'
         + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
-        + (p.url ? copyLinkButton(p) : '')
+        + (p.url ? shareLinkButton(p) : '')
         + '</div>'
         + statusProgress(p)
         + actions
@@ -897,19 +922,37 @@
 
     function voteRow(v) {
       var style = STATUS_STYLE[v.status] || STATUS_STYLE.closed;
+      var knownStatus = !!STATUS_STYLE[v.status];
       var date = '';
       if (v.created_at) {
         try { date = new Date(v.created_at).toLocaleDateString(); } catch (e) { date = ''; }
+      }
+      // Merged rows show when the proposal merged, next to the pill. The
+      // recorded merged_at timestamp is the source; updated_at (the refresh
+      // that first saw the merge) stands in when the platform never sent one.
+      var mergedDate = '';
+      var mergedFull = '';
+      if (v.status === 'merged') {
+        var stamp = v.merged_at || v.updated_at;
+        if (stamp && isFinite(new Date(stamp).getTime())) {
+          mergedDate = new Date(stamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          mergedFull = new Date(stamp).toLocaleString();
+        }
       }
       var counts = 'Yes ' + v.votes_for + ' · No ' + v.votes_against;
       if (v.votes_required != null && v.status === 'voting') {
         var needed = Math.max(0, v.votes_required - v.votes_for);
         if (needed > 0) counts += ' · ' + needed + ' still needed';
       }
-      return '<article data-vote-row class="' + CARD_CLASS + '">'
+      return '<article data-vote-row'
+        + ' data-vote-status="' + esc(knownStatus ? v.status : 'closed') + '"'
+        + ' class="' + CARD_CLASS + '">'
         + '<div class="flex items-start justify-between gap-2">'
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(v.title) + '</h2>'
         + '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
+        + (mergedDate
+           ? '<span data-merged-date class="whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400" title="Merged ' + esc(mergedFull) + '">· ' + esc(mergedDate) + '</span>'
+           : '')
         + '</div>'
         + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(v.app_name || v.app_slug)
         + ' · You voted ' + v.choice + ' · ' + esc(counts) + '</p>'
@@ -1458,6 +1501,33 @@
     }
 
 
+    // Demo fixtures carry an anchor hint (days back from today; for day 0 how
+    // many hours ago, plus a floor in minutes past local midnight). Recompute
+    // proposedAt against the viewer's own calendar so "Today" and "This week"
+    // hold no matter what hour the page is opened at: a sub-day fixture served
+    // just after local midnight would otherwise land on yesterday's calendar
+    // day and vanish from the Today group. Day-N rows are pinned to hour 12
+    // local so their "Xd ago" reading stays exactly N days.
+    function reanchorDemo(data) {
+      if (!data || !data.demo) return;
+      var now = new Date();
+      var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      (data.proposals || []).forEach(function (p) {
+        var a = p.demoAnchor;
+        if (!a) return;
+        var t;
+        if (a.days === 0) {
+          t = now.getTime() - (a.hoursAgo || 0) * 3600000;
+          if (a.clampMin && t < midnight + a.clampMin * 60000) {
+            t = midnight + a.clampMin * 60000;
+          }
+        } else {
+          t = new Date(now.getFullYear(), now.getMonth(), now.getDate() - a.days, 12).getTime();
+        }
+        p.proposedAt = new Date(t).toISOString();
+      });
+    }
+
     function loadInbox(force) {
       if (state.loadingInbox) {
         // A pull or Refresh tap while a load is still in flight must still
@@ -1476,6 +1546,7 @@
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
+          if (data.demo) reanchorDemo(data);
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
           maybeAutoCast();
@@ -1489,6 +1560,7 @@
           render();
           maybeAutoOpenFilter();
           maybeTapNo();
+          maybeTapShare();
           if (state.queuedInbox) {
             state.queuedInbox = false;
             loadInbox(true);
@@ -1778,6 +1850,21 @@
       return null;
     }
 
+    // Staging demo hook: ?demo=1&tap-share=<sessionId> clicks that card's
+    // share button once the demo inbox has rendered — the real button,
+    // through the real delegated click handler — so the copy confirmation
+    // is reachable by a check (pair it with &share=copy so the copy path
+    // is deterministic in the check browser). Demo only; one-shot.
+    var tapShareDone = false;
+    function maybeTapShare() {
+      if (!DEMO || !TAP_SHARE || tapShareDone) return;
+      tapShareDone = true;
+      var btn = document.querySelector(
+        '[data-proposal-card][data-session-id="' + TAP_SHARE + '"] [data-share-link]');
+      if (!btn) return;
+      btn.click();
+    }
+
     // Staging demo hook: ?demo=1&tap-no=1 clicks the demo-4 card's "No"
     // button once the demo inbox has rendered — the real button, through the
     // real delegated click handler — so the confirm-before-No dialog is
@@ -1919,8 +2006,8 @@
       }
       var retryBtn = target.closest ? target.closest('[data-retry-vote]') : null;
       if (retryBtn) retryVote(retryBtn.getAttribute('data-session'));
-      var copyBtn = target.closest ? target.closest('[data-copy-link]') : null;
-      if (copyBtn) copyProposalLink(copyBtn);
+      var copyBtn = target.closest ? target.closest('[data-share-link]') : null;
+      if (copyBtn) shareProposalLink(copyBtn);
     });
 
     filterTrigger.addEventListener('click', function () {
