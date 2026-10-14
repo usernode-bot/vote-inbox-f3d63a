@@ -453,7 +453,13 @@ function demoInbox() {
     username: 'staging-demo-' + u.toLowerCase(),
     name: u + ' (demo)',
   });
-  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters) => ({
+  // `anchor` is a demo hint the frontend uses to re-place the fixture on the
+  // viewer's own calendar (see reanchorDemo in public/index.html): days back
+  // from today, and for day 0 how many hours ago, plus a floor in minutes
+  // past local midnight so just-after-midnight runs cannot clamp two
+  // fixtures onto the same instant. proposedAt stays the real elapsed-time
+  // stamp for any consumer that does not re-anchor.
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters, anchor) => ({
     sessionId,
     proposalId,
     url: proposalUrl(slug, proposalId),
@@ -462,6 +468,7 @@ function demoInbox() {
     status: status || null,
     eta: null,
     proposedAt: ageMs != null ? new Date(Date.now() - ageMs).toISOString() : null,
+    demoAnchor: anchor || null,
     appSlug: slug,
     appName: apps.find((a) => a.slug === slug).name,
     icon: apps.find((a) => a.slug === slug).icon,
@@ -489,13 +496,13 @@ function demoInbox() {
   // demo-4/demo-2/demo-1/demo-6. demo-1 and demo-6 each sit exactly one yes
   // vote from their threshold so the One vote away chip has something to show.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H, null, [voter('Maya')]),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, 3 * H, null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, 8 * H, null,
-      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter)),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')]),
-    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')]),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')]),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')]),
+      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }),
+    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }

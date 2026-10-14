@@ -1436,6 +1436,33 @@
     }
 
 
+    // Demo fixtures carry an anchor hint (days back from today; for day 0 how
+    // many hours ago, plus a floor in minutes past local midnight). Recompute
+    // proposedAt against the viewer's own calendar so "Today" and "This week"
+    // hold no matter what hour the page is opened at: a sub-day fixture served
+    // just after local midnight would otherwise land on yesterday's calendar
+    // day and vanish from the Today group. Day-N rows are pinned to hour 12
+    // local so their "Xd ago" reading stays exactly N days.
+    function reanchorDemo(data) {
+      if (!data || !data.demo) return;
+      var now = new Date();
+      var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      (data.proposals || []).forEach(function (p) {
+        var a = p.demoAnchor;
+        if (!a) return;
+        var t;
+        if (a.days === 0) {
+          t = now.getTime() - (a.hoursAgo || 0) * 3600000;
+          if (a.clampMin && t < midnight + a.clampMin * 60000) {
+            t = midnight + a.clampMin * 60000;
+          }
+        } else {
+          t = new Date(now.getFullYear(), now.getMonth(), now.getDate() - a.days, 12).getTime();
+        }
+        p.proposedAt = new Date(t).toISOString();
+      });
+    }
+
     function loadInbox(force) {
       if (state.loadingInbox) {
         // A pull or Refresh tap while a load is still in flight must still
@@ -1454,6 +1481,7 @@
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
+          if (data.demo) reanchorDemo(data);
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
           maybeAutoCast();
