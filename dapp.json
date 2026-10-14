@@ -127,6 +127,14 @@
       "expectText": "3 voted, 1 merged"
     },
     {
+      "id": "my-votes.tab-count",
+      "name": "My Votes tab title shows the vote count",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "body:has(#view > [data-vote-row]:nth-child(3):last-child) [data-tab='votes'] [data-tab-count='3']",
+      "expectText": "(3)",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "my-votes.merged-date",
       "name": "My Votes shows the merged date on a merged row",
       "path": "/?tab=votes&demo=1",

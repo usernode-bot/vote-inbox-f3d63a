@@ -123,7 +123,7 @@
     <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
       <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
-        <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
+        <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span data-tab-count></span><span class="tab-badge"></span></button>
       </div>
       <div id="filter-row" class="mt-2">
         <div class="flex items-center gap-3">
@@ -1037,18 +1037,28 @@
       var votesCount = state.votes && state.votes.votes ? state.votes.votes.length : null;
       for (var i = 0; i < buttons.length; i++) {
         var btn = buttons[i];
-        var active = btn.getAttribute('data-tab') === state.tab;
+        var tab = btn.getAttribute('data-tab');
+        var active = tab === state.tab;
         var badge = btn.querySelector('.tab-badge');
-        var count = btn.getAttribute('data-tab') === 'inbox' ? inboxCount : votesCount;
+        var count = tab === 'inbox' ? inboxCount : votesCount;
         btn.className = 'tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors '
           + (active ? TAB_ACTIVE : TAB_IDLE);
         btn.setAttribute('aria-selected', active ? 'true' : 'false');
         if (badge) {
           badge.className = 'tab-badge ml-1.5 hidden rounded-full px-1.5 py-0.5 text-xs font-bold '
             + (active ? BADGE_ACTIVE : BADGE_IDLE);
-          if (count != null && count > 0) {
+          if (tab !== 'votes' && count != null && count > 0) {
             badge.textContent = count;
             badge.classList.remove('hidden');
+          }
+        }
+        // The My Votes tab shows its count in the title, "My Votes (N)",
+        // instead of a pill badge, so the number appears only once.
+        if (tab === 'votes') {
+          var tabCount = btn.querySelector('[data-tab-count]');
+          if (tabCount) {
+            tabCount.textContent = count != null ? ' (' + count + ')' : '';
+            tabCount.setAttribute('data-tab-count', count != null ? String(count) : '');
           }
         }
       }
