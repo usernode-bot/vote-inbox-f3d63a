@@ -220,6 +220,14 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.hide-merged-cards",
+      "name": "Hide merged drops the merged card from a mixed inbox",
+      "path": "/?demo=1&hide-merged=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'])) #view [data-proposal-card][data-session-id='demo-3']",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "inbox.age-groups",
       "name": "Inbox groups proposals under age headers",
       "path": "/?demo=1",
