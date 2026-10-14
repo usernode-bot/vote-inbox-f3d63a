@@ -167,6 +167,13 @@
       </div>
     </div>
 
+    <div id="votes-sort-row" class="flex items-center gap-2 pt-1">
+      <label for="votes-oldest" class="flex select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+        <span>Oldest first</span>
+        <input id="votes-oldest" type="checkbox" class="un-switch">
+      </label>
+    </div>
+
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
   </main>
 
@@ -200,6 +207,12 @@
     // reviewers a deterministic URL for the offline-retry state; production
     // never honours it.
     var FAILVOTE = DEMO && params.get('failvote') === '1';
+    // Staging-check fixture for the oldest-first toggle on My Votes:
+    // ?votes-oldest=1|0 activates the preference for one load (the real
+    // checkbox state after clicking it) so a check can assert the reversed
+    // row order without clicking. Not demo-gated: the plain route answers
+    // it honestly from whatever the server returned.
+    var VOTES_OLDEST = params.get('votes-oldest');
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -215,6 +228,7 @@
       // hideVoted: it starts off on every fresh load.
       oneAway: params.get('one-away') === '1',
       hideMerged: false,
+      votesOldest: false,
       sort: 'needed',
       loadingInbox: false,
       loadingVotes: false,
@@ -386,6 +400,36 @@
       if (v !== 'needed' && v !== 'newest' || v === state.sort) return;
       state.sort = v;
       saveSort(v);
+      render();
+    }
+
+    // ------------------------------------------------------------------
+    // Oldest-first preference for My Votes. Same shape as the hide-merged
+    // preference: persists in localStorage so the choice survives reloads,
+    // and ?votes-oldest=1|0 activates it for one load (used by the staging
+    // checks) without writing back. Default off, so votes stay in the
+    // server's newest-first order.
+    // ------------------------------------------------------------------
+
+    var VOTES_OLDEST_KEY = 'vote-inbox:votes-oldest';
+
+    function loadVotesOldest() {
+      try { return localStorage.getItem(VOTES_OLDEST_KEY) === '1'; } catch (e) { return false; }
+    }
+
+    function saveVotesOldest(on) {
+      try { localStorage.setItem(VOTES_OLDEST_KEY, on ? '1' : '0'); } catch (e) { /* not persistable here */ }
+    }
+
+    state.votesOldest = loadVotesOldest();
+    if (VOTES_OLDEST === '1') state.votesOldest = true;
+    else if (VOTES_OLDEST === '0') state.votesOldest = false;
+
+    function setVotesOldest(on) {
+      state.votesOldest = on;
+      saveVotesOldest(on);
+      var box = document.getElementById('votes-oldest');
+      if (box) box.checked = on;
       render();
     }
 
@@ -855,7 +899,7 @@
         var needed = Math.max(0, v.votes_required - v.votes_for);
         if (needed > 0) counts += ' · ' + needed + ' still needed';
       }
-      return '<article data-vote-row class="' + CARD_CLASS + '">'
+      return '<article data-vote-row data-session-id="' + esc(v.session_id) + '" class="' + CARD_CLASS + '">'
         + '<div class="flex items-start justify-between gap-2">'
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(v.title) + '</h2>'
         + '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
@@ -941,6 +985,9 @@
       var sortRow = document.getElementById('sort-row');
       if (sortRow) sortRow.className =
         'flex items-center gap-2 pt-1' + (state.tab === 'inbox' ? '' : ' hidden');
+      var votesSortRow = document.getElementById('votes-sort-row');
+      if (votesSortRow) votesSortRow.className =
+        'flex items-center gap-2 pt-1' + (state.tab === 'votes' ? '' : ' hidden');
     }
 
     // The segmented sort pill: keep each option's fill and aria-checked in
@@ -1110,6 +1157,20 @@
           'No votes yet',
           'Votes you cast in the Inbox show up here with their outcome.',
           BROWSE_CTA);
+      }
+      // The server returns votes newest-first, so the loaded order IS the
+      // default. Oldest-first re-sorts a copy by the vote timestamp and
+      // never refetches: rows without a usable timestamp keep the loaded
+      // order at the end, as the inbox sort does.
+      if (state.votesOldest) {
+        votes = votes.slice().sort(function (a, b) {
+          var ta = Date.parse(a.created_at);
+          var tb = Date.parse(b.created_at);
+          if (isNaN(ta) && isNaN(tb)) return 0;
+          if (isNaN(ta)) return 1;
+          if (isNaN(tb)) return -1;
+          return ta - tb;
+        });
       }
       var html = '';
       for (var i = 0; i < votes.length; i++) html += voteRow(votes[i]);
@@ -1891,6 +1952,10 @@
       setHideMerged(event.target.checked);
     });
 
+    document.getElementById('votes-oldest').addEventListener('change', function (event) {
+      setVotesOldest(event.target.checked);
+    });
+
     // Title search filters the loaded cards live; the input sits outside
     // #view so re-rendering the list never steals its focus.
     document.getElementById('inbox-search').addEventListener('input', function (event) {
@@ -1943,6 +2008,8 @@
     if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
     var hideMergedBox = document.getElementById('hide-merged');
     if (hideMergedBox) hideMergedBox.checked = state.hideMerged;
+    var votesOldestBox = document.getElementById('votes-oldest');
+    if (votesOldestBox) votesOldestBox.checked = state.votesOldest;
     var searchBox = document.getElementById('inbox-search');
     if (searchBox && state.search) searchBox.value = state.search;
     if (state.tab === 'votes') loadVotes(true); else loadInbox(true);
