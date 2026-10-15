@@ -339,6 +339,43 @@ async function loadPromoted(slug, userToken) {
 }
 
 // ---------------------------------------------------------------------------
+// Merge queue positions
+//
+// An approved proposal (status 'merging') goes live through its APP's own
+// merge pipeline, so its queue is per app: the platform's `eta` is the
+// earliest time that proposal can auto-merge, and eta order is the order
+// the pipeline will reach the app's waiting proposals. The position is
+// stamped server-side so every client and check sees the same number,
+// 1 = next to merge. Proposals still voting or already merged get no
+// position at all, so the card badge disappears on merge: there is nothing
+// left to wait for.
+// ---------------------------------------------------------------------------
+
+function stampQueuePositions(proposals) {
+  const byApp = new Map();
+  for (const p of proposals) {
+    if (p.status !== 'merging') continue;
+    let queue = byApp.get(p.appSlug);
+    if (!queue) byApp.set(p.appSlug, (queue = []));
+    queue.push(p);
+  }
+  for (const queue of byApp.values()) {
+    queue.sort((a, b) => {
+      const ta = a.eta ? Date.parse(a.eta) : NaN;
+      const tb = b.eta ? Date.parse(b.eta) : NaN;
+      if (!isNaN(ta) && !isNaN(tb) && ta !== tb) return ta - tb;
+      // A proposal the platform sent no countdown for queues behind the
+      // known ones; between two unknowns the loaded order stands (stable).
+      if (!isNaN(ta)) return -1;
+      if (!isNaN(tb)) return 1;
+      return 0;
+    });
+    queue.forEach((p, i) => { p.queuePos = i + 1; });
+  }
+  return proposals;
+}
+
+// ---------------------------------------------------------------------------
 // Votes this user cast through this app.
 //
 // The platform does not expose a cross-app "my votes" feed to apps, so the
@@ -525,9 +562,13 @@ function demoInbox() {
 // The demo payload, optionally with every proposal marked voted
 // (?allvoted=1) so the Hide voted toggle's empty state is reachable by the
 // declared checks, or every proposal marked merged (?allmerged=1) for the
-// Hide merged toggle the same way. Staging fixtures only.
+// Hide merged toggle the same way. Staging fixtures only. ?queue=1 turns
+// the fixture into the merge-queue scenario below; positions are stamped
+// last so every variant (and ?allmerged=1, which merges everything) leaves
+// only genuinely queued proposals carrying a position.
 function demoInboxPayload(req) {
   const demo = demoInbox();
+  if (req.query.queue === '1') applyQueueScenario(demo.proposals, req);
   // Same ordering the production inbox uses, so the demo list's default
   // order mirrors the real one (and the sort checks are meaningful: the
   // fixture's authoring order happens to already be newest-first).
@@ -540,7 +581,51 @@ function demoInboxPayload(req) {
   if (req.query.allmerged === '1') {
     for (const p of demo.proposals) p.status = 'merged';
   }
+  stampQueuePositions(demo.proposals);
   return demo;
+}
+
+// ?queue=1 (staging demo only) turns the fixture into a merge-queue
+// scenario: four proposals approved and waiting to go live, all in ONE
+// app's queue so the positions run 1st..4th on screen (positions are per
+// app, mirroring the real pipeline, so demo-6 and demo-1 move onto
+// staging-demo-app for the scenario). Each gets a staggered merge
+// countdown, and the countdown order decides the positions. Variants the
+// checks compose onto it: ?queue-eta=reverse hands out the countdowns in
+// reverse, so position provably follows eta and not fixture order;
+// ?no-eta=1 drops the countdowns entirely (fallback: the queue keeps the
+// list's loaded order, unknown waits behind nothing); and
+// ?merged=<session ids> marks proposals already through the pipeline, so
+// a check URL can watch a badge disappear and the others renumber.
+function applyQueueScenario(proposals, req) {
+  const byId = new Map(proposals.map((p) => [p.sessionId, p]));
+  const queuedIds = ['demo-3', 'demo-2', 'demo-6', 'demo-1'];
+  for (const id of queuedIds) {
+    const p = byId.get(id);
+    if (!p) continue;
+    p.appSlug = 'staging-demo-app';
+    p.appName = 'Staging Demo App';
+    p.icon = '📮';
+  }
+  const steps = [5, 12, 30, 55]; // minutes to merge, one per queued card
+  const ids = req.query['queue-eta'] === 'reverse' ? [...queuedIds].reverse() : queuedIds;
+  const noEta = req.query['no-eta'] === '1';
+  ids.forEach((id, i) => {
+    const p = byId.get(id);
+    if (!p) return;
+    p.status = 'merging';
+    p.eta = noEta ? null
+      : new Date(Date.now() + steps[i] * 60_000).toISOString();
+  });
+  const mergedIds = String(req.query.merged || '').split(',')
+    .map((s) => s.trim()).filter(Boolean);
+  for (const id of mergedIds) {
+    const p = byId.get(id);
+    if (!p) continue;
+    p.status = 'merged';
+    p.eta = null;
+    p.mergedAt = new Date().toISOString();
+  }
 }
 
 function demoVoteRows() {
@@ -624,6 +709,10 @@ app.get('/api/inbox', async (req, res) => {
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
     proposals.sort(neededFirst);
+
+    // Where each approved proposal sits in its app's merge queue (1 =
+    // next to merge); voting and merged proposals are left unstamped.
+    stampQueuePositions(proposals);
 
     const filterApps = [];
     const seen = new Set();

@@ -197,6 +197,12 @@
     // without demo data.
     var OPEN_FILTER = params.get('openfilter') === '1';
     var ALL_MERGED = params.get('allmerged') === '1';
+    // Merge-queue fixture, demo only: ?queue=1 asks the demo inbox for the
+    // four-proposal queue scenario, with its check variants ?queue-eta=
+    // (reverse countdown order), ?no-eta=1 (queue without countdowns) and
+    // ?merged=<session ids> (some already through the pipeline). Forwarded
+    // to /api/inbox the same way ?allvoted=1 is; never sent without demo.
+    var QUEUE_PARAMS = ['queue', 'queue-eta', 'no-eta', 'merged'];
     // Staging-check fixture for the confirm-before-No flow: ?tap-no=1 asks
     // the demo inbox to click the demo-4 card's "No" button once loaded (the
     // real button, through the real delegated click handler), and
@@ -301,6 +307,17 @@
       var days = Math.floor(hours / 24);
       if (days < 14) return days + 'd ago';
       return Math.floor(days / 7) + 'w ago';
+    }
+
+    // Ordinal for the merge-queue badge: 1st, 2nd, 3rd, then 4th… with the
+    // 11th/12th/13th exception.
+    function ordinal(n) {
+      var rem10 = n % 10;
+      var rem100 = n % 100;
+      if (rem10 === 1 && rem100 !== 11) return n + 'st';
+      if (rem10 === 2 && rem100 !== 12) return n + 'nd';
+      if (rem10 === 3 && rem100 !== 13) return n + 'rd';
+      return n + 'th';
     }
 
     function toast(message, opts) {
@@ -670,6 +687,30 @@
         + '</div>';
     }
 
+    // Merge-queue badge: where an approved proposal sits in its app's merge
+    // queue, stamped server-side as queuePos (1 = next to merge).
+    // Informational only: a plain pill beside the Merging status label with
+    // no tap target, so it changes no interaction. First in queue gets the
+    // accent treatment and a "next to merge" hint; the rest stay muted.
+    // Rendered only for status 'merging': a still-voting card has nothing
+    // queued yet, and once a proposal merges the position is gone.
+    // Class strings reuse the pills already on the cards (the votes-needed
+    // and status pills), so no new colours enter the app.
+    var QUEUE_BADGE_FIRST = 'bg-violet-600/15 text-violet-700 dark:text-violet-300';
+    var QUEUE_BADGE_WAITING = 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300';
+
+    function queueBadge(p) {
+      if (p.status !== 'merging' || p.queuePos == null) return '';
+      var first = p.queuePos === 1;
+      return '<span data-queue-badge'
+        + (first ? ' data-queue-first="1"' : '')
+        + ' data-queue-pos="' + p.queuePos + '"'
+        + ' title="' + (first ? 'Next to merge' : 'Waiting to merge') + '"'
+        + ' class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold '
+        + (first ? QUEUE_BADGE_FIRST : QUEUE_BADGE_WAITING) + '">'
+        + ordinal(p.queuePos) + ' in queue</span>';
+    }
+
     // Status progress under the vote counts: the same thin bar shape with a
     // status label beside it. Fill shows the yes count against the required
     // threshold (the yes/no share when no threshold is known, full when the
@@ -697,6 +738,7 @@
         + '<div class="h-full rounded-full ' + fillCls + ' transition-all" style="width:' + pct + '%"></div>'
         + '</div>'
         + '<span class="whitespace-nowrap text-xs font-semibold ' + labelCls + '">' + style[0] + '</span>'
+        + queueBadge(p)
         + '</div>';
     }
 
@@ -1595,9 +1637,15 @@
       if (force) state.inbox = null;
       render();
       var query = [];
-      if (DEMO) query.push('demo=1');
-      if (ALL_VOTED) query.push('allvoted=1');
-      if (ALL_MERGED) query.push('allmerged=1');
+      if (DEMO) {
+        query.push('demo=1');
+        if (ALL_VOTED) query.push('allvoted=1');
+        if (ALL_MERGED) query.push('allmerged=1');
+        for (var qi = 0; qi < QUEUE_PARAMS.length; qi++) {
+          var qv = params.get(QUEUE_PARAMS[qi]);
+          if (qv) query.push(QUEUE_PARAMS[qi] + '=' + encodeURIComponent(qv));
+        }
+      }
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
