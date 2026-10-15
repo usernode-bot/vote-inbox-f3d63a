@@ -841,6 +841,14 @@ app.get('/api/inbox', async (req, res) => {
   const userToken = userTokenFrom(req);
   try {
     if (req.query.demo === '1' && IS_STAGING) {
+      // One check route's cast demo vote must not distort the fixture for
+      // the next: clearvotes drops the caller's rows for the demo
+      // sessions before stamping, so the route starts at the baseline.
+      if (req.query.clearvotes === '1' && req.user) {
+        await pool.query(
+          "DELETE FROM my_votes WHERE user_id = $1 AND session_id LIKE 'demo-%'",
+          [req.user.id]);
+      }
       const demo = demoInboxPayload(req);
       await withMyVotes(demo.proposals, req.user.id);
       await withMyStars(demo.proposals, req.user.id, req);
