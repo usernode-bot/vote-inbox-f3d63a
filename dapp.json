@@ -188,6 +188,167 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "app-filter.turnout-open-app",
+      "name": "App filter shows Staging Demo App's open count of 3",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='3']",
+      "expectText": "(3)",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-merged-zero-app",
+      "name": "Staging Demo App shows zero merged this week",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-merged='0']",
+      "expectText": "0 merged this week",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-open-notes",
+      "name": "App filter shows Staging Demo Notes' open count of 2",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
+      "expectText": "(2)",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-merged-notes",
+      "name": "Staging Demo Notes shows one merged this week",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-merged='1']",
+      "expectText": "1 merged this week",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-open-archive",
+      "name": "App filter shows Staging Demo Archive's open count of 0",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-count='0']",
+      "expectText": "(0)",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-merged-zero-archive",
+      "name": "Staging Demo Archive shows zero merged this week",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-merged='0']",
+      "expectText": "0 merged this week",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-both-on-row",
+      "name": "Open and merged-this-week counts sit on the same app row",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-notes']:has([data-app-count='2']):has([data-app-merged='1'])",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-all-row-plain",
+      "name": "All apps row carries no per-app counts",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "body:not(:has([data-app-option=''] [data-app-count]))",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-app-row-pair",
+      "name": "Staging Demo App row carries open and merged-this-week together",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-app']:has([data-app-count='3']):has([data-app-merged='0'])",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-hides-keep-counts",
+      "name": "Hide voted and hide merged do not change the filter counts",
+      "path": "/?demo=1&openfilter=1&hide-voted=1&hide-merged=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
+      "expectText": "(2)",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-open-app",
+      "name": "After a data refresh Staging Demo App's open count drops to 2",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='2']",
+      "expectText": "(2)",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-merged-app",
+      "name": "After a data refresh Staging Demo App shows one merged this week",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-merged='1']",
+      "expectText": "1 merged this week",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-open-notes",
+      "name": "After a data refresh Staging Demo Notes' open count drops to 1",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='1']",
+      "expectText": "(1)",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-merged-notes",
+      "name": "After a data refresh Staging Demo Notes shows two merged this week",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-merged='2']",
+      "expectText": "2 merged this week",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-archive-unchanged",
+      "name": "Staging Demo Archive keeps zero counts after the refresh",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-count='0']",
+      "expectText": "0 merged this week",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-stale-open-gone",
+      "name": "The refresh replaced the old open count of 3",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "body:not(:has([data-app-count='3']))",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-stale-merged-gone",
+      "name": "The refresh replaced the app's old merged count of 0",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "body:not(:has([data-app-option='staging-demo-app'] [data-app-merged='0']))",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-still-open",
+      "name": "The dropdown stays open across the data refresh",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-filter-trigger][aria-expanded='true']",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-both-open-updated",
+      "name": "One refresh updates the open counts of both apps",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "body:has([data-app-option='staging-demo-app'] [data-app-count='2']):has([data-app-option='staging-demo-notes'] [data-app-count='1'])",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-both-merged-updated",
+      "name": "One refresh updates the merged counts of both apps",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "body:has([data-app-option='staging-demo-app'] [data-app-merged='1']):has([data-app-option='staging-demo-notes'] [data-app-merged='2'])",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "app-filter.turnout-refresh-notes-row-pair",
+      "name": "After the refresh the Notes row carries its new pair together",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-notes']:has([data-app-count='1']):has([data-app-merged='2'])",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "inbox.title-search",
       "name": "Title search keeps only matching cards",
       "path": "/?demo=1&q=Keyboard",

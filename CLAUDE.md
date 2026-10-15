@@ -110,5 +110,15 @@ user's vote history.
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- `?turnout-refresh=1` (demo only) reloads the inbox through the real
+  refresh path with the fetch carrying `?turnoutalt=1`, which the server
+  answers with a variant fixture (two more proposals merged), so the app
+  filter's per-app open and merged-this-week counts are observable
+  updating in place.
+- The app filter dropdown shows each app's open count (loaded proposals
+  not yet merged) plus its merged-this-week count (merged within the
+  last seven calendar days), both tallied from the already-loaded inbox
+  data and re-tallied whenever the inbox reloads while the dropdown is
+  open. No extra platform calls.
 - Keep the inbox fetch bounded: parallel with concurrency limit 8 and a
   10 s overall budget, plus short TTL caches (apps 60 s, promoted 30 s).

@@ -458,8 +458,10 @@ function demoInbox() {
   // from today, and for day 0 how many hours ago, plus a floor in minutes
   // past local midnight so just-after-midnight runs cannot clamp two
   // fixtures onto the same instant. proposedAt stays the real elapsed-time
-  // stamp for any consumer that does not re-anchor.
-  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters, anchor) => ({
+  // stamp for any consumer that does not re-anchor. `mergedAgeMs` stamps
+  // when a merged proposal merged (ms ago), for the app filter's
+  // merged-this-week count.
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters, anchor, mergedAgeMs) => ({
     sessionId,
     proposalId,
     // Without a configured platform origin (a bare check worker, not real
@@ -474,6 +476,7 @@ function demoInbox() {
     status: status || null,
     eta: null,
     proposedAt: ageMs != null ? new Date(Date.now() - ageMs).toISOString() : null,
+    mergedAt: mergedAgeMs != null ? new Date(Date.now() - mergedAgeMs).toISOString() : null,
     demoAnchor: anchor || null,
     appSlug: slug,
     appName: apps.find((a) => a.slug === slug).name,
@@ -498,7 +501,10 @@ function demoInbox() {
   const todayCap = () => Date.now() % D;
   // Two of the six are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
-  // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries
+  // null (an open proposal, Voting), 'merging' and 'merged'. demo-5 is the
+  // one merged proposal, and it merged 2 days ago (within the week) so the
+  // app filter's merged-this-week count is nonzero for its app while the
+  // other app reads 0. demo-4 carries
   // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
   // avatar row shows its max-5-then-"+N" case in previews and checks, and a
   // deliberately long title (3+ rendered lines) so the expandable-title
@@ -511,13 +517,13 @@ function demoInbox() {
   // demo-4/demo-2/demo-1/demo-6. demo-1 and demo-6 each sit exactly one yes
   // vote from their threshold so the One vote away chip has something to show.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, Math.min(8 * H, todayCap()), null,
-      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }),
-    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }),
+      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }, null),
+    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }, null),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }, null),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }, 2 * D),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }
@@ -539,6 +545,24 @@ function demoInboxPayload(req) {
   }
   if (req.query.allmerged === '1') {
     for (const p of demo.proposals) p.status = 'merged';
+  }
+  // Check-fixture variant (?turnoutalt=1, staging demo only): demo-3 and
+  // demo-6 have merged since the first load, so the app filter's per-app
+  // open and merged-this-week counts change and the page's refresh of those
+  // numbers is observable (?turnout-refresh=1 drives that reload). Applied
+  // before the allvoted/allmerged overrides; no declared check combines
+  // them. demo-5's merge (2 days ago) is unchanged, so Notes gains one
+  // merge and App gains its first.
+  if (req.query.turnoutalt === '1') {
+    for (const p of demo.proposals) {
+      if (p.sessionId === 'demo-3') {
+        p.status = 'merged';
+        p.mergedAt = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+      } else if (p.sessionId === 'demo-6') {
+        p.status = 'merged';
+        p.mergedAt = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+      }
+    }
   }
   return demo;
 }
