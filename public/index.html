@@ -138,6 +138,8 @@
           </div>
         </div>
         <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <button id="select-mode-btn" data-select-mode-toggle type="button" aria-pressed="false"
+            class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Select</button>
           <button id="one-away-chip" data-one-away-chip type="button" aria-pressed="false"
             class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">One vote away</button>
           <label for="hide-voted" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
@@ -177,7 +179,29 @@
       </div>
     </div>
 
+    <!-- Bulk triage bar: shown only in select mode on the Inbox tab. The
+         counter counts every ticked card, including ones a filter is
+         currently hiding, and Clear empties the selection without leaving
+         select mode. Approve casts a Yes vote on each selected card, Hide
+         casts a No. -->
+    <div id="select-bar" data-select-bar hidden class="mt-3 rounded-2xl border border-violet-500/40 bg-violet-600/10 p-3">
+      <div class="flex items-center justify-between gap-2">
+        <span data-select-count class="text-sm font-semibold text-violet-700 dark:text-violet-300">0 selected</span>
+        <button id="select-exit" type="button"
+          class="rounded-full px-3 py-1.5 text-sm font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400">Done</button>
+      </div>
+      <div class="mt-2 flex gap-2">
+        <button data-bulk="approve" data-bulk-approve type="button" disabled
+          class="min-h-11 flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform hover:bg-violet-500 active:scale-95 disabled:opacity-50">Approve</button>
+        <button data-bulk="hide" data-bulk-hide type="button" disabled
+          class="min-h-11 flex-1 rounded-xl border border-red-500/40 bg-white py-2.5 text-sm font-semibold text-red-700 transition-transform active:scale-95 disabled:opacity-50 dark:bg-zinc-900 dark:text-red-300">Hide</button>
+        <button data-bulk="clear" data-bulk-clear type="button"
+          class="min-h-11 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition-transform active:scale-95 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Clear</button>
+      </div>
+    </div>
+
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
+
   </main>
 
   <script>
@@ -218,6 +242,19 @@
     // ?tap-share=<sessionId> (demo only) taps that card's share button once
     // the inbox has rendered, the way ?tap-no=1 taps a vote button.
     var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
+    // Bulk-triage hooks (demo only), one URL per check behaviour:
+    // ?selectmode=1 turns select mode on with nothing selected;
+    // ?select=<ids> / ?deselect=<ids> tick and untick cards through the same
+    // state the real checkbox tap flips; ?clearsel=1 empties the selection;
+    // ?exitsel=1 leaves select mode; ?filter=<slug> applies the app filter;
+    // ?bulk=approve|hide runs the real bulk action over the selection.
+    // Selected sessions are un-voted first (the way ?cast= clears) so a
+    // repeated check run always starts from an unvoted list. Production
+    // never honours any of these.
+    var BULK_HOOKS = DEMO && (params.get('selectmode') === '1'
+      || params.get('select') || params.get('deselect')
+      || params.get('clearsel') === '1' || params.get('exitsel') === '1'
+      || params.get('filter') || params.get('bulk'));
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -253,6 +290,14 @@
       // (a vote, a filter change) keeps those titles expanded; not persisted,
       // a reload starts collapsed again.
       expandedTitles: {},
+      // Bulk triage: select mode (checkbox on each votable card) and the
+      // selected session ids. Selection is in-memory only and keyed by
+      // session id, so it survives filter, search and sort changes —
+      // filtering only hides cards, it never clears what is ticked. A
+      // reload starts with nothing selected and select mode off.
+      selectMode: false,
+      selected: {},
+      bulkBusy: false,
     };
 
     // ------------------------------------------------------------------
@@ -701,6 +746,16 @@
     }
 
     var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
+    // Selected card in select mode: the same card with the violet border the
+    // active filter trigger and chip use, so a ticked card reads at a glance.
+    var CARD_SELECTED_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-violet-500/70 bg-white p-4 shadow-sm dark:border-violet-500/70 dark:bg-zinc-900/70';
+
+    // Select-mode checkbox: an empty circle when unticked, a filled violet
+    // circle with a check when ticked (same 24-grid check the filter rows
+    // and the voted banner use). Only votable cards render one.
+    var SELECT_TOGGLE_OFF = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-zinc-300 bg-white text-transparent dark:border-zinc-600 dark:bg-zinc-900';
+    var SELECT_TOGGLE_ON = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-violet-600 bg-violet-600 text-white dark:border-violet-500 dark:bg-violet-500';
+    var SELECT_CHECK = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
 
     // Card title, clamped and expanded spellings (whole literals for the
     // Tailwind compiler). The clamped one is line-clamp-2; enhanceTitles()
@@ -837,6 +892,20 @@
 
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
+      // Select-mode checkbox: only on cards a bulk action can still act on —
+      // unvoted and not already merged or closed. Voted cards keep their
+      // "You voted" banner and offer no checkbox, so a bulk pass never has
+      // to skip anything mid-flight.
+      var selectable = state.selectMode && !voted
+        && p.status !== 'merged' && p.status !== 'closed';
+      var isSelected = selectable && !!state.selected[p.sessionId];
+      var selectBtn = selectable
+        ? '<button data-select-toggle data-session="' + esc(p.sessionId) + '"'
+          + ' aria-pressed="' + (isSelected ? 'true' : 'false') + '"'
+          + ' aria-label="' + (isSelected ? 'Deselect proposal' : 'Select proposal') + '"'
+          + ' class="' + (isSelected ? SELECT_TOGGLE_ON : SELECT_TOGGLE_OFF) + '">'
+          + (isSelected ? SELECT_CHECK : '') + '</button>'
+        : '';
       var titleExpanded = !!state.expandedTitles[p.sessionId];
       var age = relTime(p.proposedAt);
       var ageHtml = age
@@ -872,11 +941,17 @@
       }
       // data-needed lets the declared checks (and deep links) assert what the
       // votes-needed pill shows: omitted when the threshold is unknown.
+      // data-selected carries the checkbox state in select mode (present on
+      // every votable card there, 'true' or 'false') so checks can assert
+      // what a tick and an untick do.
       return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '"'
         + (p.needed != null ? ' data-needed="' + p.needed + '"' : '')
-        + ' class="' + CARD_CLASS + '">'
+        + (state.selectMode && !voted
+          ? ' data-selected="' + (isSelected ? 'true' : 'false') + '"' : '')
+        + ' class="' + (isSelected ? CARD_SELECTED_CLASS : CARD_CLASS) + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
+        + selectBtn
         + appAvatar(p)
         + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
         + ageHtml
@@ -1324,6 +1399,8 @@
     function render() {
       syncFilter();
       syncOneAway();
+      syncSelectMode();
+      renderSelectBar();
       renderTabs();
       renderSort();
       renderVotesOrder();
@@ -1400,6 +1477,42 @@
       if (!oneAwayChip) return;
       oneAwayChip.className = state.oneAway ? ONE_AWAY_ACTIVE : ONE_AWAY_IDLE;
       oneAwayChip.setAttribute('aria-pressed', state.oneAway ? 'true' : 'false');
+    }
+
+    // Keep the Select chip and the bulk bar in step with select mode. The
+    // counter counts every ticked card still in the loaded inbox, including
+    // ones the current filter is hiding — selection survives filtering, so
+    // the number must not move just because cards left the screen.
+    var selectModeBtn = document.getElementById('select-mode-btn');
+
+    function syncSelectMode() {
+      if (!selectModeBtn) return;
+      selectModeBtn.className = state.selectMode ? ONE_AWAY_ACTIVE : ONE_AWAY_IDLE;
+      selectModeBtn.setAttribute('aria-pressed', state.selectMode ? 'true' : 'false');
+    }
+
+    function selectedCount() {
+      var n = 0;
+      for (var id in state.selected) {
+        if (findProposal(id)) n++;
+      }
+      return n;
+    }
+
+    function renderSelectBar() {
+      var bar = document.getElementById('select-bar');
+      if (!bar) return;
+      bar.hidden = !(state.tab === 'inbox' && state.selectMode);
+      var n = selectedCount();
+      var countEl = bar.querySelector('[data-select-count]');
+      if (countEl) countEl.textContent = n + ' selected';
+      var actable = n > 0 && !state.bulkBusy;
+      var approveBtn = bar.querySelector('[data-bulk-approve]');
+      var hideBtn = bar.querySelector('[data-bulk-hide]');
+      var clearBtn = bar.querySelector('[data-bulk-clear]');
+      if (approveBtn) approveBtn.disabled = !actable;
+      if (hideBtn) hideBtn.disabled = !actable;
+      if (clearBtn) clearBtn.disabled = n === 0 || state.bulkBusy;
     }
 
     function filterRowEl(app, selected, count) {
@@ -1604,6 +1717,7 @@
           if (data.demo) reanchorDemo(data);
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
+          pruneSelection();
           maybeAutoCast();
           maybeAutoExpand();
         })
@@ -1616,6 +1730,7 @@
           maybeAutoOpenFilter();
           maybeTapNo();
           maybeTapShare();
+          maybeApplyBulkHooks();
           if (state.queuedInbox) {
             state.queuedInbox = false;
             loadInbox(true);
@@ -1663,6 +1778,67 @@
         if (proposals[i].sessionId === sessionId) return proposals[i];
       }
       return null;
+    }
+
+    // ------------------------------------------------------------------
+    // Bulk triage. Select mode puts a checkbox on every card a bulk action
+    // could still act on (unvoted, not merged/closed); the bar casts Yes or
+    // No over the whole selection, one card at a time through the same
+    // castVote the one-tap buttons use, so per-card optimistic marks,
+    // offline retry queuing and rollbacks all behave exactly as before.
+    // ------------------------------------------------------------------
+
+    function toggleSelect(sessionId) {
+      var p = findProposal(sessionId);
+      if (!p || isVoted(p) || p.status === 'merged' || p.status === 'closed') return;
+      if (state.selected[sessionId]) delete state.selected[sessionId];
+      else state.selected[sessionId] = true;
+      render();
+    }
+
+    function setSelectMode(on) {
+      state.selectMode = !!on;
+      if (!state.selectMode) state.selected = {};
+      render();
+    }
+
+    // Drop selections whose proposal is no longer in the loaded inbox (a
+    // refresh replaced the list); everything else survives filter, search
+    // and sort changes untouched.
+    function pruneSelection() {
+      for (var id in state.selected) {
+        if (!findProposal(id)) delete state.selected[id];
+      }
+    }
+
+    // Cast one vote per selected card, sequentially so the cards' pending
+    // states render one after another and the platform sees an ordinary
+    // vote each. Cards voted meanwhile are skipped. Afterwards the selection
+    // drops what is now voted (their checkboxes are gone) so the counter
+    // reflects what is still actionable, and one toast names the outcome.
+    function bulkApply(choice) {
+      var ids = [];
+      for (var id in state.selected) {
+        var p = findProposal(id);
+        if (p && !isVoted(p) && p.status !== 'merged' && p.status !== 'closed') ids.push(id);
+      }
+      if (!ids.length || state.bulkBusy) return;
+      state.bulkBusy = true;
+      render();
+      var seq = Promise.resolve();
+      ids.forEach(function (sessionId) {
+        seq = seq.then(function () { return castVote(sessionId, choice); });
+      });
+      return seq.then(function () {
+        state.bulkBusy = false;
+        for (var i = 0; i < ids.length; i++) {
+          var p = findProposal(ids[i]);
+          if (!p || isVoted(p)) delete state.selected[ids[i]];
+        }
+        render();
+        toast((choice === 'yes' ? 'Approved ' : 'Hid ') + ids.length
+          + (ids.length === 1 ? ' proposal' : ' proposals'), { duration: 5000 });
+      });
     }
 
     // Classify a failed vote request. "Offline" means the request never got
@@ -1721,7 +1897,10 @@
           body: JSON.stringify(payload),
         });
       }
-      request.then(function () {
+      // The full chain resolves whether the vote recorded, was refused by
+      // the server or went to the retry queue (the catch below swallows the
+      // error either way), so the bulk pass can await it cast by cast.
+      return request.then(function () {
         state.votes = null; // history refetches next time the tab opens
         toast('Vote recorded', {
           duration: 5000,
@@ -2009,6 +2188,65 @@
       state.expandedTitles[String(id)] = true;
     }
 
+    // Staging demo hooks for the bulk triage checks (see BULK_HOOKS above
+    // for the parameters). Applied once, after the demo inbox has rendered:
+    // the selected sessions are cleared of any earlier demo vote first — the
+    // way ?cast= clears — so a check run that shares its staging database
+    // with earlier runs still starts from unvoted cards, then the selection,
+    // filter and bulk parameters drive the real state and the real bulk
+    // action. Nothing here runs without ?demo=1.
+    var bulkHooksDone = false;
+    function csvIds(raw) {
+      return String(raw || '').split(',').map(function (s) { return s.trim(); })
+        .filter(function (s) { return s; });
+    }
+    function maybeApplyBulkHooks() {
+      if (!DEMO || !BULK_HOOKS || bulkHooksDone) return;
+      bulkHooksDone = true;
+      var selectIds = csvIds(params.get('select'));
+      var deselectIds = csvIds(params.get('deselect'));
+      var bulkParam = params.get('bulk');
+      var filterParam = params.get('filter') || '';
+      var clears = selectIds.map(function (id) {
+        var p = findProposal(id);
+        if (!p) return Promise.resolve();
+        return api('/api/unvote', {
+          method: 'POST',
+          headers: headers({ 'content-type': 'application/json' }),
+          body: JSON.stringify({ sessionId: id }),
+        }).catch(function () {}).then(function () { p.myVote = null; });
+      });
+      Promise.all(clears).then(function () {
+        if (params.get('selectmode') === '1' || selectIds.length) state.selectMode = true;
+        selectIds.forEach(function (id) {
+          if (findProposal(id)) state.selected[id] = true;
+        });
+        deselectIds.forEach(function (id) { delete state.selected[id]; });
+        if (params.get('clearsel') === '1') state.selected = {};
+        if (filterParam) {
+          var app = findFilterApp(filterParam);
+          if (!app) {
+            var proposals = (state.inbox && state.inbox.proposals) || [];
+            for (var i = 0; i < proposals.length; i++) {
+              if (proposals[i].appSlug === filterParam) {
+                app = { slug: filterParam, name: proposals[i].appName };
+                break;
+              }
+            }
+          }
+          if (app) { state.filter = app.slug; state.filterName = app.name; }
+        }
+        if (params.get('exitsel') === '1') {
+          state.selectMode = false;
+          state.selected = {};
+        }
+        render();
+        if (bulkParam === 'approve' || bulkParam === 'hide') {
+          bulkApply(bulkParam === 'approve' ? 'yes' : 'no');
+        }
+      });
+    }
+
     // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------
@@ -2051,6 +2289,11 @@
         toggleTitle(titleBtn);
         return;
       }
+      var selToggle = target.closest ? target.closest('[data-select-toggle]') : null;
+      if (selToggle) {
+        toggleSelect(selToggle.getAttribute('data-session'));
+        return;
+      }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
       if (voteBtn) {
         var voteSession = voteBtn.getAttribute('data-session');
@@ -2073,6 +2316,37 @@
       oneAwayChip.addEventListener('click', function () {
         state.oneAway = !state.oneAway;
         render();
+      });
+    }
+
+    if (selectModeBtn) {
+      selectModeBtn.addEventListener('click', function () {
+        setSelectMode(!state.selectMode);
+      });
+    }
+
+    // The bulk bar's own buttons: Approve and Hide cast over the selection,
+    // Clear empties it while staying in select mode (Done, on the bar, is
+    // the one that leaves select mode).
+    var selectBarEl = document.getElementById('select-bar');
+    if (selectBarEl) {
+      selectBarEl.addEventListener('click', function (event) {
+        var btn = event.target.closest ? event.target.closest('[data-bulk]') : null;
+        if (!btn) return;
+        var kind = btn.getAttribute('data-bulk');
+        if (kind === 'approve') bulkApply('yes');
+        else if (kind === 'hide') bulkApply('no');
+        else if (kind === 'clear') {
+          state.selected = {};
+          render();
+        }
+      });
+    }
+
+    var selectExitBtn = document.getElementById('select-exit');
+    if (selectExitBtn) {
+      selectExitBtn.addEventListener('click', function () {
+        setSelectMode(false);
       });
     }
 

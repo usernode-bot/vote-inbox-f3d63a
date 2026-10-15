@@ -110,5 +110,12 @@ user's vote history.
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- Bulk triage hooks (demo only) drive select mode and the bulk actions
+  through the real code paths for checks: `?selectmode=1`,
+  `?select=<ids>`, `?deselect=<ids>`, `?clearsel=1`, `?exitsel=1`,
+  `?filter=<slug>` and `?bulk=approve|hide`. Sessions named by
+  `?select=` are un-voted first, so repeated check runs against a shared
+  staging database always start from unvoted cards. Selection lives in
+  frontend memory only and is never persisted.
 - Keep the inbox fetch bounded: parallel with concurrency limit 8 and a
   10 s overall budget, plus short TTL caches (apps 60 s, promoted 30 s).

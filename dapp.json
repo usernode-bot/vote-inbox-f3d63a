@@ -309,6 +309,168 @@
       "expectText": "Proposed",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "bulk.select-control",
+      "name": "Inbox offers a Select control",
+      "path": "/?demo=1",
+      "expectSelector": "[data-select-mode-toggle]",
+      "expectText": "Select",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "bulk.mode-enters",
+      "name": "Select mode shows the bulk bar",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-select-bar]:not([hidden])"
+    },
+    {
+      "id": "bulk.checkboxes-render",
+      "name": "Select mode puts a checkbox on votable cards",
+      "path": "/?demo=1&selectmode=1&select=demo-2&deselect=demo-2",
+      "expectSelector": "[data-proposal-card] [data-select-toggle]"
+    },
+    {
+      "id": "bulk.voted-not-selectable",
+      "name": "Already-voted cards offer no checkbox",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-3']):not(:has([data-proposal-card][data-session-id='demo-3'] [data-select-toggle]))"
+    },
+    {
+      "id": "bulk.card-selects",
+      "name": "Ticking a card marks it selected",
+      "path": "/?demo=1&select=demo-1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-selected='true']",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "bulk.counter-one",
+      "name": "Counter reads one selected",
+      "path": "/?demo=1&select=demo-1",
+      "expectText": "1 selected"
+    },
+    {
+      "id": "bulk.counter-three",
+      "name": "Counter reads three selected",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-6",
+      "expectText": "3 selected"
+    },
+    {
+      "id": "bulk.counter-empty-mode",
+      "name": "Select mode with nothing ticked reads zero selected",
+      "path": "/?demo=1&selectmode=1",
+      "expectText": "0 selected"
+    },
+    {
+      "id": "bulk.deselect-card",
+      "name": "Unticking a card unmarks it",
+      "path": "/?demo=1&select=demo-1,demo-2&deselect=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'][data-selected='false']"
+    },
+    {
+      "id": "bulk.counter-after-deselect",
+      "name": "Counter drops after an untick",
+      "path": "/?demo=1&select=demo-1,demo-2&deselect=demo-2",
+      "expectText": "1 selected"
+    },
+    {
+      "id": "bulk.approve-votes",
+      "name": "Bulk approve votes yes on every selected card",
+      "path": "/?demo=1&select=demo-1,demo-6&bulk=approve",
+      "expectText": "You voted yes"
+    },
+    {
+      "id": "bulk.approve-toast",
+      "name": "Bulk approve names its outcome",
+      "path": "/?demo=1&select=demo-1,demo-6&bulk=approve",
+      "expectText": "Approved 2"
+    },
+    {
+      "id": "bulk.approve-clears-counter",
+      "name": "Counter resets after bulk approve",
+      "path": "/?demo=1&select=demo-1,demo-6&bulk=approve",
+      "expectText": "0 selected"
+    },
+    {
+      "id": "bulk.hide-votes",
+      "name": "Bulk hide votes no on every selected card",
+      "path": "/?demo=1&select=demo-1&bulk=hide",
+      "expectText": "You voted no"
+    },
+    {
+      "id": "bulk.hide-toast",
+      "name": "Bulk hide names its outcome",
+      "path": "/?demo=1&select=demo-1&bulk=hide",
+      "expectText": "Hid 1 proposal"
+    },
+    {
+      "id": "bulk.clear-all",
+      "name": "Clear empties the selection",
+      "path": "/?demo=1&select=demo-1,demo-2&clearsel=1",
+      "expectText": "0 selected"
+    },
+    {
+      "id": "bulk.clear-unmarks",
+      "name": "Clear unticks the selected cards",
+      "path": "/?demo=1&select=demo-1,demo-2&clearsel=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-selected='false']"
+    },
+    {
+      "id": "bulk.clear-keeps-mode",
+      "name": "Clear keeps select mode on",
+      "path": "/?demo=1&select=demo-1,demo-2&clearsel=1",
+      "expectSelector": "[data-select-bar]:not([hidden])"
+    },
+    {
+      "id": "bulk.selection-survives-search",
+      "name": "Selection survives the title search filter",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-4&q=tag",
+      "expectText": "3 selected"
+    },
+    {
+      "id": "bulk.selection-survives-app-filter",
+      "name": "Selection survives the app filter",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-6&filter=staging-demo-notes",
+      "expectText": "3 selected"
+    },
+    {
+      "id": "bulk.selection-survives-one-away",
+      "name": "Selection survives the one-vote-away filter",
+      "path": "/?demo=1&select=demo-1,demo-2&one-away=1",
+      "expectText": "2 selected"
+    },
+    {
+      "id": "bulk.deselect-while-filtered",
+      "name": "Unticking a filtered-out card keeps the counter accurate",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-4&filter=staging-demo-notes&deselect=demo-4",
+      "expectText": "2 selected"
+    },
+    {
+      "id": "bulk.done-exits",
+      "name": "Done leaves select mode and clears the checkboxes",
+      "path": "/?demo=1&select=demo-1&exitsel=1",
+      "expectSelector": "body:has(#view [data-proposal-card]):not(:has([data-select-toggle]))"
+    },
+    {
+      "id": "bulk.one-tap-in-select-mode",
+      "name": "One-tap voting keeps working in select mode",
+      "path": "/?demo=1&selectmode=1&cast=demo-1:yes",
+      "expectText": "You voted yes"
+    },
+    {
+      "id": "bulk.approve-button-renders",
+      "name": "Bulk bar offers Approve",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-bulk-approve]",
+      "expectText": "Approve"
+    },
+    {
+      "id": "bulk.hide-button-renders",
+      "name": "Bulk bar offers Hide",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-bulk-hide]",
+      "expectText": "Hide"
     }
   ]
 }
