@@ -125,6 +125,13 @@
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
       </div>
+      <div id="views-row" data-views-row data-hidden="0" class="mt-2 flex items-center gap-2">
+        <div id="views-chips" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5" role="group" aria-label="Saved views"></div>
+        <button id="save-view-btn" type="button" class="flex shrink-0 items-center gap-1 rounded-full py-1.5 pl-2 pr-3 text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">
+          <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          <span>Save view</span>
+        </button>
+      </div>
       <div id="filter-row" class="mt-2">
         <div class="flex items-center gap-3">
           <label for="app-filter-trigger" class="sr-only">Filter by app</label>
@@ -164,6 +171,8 @@
           class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Votes needed</button>
         <button data-sort="newest" type="button" role="radio" aria-checked="false"
           class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Newest</button>
+        <button data-sort="controversy" type="button" role="radio" aria-checked="false"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Controversy</button>
       </div>
     </div>
 
@@ -197,6 +206,12 @@
     // without demo data.
     var OPEN_FILTER = params.get('openfilter') === '1';
     var ALL_MERGED = params.get('allmerged') === '1';
+    // Staging-check fixture: ?splits=<sessionId>:<yes>-<no>,… (demo only)
+    // asks the demo inbox to override named proposals' vote counts, so the
+    // controversy sort's tie behaviour is reachable without changing the
+    // default fixture's numbers. Forwarded to /api/inbox; never sent
+    // without demo data.
+    var SPLITS = DEMO ? (params.get('splits') || '') : '';
     // Staging-check fixture for the confirm-before-No flow: ?tap-no=1 asks
     // the demo inbox to click the demo-4 card's "No" button once loaded (the
     // real button, through the real delegated click handler), and
@@ -228,6 +243,19 @@
     var TURNOUT_REFRESH = DEMO && params.get('turnout-refresh') === '1';
     // Set just before the hook's reload, so that one fetch gets the variant.
     var turnoutAltNext = false;
+    // Compare-flow fixtures, all demo only. ?compare=<id>,<id> seeds a
+    // two-proposal selection AND opens the compare view (the deep link the
+    // checks use for the side-by-side state); ?pick=<ids> seeds the
+    // selection without opening the view. ?tap-compare=1, ?tap-clear=1,
+    // ?tap-compare-add=<id> and ?tap-no-compare=<id> then click the real
+    // controls once they have rendered (see maybeCompareHooks). Production
+    // never honours any of these.
+    var COMPARE_PARAM = DEMO ? (params.get('compare') || '') : '';
+    var PICK_PARAM = DEMO ? (params.get('pick') || '') : '';
+    var TAP_COMPARE = DEMO && params.get('tap-compare') === '1';
+    var TAP_CLEAR = DEMO && params.get('tap-clear') === '1';
+    var TAP_COMPARE_ADD = DEMO ? (params.get('tap-compare-add') || '') : '';
+    var TAP_NO_COMPARE = DEMO ? (params.get('tap-no-compare') || '') : '';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -243,6 +271,7 @@
       // hideVoted: it starts off on every fresh load.
       oneAway: params.get('one-away') === '1',
       hideMerged: false,
+      // Inbox order: 'needed' | 'newest' | 'controversy'.
       sort: 'needed',
       // My Votes order: 'newest' | 'oldest'. Not persisted; the
       // ?votes-order= param is a one-load override, the same pattern as
@@ -263,6 +292,27 @@
       // (a vote, a filter change) keeps those titles expanded; not persisted,
       // a reload starts collapsed again.
       expandedTitles: {},
+      // Proposal detail (?proposal=<sessionId> deep link, or a card's
+      // Discuss button): while open it replaces the inbox list. Comments
+      // are fetched per proposal; commentsKey remembers which thread is
+      // loaded so a re-render (a vote, a reply) never refetches it.
+      detail: params.get('proposal') || '',
+      detailComments: [],
+      commentsKey: '',
+      commentsLoading: false,
+      commentsError: null,
+      // Stringified id of the comment whose reply form is open; null when
+      // none is. One reply form at a time.
+      replyForm: null,
+      // Saved views, loaded from localStorage right after the state object
+      // (see the saved-views section below).
+      views: [],
+      // Compare selection: up to two session ids picked from the inbox via
+      // the cards' Compare buttons, plus whether the dedicated side-by-side
+      // view is open. Transient, like oneAway: a reload starts empty unless
+      // a ?compare= / ?pick= fixture re-seeds it.
+      compare: [],
+      compareView: false,
     };
 
     // ------------------------------------------------------------------
@@ -392,17 +442,18 @@
     // ------------------------------------------------------------------
     // Sort order preference. Same shape as the hide-voted preference:
     // persists in localStorage so the choice survives reloads, and
-    // ?sort=needed|newest overrides it for one load (used by the staging
-    // checks) without writing back. Storage can be refused in an iframe —
-    // the choice then just doesn't persist.
+    // ?sort=needed|newest|controversy overrides it for one load (used by
+    // the staging checks) without writing back. Storage can be refused in
+    // an iframe — the choice then just doesn't persist.
     // ------------------------------------------------------------------
 
     var SORT_KEY = 'vote-inbox:sort';
+    var SORT_VALUES = ['needed', 'newest', 'controversy'];
 
     function loadSort() {
       try {
         var v = localStorage.getItem(SORT_KEY);
-        return v === 'newest' || v === 'needed' ? v : 'needed';
+        return SORT_VALUES.indexOf(v) !== -1 ? v : 'needed';
       } catch (e) { return 'needed'; }
     }
 
@@ -412,10 +463,10 @@
 
     var sortParam = params.get('sort');
     state.sort = loadSort();
-    if (sortParam === 'newest' || sortParam === 'needed') state.sort = sortParam;
+    if (SORT_VALUES.indexOf(sortParam) !== -1) state.sort = sortParam;
 
     function setSort(v) {
-      if (v !== 'needed' && v !== 'newest' || v === state.sort) return;
+      if (SORT_VALUES.indexOf(v) === -1 || v === state.sort) return;
       state.sort = v;
       saveSort(v);
       render();
@@ -484,6 +535,468 @@
       var remainingQ = remainingParams.toString();
       location.replace(location.pathname + (remainingQ ? '?' + remainingQ : '') + location.hash);
       return;
+    }
+
+    // ------------------------------------------------------------------
+    // Saved views. A view is a named snapshot of the current filter + sort
+    // (plus the one-away chip and the hide toggles), shown as a switcher
+    // row of chips under the tabs. Views live in localStorage so they
+    // survive reloads; the proposals themselves stay on the platform.
+    // Each chip's count answers "how many loaded proposals would this
+    // view match", from the inbox already in memory, no extra request.
+    // ------------------------------------------------------------------
+
+    var VIEWS_KEY = 'vote-inbox:views';
+
+    function loadViews() {
+      try {
+        var v = JSON.parse(localStorage.getItem(VIEWS_KEY) || '[]');
+        if (!Array.isArray(v)) return [];
+        return v.filter(function (x) {
+          return x && typeof x.name === 'string' && x.name.trim();
+        }).map(function (x) {
+          var view = normalizeViewConfig(x);
+          view.name = x.name.trim();
+          return view;
+        });
+      } catch (e) { return []; }
+    }
+
+    function saveViews() {
+      try { localStorage.setItem(VIEWS_KEY, JSON.stringify(state.views)); }
+      catch (e) { /* not persistable here */ }
+    }
+    state.views = loadViews();
+
+    // A view's configuration with every field normalised, so a stored view
+    // and the live state compare cleanly (the storage may hold an older
+    // shape from a previous version of the app).
+    function normalizeViewConfig(v) {
+      return {
+        filter: v && typeof v.filter === 'string' ? v.filter : '',
+        filterName: v && typeof v.filterName === 'string' ? v.filterName : '',
+        sort: v && v.sort === 'newest' ? 'newest' : 'needed',
+        oneAway: !!(v && v.oneAway),
+        hideVoted: !!(v && v.hideVoted),
+        hideMerged: !!(v && v.hideMerged),
+        search: v && typeof v.search === 'string' ? v.search.trim() : '',
+      };
+    }
+
+    // What the screen shows right now, in the same shape as a view.
+    function currentViewConfig() {
+      return {
+        filter: state.filter, filterName: state.filterName, sort: state.sort,
+        oneAway: state.oneAway, hideVoted: state.hideVoted,
+        hideMerged: state.hideMerged, search: state.search.trim(),
+      };
+    }
+
+    function sameViewConfig(a, b) {
+      return a.filter === b.filter && a.sort === b.sort
+        && a.oneAway === b.oneAway && a.hideVoted === b.hideVoted
+        && a.hideMerged === b.hideMerged && a.search === b.search;
+    }
+
+    function findView(name) {
+      for (var i = 0; i < state.views.length; i++) {
+        if (state.views[i].name === name) return state.views[i];
+      }
+      return null;
+    }
+
+    // The saved view whose configuration the screen currently shows, or
+    // '' when nothing matches (a manual change deactivates the chip on
+    // its own, no bookkeeping needed).
+    function activeViewName() {
+      var cfg = currentViewConfig();
+      for (var i = 0; i < state.views.length; i++) {
+        if (state.views[i].name && sameViewConfig(normalizeViewConfig(state.views[i]), cfg)) {
+          return state.views[i].name;
+        }
+      }
+      return '';
+    }
+
+    // Whether one loaded proposal matches a view's configuration: the
+    // same rules renderInbox applies, in the same order.
+    function matchesViewConfig(p, cfg) {
+      if (cfg.filter && p.appSlug !== cfg.filter) return false;
+      if (cfg.hideVoted && isVoted(p)) return false;
+      if (cfg.hideMerged && p.status === 'merged') return false;
+      if (cfg.search) {
+        var q = cfg.search.toLowerCase();
+        if (String(p.title || '').toLowerCase().indexOf(q) === -1) return false;
+      }
+      if (cfg.oneAway && p.needed !== 1) return false;
+      return true;
+    }
+
+    function viewCount(view) {
+      var proposals = state.inbox && state.inbox.proposals;
+      if (!proposals) return null;
+      var cfg = normalizeViewConfig(view);
+      var n = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        if (matchesViewConfig(proposals[i], cfg)) n++;
+      }
+      return n;
+    }
+
+    // Save the current configuration under a name. Saving over an
+    // existing name updates that view in place (no duplicate chips).
+    function saveView(name) {
+      name = String(name == null ? '' : name).trim();
+      if (!name) return false;
+      var view = Object.assign({ name: name }, currentViewConfig());
+      var replaced = false;
+      for (var i = 0; i < state.views.length; i++) {
+        if (state.views[i].name === name) { state.views[i] = view; replaced = true; break; }
+      }
+      if (!replaced) state.views.push(view);
+      saveViews();
+      render();
+      toast(replaced ? 'View updated' : 'View saved');
+      return true;
+    }
+
+    // Apply a saved view: the screen takes on its filter, sort and
+    // toggles, persisted exactly as if they had been set by hand.
+    // ephemeral skips that persistence (used by the staging check hooks,
+    // so a check URL leaves the browser's preferences the way it found
+    // them); a real tap always persists.
+    function applyView(view, ephemeral) {
+      var cfg = normalizeViewConfig(view);
+      state.filter = cfg.filter;
+      state.filterName = cfg.filterName;
+      state.sort = cfg.sort;
+      state.oneAway = cfg.oneAway;
+      state.hideVoted = cfg.hideVoted;
+      state.hideMerged = cfg.hideMerged;
+      state.search = cfg.search;
+      if (!ephemeral) {
+        saveSort(cfg.sort);
+        saveHideVoted(cfg.hideVoted);
+        saveHideMerged(cfg.hideMerged);
+        saveFilter(cfg.filter ? { slug: cfg.filter, name: cfg.filterName } : null);
+      }
+      render();
+    }
+
+    function renameView(oldName, newName) {
+      newName = String(newName == null ? '' : newName).trim();
+      var view = findView(oldName);
+      if (!view || !newName || newName === oldName) return false;
+      if (findView(newName)) { toast('That name is already in use'); return false; }
+      view.name = newName;
+      saveViews();
+      render();
+      toast('View renamed');
+      return true;
+    }
+
+    function deleteView(name) {
+      var kept = state.views.filter(function (v) { return v.name !== name; });
+      if (kept.length === state.views.length) return false;
+      state.views = kept;
+      saveViews();
+      render();
+      toast('View deleted');
+      return true;
+    }
+
+    // ------------------------------------------------------------------
+    // Saved views: rendering and dialogs.
+    // ------------------------------------------------------------------
+
+    var VIEW_CHIP_IDLE = 'flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
+    var VIEW_CHIP_ACTIVE = 'flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap rounded-full border border-violet-500/60 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300';
+    var VIEW_COUNT_CLASS = 'shrink-0 text-[10px] font-normal tabular-nums text-zinc-500 dark:text-zinc-400';
+    var VIEW_MENU_CLASS = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300';
+    var VIEW_MENU_ICON = '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+    var VIEWS_EMPTY_CLASS = 'shrink-0 whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500';
+
+    // Plain-words description for a chip's tooltip: which app and sort the
+    // view holds, and which of the toggles it turns on.
+    function viewDescription(view) {
+      var cfg = normalizeViewConfig(view);
+      var bits = [];
+      bits.push((cfg.filterName || cfg.filter) ? 'App: ' + (cfg.filterName || cfg.filter) : 'All apps');
+      bits.push(cfg.sort === 'newest' ? 'Sort: newest' : 'Sort: votes needed');
+      if (cfg.oneAway) bits.push('One vote away');
+      if (cfg.hideVoted) bits.push('Hides voted');
+      if (cfg.hideMerged) bits.push('Hides merged');
+      if (cfg.search) bits.push('Search: "' + cfg.search + '"');
+      return bits.join(' · ');
+    }
+
+    function renderViews() {
+      var chips = document.getElementById('views-chips');
+      if (!chips) return;
+      if (!state.views.length) {
+        chips.innerHTML = '<span data-views-empty class="' + VIEWS_EMPTY_CLASS + '">No saved views yet</span>';
+        return;
+      }
+      var active = activeViewName();
+      var html = '';
+      for (var i = 0; i < state.views.length; i++) {
+        var view = state.views[i];
+        var on = view.name === active;
+        var count = viewCount(view);
+        html += '<span class="flex shrink-0 items-center gap-0.5">'
+          + '<button type="button" data-view-chip data-view-name="' + esc(view.name) + '"'
+          + ' data-view-index="' + i + '" aria-pressed="' + (on ? 'true' : 'false') + '"'
+          + ' title="' + esc(viewDescription(view)) + '"'
+          + ' class="' + (on ? VIEW_CHIP_ACTIVE : VIEW_CHIP_IDLE) + '">'
+          + '<span class="truncate">' + esc(view.name) + '</span>'
+          + (count != null ? '<span data-view-count class="' + VIEW_COUNT_CLASS + '">(' + count + ')</span>' : '')
+          + '</button>'
+          + '<button type="button" data-view-menu data-view-name="' + esc(view.name) + '"'
+          + ' aria-label="Options for view ' + esc(view.name) + '" class="' + VIEW_MENU_CLASS + '">'
+          + VIEW_MENU_ICON + '</button>'
+          + '</span>';
+      }
+      chips.innerHTML = html;
+    }
+
+    // Name prompt for Save view / Rename. The native kit's alert carries
+    // the text field where it is available; loads without the kit get a
+    // plain in-app dialog with the same field and answers. The kit both
+    // invokes the button's handler and resolves its promise, so submit is
+    // guarded against firing twice.
+    function promptViewName(title, message, initial, onOk) {
+      var done = false;
+      var submit = function (value) {
+        if (done) return;
+        done = true;
+        if (value && String(value).trim()) onOk(String(value).trim());
+      };
+      if (window.unNative && unNative.alert) {
+        try {
+          var answered = unNative.alert({
+            title: title,
+            message: message,
+            field: { placeholder: 'View name', value: initial || '', submitOnEnter: true },
+            buttons: [
+              // The kit passes the field's value as the handler's argument.
+              { label: 'Save', style: 'default', handler: function (value) { submit(typeof value === 'string' ? value : undefined); } },
+              { label: 'Cancel', style: 'cancel' },
+            ],
+          });
+          if (answered && typeof answered.then === 'function') {
+            answered.then(function (res) {
+              var label = res && res.button;
+              if (label && typeof label === 'object') label = label.label;
+              if (label === 'Save') submit(res && res.value);
+            }).catch(function () { /* dismissed; nothing to save */ });
+          }
+          return;
+        } catch (e) { /* fall through to the plain dialog */ }
+      }
+      fallbackPromptDialog(title, message, initial, submit);
+    }
+
+    function fallbackPromptDialog(title, message, initial, submit) {
+      var overlay = document.createElement('div');
+      overlay.setAttribute('data-view-prompt', '');
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-label', title);
+      overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6';
+      overlay.innerHTML = '<div class="w-72 rounded-2xl bg-white p-4 shadow-xl dark:bg-zinc-900">'
+        + '<p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">' + esc(title) + '</p>'
+        + (message ? '<p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">' + esc(message) + '</p>' : '')
+        + '<input data-view-name-input type="text" autocomplete="off" placeholder="View name" aria-label="View name"'
+        + ' class="mt-3 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500">'
+        + '<div class="mt-3 flex flex-col gap-2">'
+        + '<button data-view-prompt-save class="min-h-9 rounded-xl bg-violet-600 py-2 text-sm font-semibold text-white active:scale-95">Save</button>'
+        + '<button data-view-prompt-cancel class="min-h-9 rounded-xl bg-zinc-100 py-2 text-sm font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200">Cancel</button>'
+        + '</div></div>';
+      var input = overlay.querySelector('[data-view-name-input]');
+      input.value = initial || '';
+      var close = function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+      overlay.addEventListener('click', function (event) {
+        if (event.target.closest('[data-view-prompt-save]')) { var v = input.value; close(); submit(v); }
+        else if (event.target.closest('[data-view-prompt-cancel]') || event.target === overlay) close();
+      });
+      overlay.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') close();
+        else if (event.key === 'Enter' && input.value.trim()) { var v = input.value; close(); submit(v); }
+      });
+      document.body.appendChild(overlay);
+      input.focus();
+    }
+
+    function confirmDeleteView(name) {
+      var title = 'Delete view';
+      var message = 'Deletes "' + name + '". Your filters stay as they are.';
+      var confirmed = false;
+      var confirmDelete = function () {
+        if (confirmed) return;
+        confirmed = true;
+        deleteView(name);
+      };
+      if (window.unNative && unNative.alert) {
+        try {
+          var answered = unNative.alert({
+            title: title,
+            message: message,
+            buttons: [
+              { label: 'Delete', style: 'destructive', handler: confirmDelete },
+              { label: 'Cancel', style: 'cancel' },
+            ],
+          });
+          if (answered && typeof answered.then === 'function') {
+            answered.then(function (res) {
+              var label = res && res.button;
+              if (label && typeof label === 'object') label = label.label;
+              if (label === 'Delete') confirmDelete();
+            }).catch(function () { /* dismissed */ });
+          }
+          return;
+        } catch (e) { /* fall through to the plain dialog */ }
+      }
+      fallbackConfirmDialog(title, message, 'Delete', confirmDelete);
+    }
+
+    function fallbackConfirmDialog(title, message, okLabel, onOk) {
+      var overlay = document.createElement('div');
+      overlay.setAttribute('data-view-confirm', '');
+      overlay.setAttribute('role', 'alertdialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-label', title);
+      overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6';
+      overlay.innerHTML = '<div class="w-64 rounded-2xl bg-white p-4 text-center shadow-xl dark:bg-zinc-900">'
+        + '<p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">' + esc(title) + '</p>'
+        + '<p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">' + esc(message) + '</p>'
+        + '<div class="mt-3 flex flex-col gap-2">'
+        + '<button data-view-confirm-ok class="min-h-9 rounded-xl bg-red-600 py-2 text-sm font-semibold text-white active:scale-95">' + esc(okLabel) + '</button>'
+        + '<button data-view-confirm-cancel class="min-h-9 rounded-xl bg-zinc-100 py-2 text-sm font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200">Cancel</button>'
+        + '</div></div>';
+      var close = function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+      overlay.addEventListener('click', function (event) {
+        if (event.target.closest('[data-view-confirm-ok]')) { close(); onOk(); }
+        else if (event.target.closest('[data-view-confirm-cancel]') || event.target === overlay) close();
+      });
+      document.body.appendChild(overlay);
+    }
+
+    // Rename / delete live behind a small "⋯" button beside each chip, so
+    // the chip itself stays a one-tap switch. The kit's menu is an action
+    // sheet on touch and an anchored popover on desktop; standalone loads
+    // get a plain in-app menu with the same two answers.
+    function openViewMenu(name, anchorEl) {
+      if (!findView(name)) return;
+      var items = [
+        { label: 'Rename', handler: function () {
+          promptViewName('Rename view', 'A new name for "' + name + '".', name,
+            function (next) { renameView(name, next); });
+        } },
+        { label: 'Delete', destructive: true, handler: function () { confirmDeleteView(name); } },
+      ];
+      if (window.unNative && unNative.menu) {
+        try {
+          unNative.menu({ anchorEl: anchorEl, title: name, items: items, cancelLabel: 'Cancel' });
+          return;
+        } catch (e) { /* fall through to the plain menu */ }
+      }
+      fallbackViewMenu(name, items);
+    }
+
+    function fallbackViewMenu(name, items) {
+      var overlay = document.createElement('div');
+      overlay.setAttribute('data-view-menu-fallback', '');
+      overlay.setAttribute('role', 'menu');
+      overlay.setAttribute('aria-label', 'Options for view ' + name);
+      overlay.className = 'fixed inset-0 z-50 flex items-end justify-center bg-zinc-900/40 p-6 sm:items-center';
+      var rows = '';
+      for (var i = 0; i < items.length; i++) {
+        rows += '<button data-view-menu-item="' + i + '"'
+          + ' class="min-h-11 w-full rounded-xl py-2.5 text-sm font-semibold active:scale-95 '
+          + (items[i].destructive
+            ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400'
+            : 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100')
+          + '">' + esc(items[i].label) + '</button>';
+      }
+      overlay.innerHTML = '<div class="flex w-full max-w-xs flex-col gap-2">'
+        + '<div class="flex flex-col gap-2 rounded-2xl bg-white p-3 shadow-xl dark:bg-zinc-900">'
+        + rows
+        + '<button data-view-menu-cancel class="min-h-11 w-full rounded-xl bg-white py-2.5 text-sm font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200">Cancel</button>'
+        + '</div></div>';
+      var close = function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+      overlay.addEventListener('click', function (event) {
+        var row = event.target.closest ? event.target.closest('[data-view-menu-item]') : null;
+        if (row) { var item = items[Number(row.getAttribute('data-view-menu-item'))]; close(); if (item && item.handler) item.handler(); }
+        else if (event.target.closest('[data-view-menu-cancel]') || event.target === overlay) close();
+      });
+      document.body.appendChild(overlay);
+    }
+
+    function openSaveViewDialog() {
+      promptViewName('Save view', 'Saves the current filters and sort as a view.',
+        state.filterName || 'New view',
+        function (name) { saveView(name); });
+    }
+
+    // Staging check hooks for saved views (?demo=1 only). Each hook drives
+    // the real function the tap would, at boot, before the first render:
+    //   seed-views=A,B   replaces the stored views with fixed demo views
+    //   rename-view=A:B  renames through renameView()
+    //   delete-view=A    deletes through deleteView()
+    //   add-view=A       saves the screen as it currently stands (no reload)
+    //   apply-view=A,B   applies views in order through applyView()
+    //   save-view=A      saves, then reloads a clean URL (persistence)
+    //   save-reload=1    reloads a clean URL after the other hooks
+    // The reload drops every hook parameter, so the page after it shows
+    // only what storage restored on its own. The apply hook runs
+    // applyView's ephemeral mode so a check URL leaves the browser's
+    // stored preferences the way it found them. Production never reads
+    // these parameters.
+    var VIEW_SEEDS = {
+      'All open': { filter: '', filterName: '', sort: 'needed' },
+      'My apps': { filter: 'staging-demo-app', filterName: 'Staging Demo App', sort: 'needed' },
+      'Needs one vote': { filter: '', filterName: '', sort: 'needed', oneAway: true },
+      'Unmerged': { filter: '', filterName: '', sort: 'needed', hideMerged: true },
+    };
+
+    function runViewsHooks() {
+      if (!DEMO) return;
+      var seedParam = params.get('seed-views');
+      if (seedParam) {
+        state.views = [];
+        seedParam.split(',').forEach(function (name) {
+          name = name.trim();
+          var seed = VIEW_SEEDS[name];
+          if (seed) state.views.push(Object.assign({ name: name }, seed));
+        });
+        saveViews();
+      }
+      var renameMatch = (params.get('rename-view') || '').match(/^(.+):(.+)$/);
+      if (renameMatch) renameView(renameMatch[1], renameMatch[2]);
+      var deleteParam = params.get('delete-view');
+      if (deleteParam) deleteView(deleteParam.trim());
+      var addParam = params.get('add-view');
+      if (addParam) saveView(addParam.trim());
+      var applyParam = params.get('apply-view');
+      if (applyParam) {
+        applyParam.split(',').forEach(function (name) {
+          var view = findView(name.trim());
+          if (view) applyView(view, true);
+        });
+      }
+      var reload = false;
+      var saveParam = params.get('save-view');
+      if (saveParam) { saveView(saveParam.trim()); reload = true; }
+      if (params.get('save-reload') === '1') reload = true;
+      if (reload) {
+        // Reload a clean URL, dropping the view-hook parameters but keeping
+        // the rest (token, theme, preview-now), the way ?set-filter= does.
+        var remaining = new URLSearchParams(params);
+        ['seed-views', 'rename-view', 'delete-view', 'add-view',
+          'apply-view', 'save-view', 'save-reload'].forEach(function (k) { remaining.delete(k); });
+        var restQ = remaining.toString();
+        location.replace(location.pathname + (restQ ? '?' + restQ : '') + location.hash);
+      }
     }
 
     // ------------------------------------------------------------------
@@ -830,6 +1343,162 @@
       }
     }
 
+    // ------------------------------------------------------------------
+    // Compare. Each card carries a quiet Compare button beside Share;
+    // tapping it adds the proposal to a selection of at most two (tapping
+    // again removes it). While anything is selected, a bar above the list
+    // shows the count, a Compare button that opens the side-by-side view
+    // (enabled at two picks), and a Clear that empties the selection. The
+    // view itself renders the two proposals in two columns: title, status,
+    // counts, key details and working vote buttons. Clearing the selection
+    // from either surface returns to the normal list.
+    // ------------------------------------------------------------------
+
+    var COMPARE_OFF_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="7.5" height="16" rx="1.5"/><rect x="13.5" y="4" width="7.5" height="16" rx="1.5"/></svg><span>Compare</span>';
+    var COMPARE_ON_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Selected</span>';
+    // Whole literals for the Tailwind compiler, matching the Share button's
+    // idle look; the selected state takes the violet used for active chips.
+    var COMPARE_BTN_IDLE = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
+    var COMPARE_BTN_SELECTED = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold text-violet-600 transition-colors dark:text-violet-300';
+
+    function compareButton(p) {
+      var selected = state.compare.indexOf(p.sessionId) !== -1;
+      return '<button data-compare-add data-session="' + esc(p.sessionId) + '" type="button"'
+        + ' aria-pressed="' + (selected ? 'true' : 'false') + '"'
+        + ' aria-label="' + (selected ? 'Remove from compare selection' : 'Add to compare selection') + '"'
+        + ' title="' + (selected ? 'Remove from selection' : 'Add to selection') + '"'
+        + ' class="' + (selected ? COMPARE_BTN_SELECTED : COMPARE_BTN_IDLE) + '">'
+        + (selected ? COMPARE_ON_HTML : COMPARE_OFF_HTML) + '</button>';
+    }
+
+    function compareBarHtml() {
+      var count = state.compare.length;
+      var ready = count === 2;
+      var label = count === 1
+        ? '1 selected · Pick one more proposal'
+        : count + ' selected';
+      return '<div data-compare-bar class="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-violet-500/40 bg-violet-600/10 p-3">'
+        + '<p class="text-sm font-semibold text-violet-700 dark:text-violet-300">' + esc(label) + '</p>'
+        + '<div class="flex shrink-0 gap-2">'
+        + '<button data-compare-open type="button"' + (ready ? '' : ' disabled')
+        + ' title="' + (ready ? 'Open the side-by-side comparison' : 'Pick one more proposal first') + '"'
+        + ' class="rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50">Compare</button>'
+        + '<button data-compare-clear type="button" title="Empty the selection"'
+        + ' class="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Clear</button>'
+        + '</div></div>';
+    }
+
+    // One column of the compare view: everything the card shows for one
+    // proposal, without the clamp and the age-group chrome, plus the same
+    // working vote actions (stacked to fit the narrow column). Key details
+    // carry data attributes so checks can pin them per column.
+    function compareCol(p) {
+      var key = p.status === 'proposed' ? 'voting' : (p.status || 'voting');
+      var style = STATUS_STYLE[key] || STATUS_STYLE.voting;
+      var hasThreshold = p.required != null && p.required > 0;
+      var age = relTime(p.proposedAt);
+      return '<article data-compare-col="' + esc(p.sessionId) + '" class="' + CARD_CLASS + '">'
+        + '<div class="flex items-center gap-1.5">'
+        + appAvatar(p)
+        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + '</div>'
+        + '<h2 class="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
+        + '<div class="flex flex-wrap items-center gap-1.5">'
+        + '<span data-compare-status="' + esc(key) + '" class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
+        + neededPill(p)
+        + '</div>'
+        + '<div class="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">'
+        + '<p data-compare-counts>Yes ' + p.yes + ' · No ' + p.no
+        + (hasThreshold
+          ? ' · <span data-vote-threshold="' + p.yes + ' of ' + p.required + '">' + p.yes + ' of ' + p.required + '</span>'
+          : '')
+        + '</p>'
+        + (p.proposedAt && isFinite(new Date(p.proposedAt).getTime())
+          ? '<p data-compare-proposed>Proposed '
+            + esc(new Date(p.proposedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+            + (age ? ' · ' + esc(age) : '') + '</p>'
+          : '')
+        + (p.author ? '<p>by @' + esc(p.author) + '</p>' : '')
+        + '</div>'
+        + (p.url ? shareLinkButton(p) : '')
+        + voteActions(p, true)
+        + '</article>';
+    }
+
+    function renderCompare() {
+      var a = findProposal(state.compare[0]);
+      var b = findProposal(state.compare[1]);
+      if (!a || !b) return '';
+      return '<section data-compare-view class="flex flex-col gap-3" aria-label="Compare proposals">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Comparing proposals</h2>'
+        + '<button data-compare-clear type="button" title="Empty the selection and go back to the list"'
+        + ' class="shrink-0 rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Clear selection</button>'
+        + '</div>'
+        + '<div class="grid grid-cols-2 items-start gap-3">'
+        + compareCol(a) + compareCol(b)
+        + '</div></section>';
+    }
+
+    function toggleCompare(sessionId) {
+      var idx = state.compare.indexOf(sessionId);
+      if (idx !== -1) {
+        state.compare.splice(idx, 1);
+        if (state.compare.length < 2) state.compareView = false;
+        render();
+        return;
+      }
+      if (state.compare.length >= 2) {
+        toast('Compare holds two proposals. Clear it to pick different ones.');
+        return;
+      }
+      state.compare.push(sessionId);
+      render();
+    }
+
+    function openCompareView() {
+      if (state.compare.length !== 2) return;
+      state.compareView = true;
+      render();
+      // Land at the top so the comparison reads from its heading down.
+      window.scrollTo(0, 0);
+    }
+
+    function clearCompare() {
+      state.compare = [];
+      state.compareView = false;
+      render();
+    }
+
+    // Seed (once, from the ?compare= / ?pick= fixtures) and then keep the
+    // selection honest against the loaded inbox: ids the list no longer
+    // carries are dropped, and a compare view left with fewer than two
+    // proposals falls back to the list. Runs on every inbox load.
+    var compareResolved = false;
+    function resolveCompareSelection() {
+      if (compareResolved) {
+        var kept = [];
+        for (var i = 0; i < state.compare.length; i++) {
+          if (findProposal(state.compare[i])) kept.push(state.compare[i]);
+        }
+        state.compare = kept;
+        if (state.compareView && state.compare.length < 2) state.compareView = false;
+        return;
+      }
+      compareResolved = true;
+      var ids = [];
+      (COMPARE_PARAM || PICK_PARAM).split(',').forEach(function (s) {
+        s = s.trim();
+        if (s && ids.indexOf(s) === -1) ids.push(s);
+      });
+      var resolved = [];
+      for (var j = 0; j < ids.length && resolved.length < 2; j++) {
+        if (findProposal(ids[j])) resolved.push(ids[j]);
+      }
+      state.compare = resolved;
+      if (COMPARE_PARAM && resolved.length === 2) state.compareView = true;
+    }
+
     // Retry pill for a card whose vote failed offline and is queued
     // in-memory. Amber warning treatment, matching the demo banner and the
     // votes-needed pill; tapping the button resends the queued vote as-is.
@@ -845,55 +1514,92 @@
         + '</div>';
     }
 
-    function proposalCard(p) {
-      var voted = p.myVote === 'yes' || p.myVote === 'no';
-      var titleExpanded = !!state.expandedTitles[p.sessionId];
+    // Relative-age chip beside the app name ("· 3h ago"). Empty when the
+    // platform did not send a proposed timestamp.
+    function ageSpan(p) {
       var age = relTime(p.proposedAt);
-      var ageHtml = age
-        ? '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
-          + ' title="Proposed ' + esc(new Date(p.proposedAt).toLocaleString()) + '">'
-          + '· ' + esc(age) + '</span>'
-        : '';
-      // Promotion date ("Proposed Oct 12") on its own line under the app
-      // name. Empty when the platform did not send a proposed timestamp.
-      var proposedDateHtml = '';
-      if (p.proposedAt && isFinite(new Date(p.proposedAt).getTime())) {
-        proposedDateHtml = '<p data-proposed-date class="text-xs text-zinc-500 dark:text-zinc-400">'
-          + 'Proposed '
-          + esc(new Date(p.proposedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
-          + '</p>';
-      }
-      var actions;
+      if (!age) return '';
+      return '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
+        + ' title="Proposed ' + esc(new Date(p.proposedAt).toLocaleString()) + '">'
+        + '· ' + esc(age) + '</span>';
+    }
+
+    // Promotion date ("Proposed Oct 12") on its own line under the app
+    // name. Empty when the platform did not send a proposed timestamp.
+    function proposedDateLine(p) {
+      if (!p.proposedAt || !isFinite(new Date(p.proposedAt).getTime())) return '';
+      return '<p data-proposed-date class="text-xs text-zinc-500 dark:text-zinc-400">'
+        + 'Proposed '
+        + esc(new Date(p.proposedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+        + '</p>';
+    }
+
+    // Yes/No vote actions, shared by the inbox card (side by side in a row)
+    // and the compare column (stacked to fit the narrow column). Same
+    // classes and behaviour in both; only the width class differs. Whole
+    // literals so the Tailwind compiler sees every variant.
+    var VOTE_YES_ROW = 'min-h-11 flex-1 rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50';
+    var VOTE_YES_STACK = 'min-h-11 w-full rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50';
+    var VOTE_NO_ROW = 'min-h-11 flex-1 rounded-xl border border-zinc-300 bg-white py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50';
+    var VOTE_NO_STACK = 'min-h-11 w-full rounded-xl border border-zinc-300 bg-white py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50';
+
+    function voteActions(p, stacked) {
+      var voted = p.myVote === 'yes' || p.myVote === 'no';
       if (voted) {
-        actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
+        return '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
           + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>'
           + 'You voted ' + p.myVote + '</div>'
           + retryRow(p.sessionId);
-      } else {
-        var busy = state.pending[p.sessionId];
-        actions = '<div class="flex gap-2">'
-          + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
-          + ' class="min-h-11 flex-1 rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50"'
-          + (busy ? ' disabled' : '') + '>Yes</button>'
-          + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
-          + ' class="min-h-11 flex-1 rounded-xl border border-zinc-300 bg-white py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50"'
-          + (busy ? ' disabled' : '') + '>No</button>'
-          + '</div>';
       }
+      var busy = state.pending[p.sessionId];
+      return '<div class="' + (stacked ? 'flex flex-col gap-2' : 'flex gap-2') + '">'
+        + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
+        + ' class="' + (stacked ? VOTE_YES_STACK : VOTE_YES_ROW) + '"'
+        + (busy ? ' disabled' : '') + '>Yes</button>'
+        + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
+        + ' class="' + (stacked ? VOTE_NO_STACK : VOTE_NO_ROW) + '"'
+        + (busy ? ' disabled' : '') + '>No</button>'
+        + '</div>';
+    }
+
+    // The voting block, shared by the card and the proposal detail screen
+    // so both always offer the same vote buttons.
+    function proposalActions(p) {
+      return voteActions(p, false);
+    }
+
+    // Discussion entry point on a proposal card: a quiet ghost button,
+    // styled like the share button, that opens the proposal's detail
+    // screen where the thread lives.
+    var DISCUSS_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>Discuss</span>';
+
+    function discussButton(p) {
+      return '<button data-open-detail data-session="' + esc(p.sessionId) + '"'
+        + ' aria-label="Open discussion for this proposal" title="Discuss"'
+        + ' class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">'
+        + DISCUSS_IDLE_HTML + '</button>';
+    }
+
+    function proposalCard(p) {
+      var titleExpanded = !!state.expandedTitles[p.sessionId];
       // data-needed lets the declared checks (and deep links) assert what the
       // votes-needed pill shows: omitted when the threshold is unknown.
+      // data-contested marks whether both sides hold at least one vote, the
+      // split property the controversy sort ranks on.
+      var contested = splitContested(p);
       return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '"'
         + (p.needed != null ? ' data-needed="' + p.needed + '"' : '')
+        + ' data-contested="' + (contested ? 'true' : 'false') + '"'
         + ' class="' + CARD_CLASS + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
         + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
-        + ageHtml
+        + ageSpan(p)
         + '</span>'
         + neededPill(p)
         + '</div>'
-        + proposedDateHtml
+        + proposedDateLine(p)
         + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">' + esc(p.title) + '</h2>'
         + voteBar(p)
         + voterAvatarRow(p)
@@ -901,10 +1607,15 @@
         + '<div class="flex items-center justify-between gap-2">'
         + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
+        + '<div class="flex shrink-0 items-center gap-0.5">'
+        + discussButton(p)
+        + compareButton(p)
         + (p.url ? shareLinkButton(p) : '')
+        + '</span>'
+        + '</div>'
         + '</div>'
         + statusProgress(p)
-        + actions
+        + proposalActions(p)
         + '</article>';
     }
 
@@ -952,6 +1663,171 @@
       h2.className = expanded ? TITLE_EXPANDED : TITLE_CLAMPED;
       btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
       btn.textContent = expanded ? 'Less' : 'More';
+    }
+
+    // ------------------------------------------------------------------
+    // Proposal detail: the full proposal with the same vote buttons the
+    // card has, plus the discussion thread. Opened from a card's Discuss
+    // button or the ?proposal=<sessionId> deep link.
+    // ------------------------------------------------------------------
+
+    var COMMENT_FIELD_CLASS = 'w-full resize-none rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500';
+    var COMMENT_SUBMIT_CLASS = 'min-h-9 rounded-full bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition-transform hover:bg-violet-500 active:scale-95 disabled:opacity-50';
+    var COMMENT_CANCEL_CLASS = 'min-h-9 rounded-full px-3 text-sm font-semibold text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
+
+    function commentClass(isTop) {
+      return isTop
+        ? 'rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/70'
+        : 'rounded-lg bg-zinc-50 p-2.5 dark:bg-zinc-800/50';
+    }
+
+    function commentHtml(c, isTop) {
+      return '<article data-comment data-comment-id="' + esc(c.id) + '"'
+        + (isTop ? ' data-comment-top' : '')
+        + ' class="' + commentClass(isTop) + '">'
+        + '<div class="flex items-baseline justify-between gap-2">'
+        + '<span class="min-w-0 truncate text-xs font-semibold text-zinc-700 dark:text-zinc-200">@' + esc(c.username) + '</span>'
+        + '<span class="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">' + esc(relTime(c.createdAt)) + '</span>'
+        + '</div>'
+        + '<p data-comment-body class="mt-1 whitespace-pre-wrap text-sm leading-snug text-zinc-800 dark:text-zinc-100">' + esc(c.body) + '</p>'
+        // Every comment offers Reply. On a reply it targets the tapped
+        // comment itself; the server files that under the reply's own
+        // top-level parent, so the thread never nests deeper than one.
+        + '<button data-reply-btn data-comment="' + esc(c.id) + '"'
+        + ' aria-label="' + (isTop ? 'Reply to this comment' : 'Reply in this thread') + '"'
+        + ' class="mt-1.5 rounded-full text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">Reply</button>'
+        + '</article>';
+    }
+
+    function replyFormHtml(parentId) {
+      return '<div data-reply-form class="flex flex-col gap-2">'
+        + '<textarea data-reply-input rows="2" maxlength="2000" placeholder="Write a reply"'
+        + ' aria-label="Write a reply" class="' + COMMENT_FIELD_CLASS + '"></textarea>'
+        + '<div class="flex items-center justify-end gap-1">'
+        + '<button data-reply-cancel class="' + COMMENT_CANCEL_CLASS + '">Cancel</button>'
+        + '<button data-reply-submit data-parent="' + esc(parentId) + '"'
+        + ' class="' + COMMENT_SUBMIT_CLASS + '">Reply</button>'
+        + '</div></div>';
+    }
+
+    // A top-level comment's replies, oldest first, indented under a left
+    // rule so the one-level nesting reads at a glance. The reply form
+    // opens at the end of this block when the tapped comment was the
+    // parent itself or any reply inside it; it submits with the tapped
+    // id, and the server files a reply-to-reply under the top parent.
+    function repliesHtml(parent, replies) {
+      var open = String(state.replyForm) === String(parent.id);
+      for (var j = 0; !open && j < replies.length; j++) {
+        open = String(state.replyForm) === String(replies[j].id);
+      }
+      if (!replies.length && !open) return '';
+      var html = '<div data-replies data-replies-of="' + esc(parent.id) + '"'
+        + ' class="ml-3 mt-2 flex flex-col gap-2 border-l-2 border-zinc-200 pl-3 dark:border-zinc-800">';
+      for (var i = 0; i < replies.length; i++) html += commentHtml(replies[i], false);
+      if (open) html += replyFormHtml(state.replyForm);
+      html += '</div>';
+      return html;
+    }
+
+    // Thread order, client-side: oldest first (time, then id), so the
+    // newest comment renders last in every thread and reply block.
+    function sortedComments(list) {
+      return (list || []).slice().sort(function (a, b) {
+        var ta = Date.parse(a.createdAt); if (isNaN(ta)) ta = 0;
+        var tb = Date.parse(b.createdAt); if (isNaN(tb)) tb = 0;
+        if (ta !== tb) return ta - tb;
+        return a.id > b.id ? 1 : a.id < b.id ? -1 : 0;
+      });
+    }
+
+    function commentFormHtml() {
+      return '<div data-comment-form class="mt-1 flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/70">'
+        + '<textarea data-comment-input rows="2" maxlength="2000"'
+        + ' placeholder="Add a comment" aria-label="Add a comment"'
+        + ' class="' + COMMENT_FIELD_CLASS + '"></textarea>'
+        + '<div class="flex justify-end">'
+        + '<button data-comment-post class="' + COMMENT_SUBMIT_CLASS + '">Post</button>'
+        + '</div></div>';
+    }
+
+    function renderThread() {
+      var heading = '<h3 data-thread-heading class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Discussion</h3>';
+      if (state.commentsError) {
+        return heading
+          + '<div class="flex flex-col items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/5 px-6 py-8 text-center">'
+          + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(state.commentsError) + '</p>'
+          + '<button data-action="reload-comments" class="mt-1 rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Try again</button>'
+          + '</div>'
+          + commentFormHtml();
+      }
+      if (state.commentsLoading && !state.detailComments.length) {
+        // No post form while the thread is loading: posting before the
+        // list settles would race the fetch that replaces it.
+        return heading
+          + '<p data-thread-loading class="text-xs text-zinc-500 dark:text-zinc-400">Loading comments…</p>';
+      }
+      var list = sortedComments(state.detailComments);
+      var tops = [];
+      var byParent = {};
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (c.parentId == null) tops.push(c);
+        else {
+          var key = String(c.parentId);
+          if (!byParent[key]) byParent[key] = [];
+          byParent[key].push(c);
+        }
+      }
+      if (!tops.length) {
+        return heading
+          + '<div data-thread-empty class="flex flex-col items-center gap-1 rounded-2xl border border-dashed border-zinc-300 bg-white/60 px-6 py-8 text-center dark:border-zinc-700 dark:bg-zinc-900/40">'
+          + '<svg viewBox="0 0 24 24" class="h-8 w-8 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>'
+          + '<p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">No comments yet</p>'
+          + '<p class="text-xs text-zinc-500 dark:text-zinc-400">Ask or answer a question before voting.</p>'
+          + '</div>'
+          + commentFormHtml();
+      }
+      var html = '<div data-thread-list class="flex flex-col gap-2">';
+      for (var t = 0; t < tops.length; t++) {
+        var top = tops[t];
+        html += commentHtml(top, true);
+        html += repliesHtml(top, byParent[String(top.id)] || []);
+      }
+      html += '</div>';
+      return heading + html + commentFormHtml();
+    }
+
+    function renderDetail() {
+      var p = findProposal(state.detail);
+      if (!p) return '';
+      return '<div data-proposal-detail data-session-id="' + esc(p.sessionId) + '" class="flex flex-col gap-3">'
+        + '<button data-action="close-detail"'
+        + ' class="self-start inline-flex items-center gap-1 rounded-full text-sm font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back</button>'
+        + '<article class="' + CARD_CLASS + '">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<span class="flex min-w-0 items-center gap-1.5">'
+        + appAvatar(p)
+        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + ageSpan(p)
+        + '</span>'
+        + neededPill(p)
+        + '</div>'
+        + proposedDateLine(p)
+        + '<h2 data-proposal-title class="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
+        + voteBar(p)
+        + voterAvatarRow(p)
+        + voterNamesRow(p)
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
+        + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
+        + (p.url ? shareLinkButton(p) : '')
+        + '</div>'
+        + statusProgress(p)
+        + proposalActions(p)
+        + '</article>'
+        + '<section data-thread class="flex flex-col gap-2">' + renderThread() + '</section>'
+        + '</div>';
     }
 
     function voteRow(v) {
@@ -1062,16 +1938,26 @@
           }
         }
       }
+      // The inbox list's filter/search/sort controls belong to the list;
+      // hide them while a proposal detail is open.
+      var inDetail = state.tab === 'inbox'
+        && !!(state.detail && findProposal(state.detail));
       document.getElementById('filter-row').className =
-        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+        'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail ? '' : ' hidden');
       document.getElementById('search-row').className =
-        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+        'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail ? '' : ' hidden');
       var sortRow = document.getElementById('sort-row');
       if (sortRow) sortRow.className =
-        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' ? '' : ' hidden');
+        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' && !state.compareView && !inDetail ? '' : ' hidden');
       var votesOrderRow = document.getElementById('votes-order-row');
       if (votesOrderRow) votesOrderRow.className =
         'flex items-center gap-2 pt-1' + (state.tab === 'votes' ? '' : ' hidden');
+      var viewsRow = document.getElementById('views-row');
+      if (viewsRow) {
+        var showViews = state.tab === 'inbox';
+        viewsRow.className = 'mt-2 flex items-center gap-2' + (showViews ? '' : ' hidden');
+        viewsRow.setAttribute('data-hidden', showViews ? '0' : '1');
+      }
     }
 
     // The segmented sort pill: keep each option's fill and aria-checked in
@@ -1114,6 +2000,33 @@
         : 'hidden';
     }
 
+    // Controversy order: the closest yes/no split first, so a tight race is
+    // seen ahead of a landslide. A proposal with no votes on one side
+    // (unanimous, or untouched) has no contest to measure, so every such
+    // card sinks below the contested ones. Equal gaps break by title, then
+    // session id, so repeated renders match. A copy is sorted: the loaded
+    // array's order stays canonical for the default sort and the server's
+    // caches.
+    function splitContested(p) {
+      return (p.yes || 0) > 0 && (p.no || 0) > 0;
+    }
+
+    function splitGap(p) {
+      return Math.abs((p.yes || 0) - (p.no || 0));
+    }
+
+    function controversyCompare(a, b) {
+      var ca = splitContested(a);
+      var cb = splitContested(b);
+      if (ca !== cb) return ca ? -1 : 1;
+      var ga = splitGap(a);
+      var gb = splitGap(b);
+      if (ga !== gb) return ga - gb;
+      var t = String(a.title || '').localeCompare(String(b.title || ''));
+      if (t !== 0) return t;
+      return String(a.sessionId || '').localeCompare(String(b.sessionId || ''));
+    }
+
     function renderInbox() {
       if (state.errorInbox) return errorHtml(state.errorInbox);
       if (!state.inbox || state.loadingInbox && !state.inbox.proposals) return skeletons();
@@ -1151,6 +2064,11 @@
           if (isNaN(tb)) return -1;
           return tb - ta;
         });
+      } else if (state.sort === 'controversy') {
+        // Closest yes/no split first over the already-filtered set; the
+        // app, hide-voted, hide-merged and search filters above have all
+        // run, so the ranking only orders what survived them.
+        filtered = filtered.slice().sort(controversyCompare);
       }
       // One-vote-away chip: keep only proposals exactly one yes short of
       // their threshold (the same number the "1 vote needed" pill shows).
@@ -1191,6 +2109,16 @@
             ? 'No open proposals for this app right now.'
             : 'No open proposals to vote on. New ones show up here.',
           proposals.length ? CLEAR_FILTER_CTA : REFRESH_CTA);
+      }
+      // Controversy ranks the whole loaded inbox, tightest race first, so
+      // it renders one flat list: the age-group headers would cut the
+      // ranking into day buckets and bury a tight older race under a
+      // lopsided one from today. Same cards, same spacing (#view is
+      // already a gap-3 column); no proposals added or dropped.
+      if (state.sort === 'controversy') {
+        var flat = '';
+        for (var c = 0; c < filtered.length; c++) flat += proposalCard(filtered[c]);
+        return flat;
       }
       // Age groups: small section headers over the same filtered, sorted
       // cards. Bucketed on the proposal's proposed date in the viewer's own
@@ -1283,7 +2211,7 @@
       if (!el) return;
       var proposals = state.inbox && state.inbox.proposals;
       var open = proposals ? proposals.length : 0;
-      if (state.tab !== 'inbox' || state.errorInbox || !open) {
+      if (state.tab !== 'inbox' || state.errorInbox || !open || state.compareView) {
         el.hidden = true;
         return;
       }
@@ -1323,7 +2251,7 @@
     function renderUpdated() {
       var el = document.getElementById('inbox-updated');
       if (!el) return;
-      if (state.tab !== 'inbox' || !state.inboxLoadedAt) {
+      if (state.tab !== 'inbox' || !state.inboxLoadedAt || state.compareView) {
         el.hidden = true;
         return;
       }
@@ -1335,6 +2263,7 @@
       syncFilter();
       syncOneAway();
       renderTabs();
+      renderViews();
       renderSort();
       renderVotesOrder();
       renderDemoBanner();
@@ -1342,9 +2271,113 @@
       renderSummary();
       renderUpdated();
       renderVotesSummary();
-      document.getElementById('view').innerHTML =
-        state.tab === 'inbox' ? renderInbox() : renderVotes();
+      var viewHtml;
+      if (state.tab === 'inbox' && state.compareView
+          && state.compare.length === 2
+          && findProposal(state.compare[0]) && findProposal(state.compare[1])) {
+        viewHtml = renderCompare();
+      } else if (state.tab === 'inbox') {
+        viewHtml = state.detail && findProposal(state.detail) ? renderDetail() : renderInbox();
+        // The compare bar sits over the list while a selection is open; it
+        // yields to the compare view itself once that is on screen.
+        if (state.compare.length && !state.compareView) {
+          viewHtml = compareBarHtml() + viewHtml;
+        }
+      } else {
+        viewHtml = renderVotes();
+      }
+      document.getElementById('view').innerHTML = viewHtml;
       enhanceTitles();
+    }
+
+    // ------------------------------------------------------------------
+    // Detail navigation and thread data.
+    // ------------------------------------------------------------------
+
+    function detailThreadKey() {
+      var p = findProposal(state.detail);
+      return p ? p.appSlug + '|' + p.sessionId : '';
+    }
+
+    function loadDetailComments() {
+      var p = findProposal(state.detail);
+      if (!p) return;
+      var key = p.appSlug + '|' + p.sessionId;
+      if (state.commentsKey === key && !state.commentsError) return;
+      state.commentsKey = key;
+      state.detailComments = [];
+      state.commentsLoading = true;
+      state.commentsError = null;
+      render();
+      var query = '?appSlug=' + encodeURIComponent(p.appSlug)
+        + '&sessionId=' + encodeURIComponent(p.sessionId)
+        + (DEMO ? '&demo=1' : '');
+      api('/api/comments' + query)
+        .then(function (data) {
+          // The user may have navigated away while the fetch ran.
+          if (detailThreadKey() !== key) return;
+          state.detailComments = (data && data.comments) || [];
+          state.commentsLoading = false;
+          state.commentsError = null;
+          render();
+        })
+        .catch(function (err) {
+          if (detailThreadKey() !== key) return;
+          state.commentsLoading = false;
+          state.commentsError = err.message || 'Could not load the discussion.';
+          render();
+        });
+    }
+
+    function openDetail(sessionId) {
+      if (!findProposal(sessionId)) return;
+      state.detail = sessionId;
+      state.replyForm = null;
+      render();
+      window.scrollTo(0, 0);
+      loadDetailComments();
+    }
+
+    function closeDetail() {
+      state.detail = '';
+      state.replyForm = null;
+      render();
+      window.scrollTo(0, 0);
+    }
+
+    // Post a comment (parentId null) or a reply (parentId = the top-level
+    // comment's id, as a string in the markup). The busy state disables the
+    // submit button in place: a re-render here would wipe the form's text.
+    function postThreadComment(parentId) {
+      var p = findProposal(state.detail);
+      if (!p || state.commentBusy) return;
+      var field = document.querySelector(parentId == null ? '[data-comment-input]' : '[data-reply-input]');
+      var btn = document.querySelector(parentId == null ? '[data-comment-post]' : '[data-reply-submit]');
+      if (!field) return;
+      var text = field.value.trim();
+      if (!text) return;
+      state.commentBusy = true;
+      if (btn) btn.disabled = true;
+      api('/api/comments', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({
+          appSlug: p.appSlug,
+          sessionId: p.sessionId,
+          body: text,
+          parentId: parentId == null ? null : Number(parentId),
+          demo: !!(state.inbox && state.inbox.demo),
+        }),
+      }).then(function (res) {
+        if (res && res.comment) state.detailComments.push(res.comment);
+        state.replyForm = null;
+        state.commentBusy = false;
+        render();
+      }).catch(function (err) {
+        state.commentBusy = false;
+        if (btn && document.contains(btn)) btn.disabled = false;
+        toast('Could not post the comment: ' + (err.message || 'try again'));
+      });
     }
 
     // ------------------------------------------------------------------
@@ -1644,10 +2677,12 @@
       if (ALL_MERGED) query.push('allmerged=1');
       // Check-fixture variant on the hook's reload; see TURNOUT_REFRESH.
       if (turnoutAltNext) query.push('turnoutalt=1');
+      if (SPLITS) query.push('splits=' + encodeURIComponent(SPLITS));
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
           if (data.demo) reanchorDemo(data);
+          resolveCompareSelection();
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
           maybeAutoCast();
@@ -1664,6 +2699,12 @@
           maybeTurnoutRefresh();
           maybeTapNo();
           maybeTapShare();
+          maybeAutoComment();
+          maybeAutoReply();
+          // A ?proposal= deep link lands on the inbox first; once the list
+          // holds the proposal, the detail view can load its thread.
+          if (state.detail && findProposal(state.detail)) loadDetailComments();
+          maybeCompareHooks();
           if (state.queuedInbox) {
             state.queuedInbox = false;
             loadInbox(true);
@@ -2082,6 +3123,122 @@
       state.expandedTitles[String(id)] = true;
     }
 
+    // Poll for a selector and hand the element over, so the demo hooks
+    // below can act on controls that only exist once the thread (or a
+    // reply form) has rendered. Gives up after ~4s.
+    function waitFor(selector, fn, tries) {
+      var n = tries || 0;
+      var el = document.querySelector(selector);
+      if (el) { fn(el); return; }
+      if (n > 40) return;
+      setTimeout(function () { waitFor(selector, fn, n + 1); }, 100);
+    }
+
+    // Staging demo hook: ?demo=1&proposal=<sessionId>&comment=<text> posts
+    // a comment through the REAL detail form (fills the field, taps Post,
+    // so the POST and the thread update are the code a person runs). Pairs
+    // with the ?proposal= deep link. Demo only; does nothing without it.
+    function maybeAutoComment() {
+      if (!DEMO || !state.detail) return;
+      var text = params.get('comment');
+      if (!text) return;
+      waitFor('[data-comment-input]', function (input) {
+        input.value = text;
+        var btn = document.querySelector('[data-comment-post]');
+        if (btn) btn.click();
+      });
+    }
+
+    // Staging demo hook: ?demo=1&reply-to=<commentId>&reply=<text> opens
+    // that comment's reply form and posts through it, the way ?comment=
+    // posts a top-level comment. Replying to a reply exercises the
+    // server's one-level-only rule. Demo only.
+    function maybeAutoReply() {
+      if (!DEMO || !state.detail) return;
+      var id = params.get('reply-to');
+      var text = params.get('reply');
+      if (!id || !text) return;
+      waitFor('[data-comment][data-comment-id="' + id + '"] [data-reply-btn]', function (btn) {
+        btn.click();
+        waitFor('[data-reply-input]', function (input) {
+          input.value = text;
+          var submit = document.querySelector('[data-reply-submit]');
+          if (submit) submit.click();
+        });
+      });
+    }
+
+    // Staging demo hooks for the compare flow, all demo-only, one-shot and
+    // driven through the REAL controls (the delegated click handler), the
+    // way ?tap-no=1 and ?tap-share= work:
+    //   ?tap-compare=1        clicks the compare bar's Compare button (pair
+    //                         with ?pick=a,b so the bar holds two)
+    //   ?tap-clear=1          clicks whichever Clear control is on screen:
+    //                         the bar's on the list, the view's in compare
+    //   ?tap-compare-add=<id> clicks that card's Compare button (adds, or
+    //                         removes when already selected)
+    //   ?tap-no-compare=<id>  in compare view, clears any earlier vote on
+    //                         that session, then clicks its column's No
+    //                         button; ?confirm-no=1 then presses "No,
+    //                         reject" in the dialog that opens.
+    var compareHookDone = { open: false, clear: false, add: false, no: false };
+    function maybeCompareHooks() {
+      if (!DEMO || state.errorInbox || !state.inbox) return;
+      if (TAP_COMPARE && !compareHookDone.open && !state.compareView
+          && state.compare.length === 2) {
+        var openBtn = document.querySelector('[data-compare-open]');
+        if (openBtn && !openBtn.disabled) {
+          compareHookDone.open = true;
+          openBtn.click();
+        }
+      }
+      if (TAP_CLEAR && !compareHookDone.clear
+          && (state.compareView || state.compare.length)) {
+        var clearBtn = document.querySelector('[data-compare-clear]');
+        if (clearBtn) {
+          compareHookDone.clear = true;
+          clearBtn.click();
+        }
+      }
+      if (TAP_COMPARE_ADD && !compareHookDone.add) {
+        var addBtn = document.querySelector(
+          '[data-compare-add][data-session="' + TAP_COMPARE_ADD + '"]');
+        if (addBtn) {
+          compareHookDone.add = true;
+          addBtn.click();
+        }
+      }
+      if (TAP_NO_COMPARE && !compareHookDone.no && state.compareView) {
+        compareHookDone.no = true;
+        var hookSession = TAP_NO_COMPARE;
+        var hookProposal = findProposal(hookSession);
+        if (!hookProposal) return;
+        api('/api/unvote', {
+          method: 'POST',
+          headers: headers({ 'content-type': 'application/json' }),
+          body: JSON.stringify({ sessionId: hookSession }),
+        }).catch(function () {}).then(function () {
+          hookProposal.myVote = null;
+          render();
+          var noBtn = document.querySelector(
+            '[data-compare-col="' + hookSession + '"] [data-vote="no"]');
+          if (!noBtn) return;
+          noBtn.click();
+          if (!CONFIRM_NO) return;
+          var tries = 0;
+          var timer = setInterval(function () {
+            var confirmBtn = findButtonByText('No, reject');
+            if (confirmBtn) {
+              clearInterval(timer);
+              confirmBtn.click();
+            } else if (++tries > 40) {
+              clearInterval(timer);
+            }
+          }, 100);
+        });
+      }
+    }
+
     // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------
@@ -2116,12 +3273,61 @@
           // engage right away; the pull only fires at scroll offset 0.
           window.scrollTo(0, 0);
           loadInbox(!state.inbox);
+        } else if (action === 'close-detail') {
+          closeDetail();
+        } else if (action === 'reload-comments') {
+          state.commentsKey = '';
+          loadDetailComments();
         }
         return;
       }
       var titleBtn = target.closest ? target.closest('[data-title-toggle]') : null;
       if (titleBtn) {
         toggleTitle(titleBtn);
+        return;
+      }
+      var discussBtn = target.closest ? target.closest('[data-open-detail]') : null;
+      if (discussBtn) {
+        openDetail(discussBtn.getAttribute('data-session'));
+        return;
+      }
+      var replyBtn = target.closest ? target.closest('[data-reply-btn]') : null;
+      if (replyBtn) {
+        var replyId = replyBtn.getAttribute('data-comment');
+        // Reply is a toggle: tapping it again closes the form.
+        state.replyForm = String(state.replyForm) === String(replyId) ? null : String(replyId);
+        render();
+        var replyInput = document.querySelector('[data-reply-input]');
+        if (replyInput) replyInput.focus();
+        return;
+      }
+      var replyCancel = target.closest ? target.closest('[data-reply-cancel]') : null;
+      if (replyCancel) {
+        state.replyForm = null;
+        render();
+        return;
+      }
+      var replySubmit = target.closest ? target.closest('[data-reply-submit]') : null;
+      if (replySubmit) {
+        postThreadComment(replySubmit.getAttribute('data-parent'));
+        return;
+      }
+      var postBtn = target.closest ? target.closest('[data-comment-post]') : null;
+      if (postBtn) {
+        postThreadComment(null);
+        return;
+      }
+      var compareAdd = target.closest ? target.closest('[data-compare-add]') : null;
+      if (compareAdd) {
+        toggleCompare(compareAdd.getAttribute('data-session'));
+        return;
+      }
+      if (target.closest && target.closest('[data-compare-open]')) {
+        openCompareView();
+        return;
+      }
+      if (target.closest && target.closest('[data-compare-clear]')) {
+        clearCompare();
         return;
       }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
@@ -2141,6 +3347,26 @@
     filterTrigger.addEventListener('click', function () {
       if (openFilter) closeFilter(); else openAppFilter();
     });
+
+    // Saved views: tap a chip to switch, tap its "⋯" to rename or delete.
+    var viewsChips = document.getElementById('views-chips');
+    if (viewsChips) {
+      viewsChips.addEventListener('click', function (event) {
+        var target = event.target;
+        var menuBtn = target.closest ? target.closest('[data-view-menu]') : null;
+        if (menuBtn) {
+          openViewMenu(menuBtn.getAttribute('data-view-name'), menuBtn);
+          return;
+        }
+        var chip = target.closest ? target.closest('[data-view-chip]') : null;
+        if (chip) {
+          var view = findView(chip.getAttribute('data-view-name'));
+          if (view) applyView(view);
+        }
+      });
+    }
+    var saveViewBtn = document.getElementById('save-view-btn');
+    if (saveViewBtn) saveViewBtn.addEventListener('click', openSaveViewDialog);
 
     if (oneAwayChip) {
       oneAwayChip.addEventListener('click', function () {
@@ -2188,6 +3414,9 @@
         var tab = event.currentTarget.getAttribute('data-tab');
         if (tab === state.tab) return;
         state.tab = tab;
+        // Leaving the Inbox closes the compare view (the selection itself
+        // survives; coming back shows the bar again, ready to re-open).
+        if (tab !== 'inbox') state.compareView = false;
         var url = new URL(location.href);
         url.searchParams.set('tab', tab);
         history.replaceState(null, '', url.pathname + url.search + url.hash);
@@ -2211,6 +3440,9 @@
     // Boot: render the shell instantly, then fetch the active tab's data.
     // ------------------------------------------------------------------
 
+    // Staging check hooks run before the first render, so the page shows
+    // their result as if it had come from a tap.
+    runViewsHooks();
     render();
     var hideVotedBox = document.getElementById('hide-voted');
     if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
