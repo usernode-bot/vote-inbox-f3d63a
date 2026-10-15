@@ -218,6 +218,19 @@
     // ?tap-share=<sessionId> (demo only) taps that card's share button once
     // the inbox has rendered, the way ?tap-no=1 taps a vote button.
     var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
+    // Compare-flow fixtures, all demo only. ?compare=<id>,<id> seeds a
+    // two-proposal selection AND opens the compare view (the deep link the
+    // checks use for the side-by-side state); ?pick=<ids> seeds the
+    // selection without opening the view. ?tap-compare=1, ?tap-clear=1,
+    // ?tap-compare-add=<id> and ?tap-no-compare=<id> then click the real
+    // controls once they have rendered (see maybeCompareHooks). Production
+    // never honours any of these.
+    var COMPARE_PARAM = DEMO ? (params.get('compare') || '') : '';
+    var PICK_PARAM = DEMO ? (params.get('pick') || '') : '';
+    var TAP_COMPARE = DEMO && params.get('tap-compare') === '1';
+    var TAP_CLEAR = DEMO && params.get('tap-clear') === '1';
+    var TAP_COMPARE_ADD = DEMO ? (params.get('tap-compare-add') || '') : '';
+    var TAP_NO_COMPARE = DEMO ? (params.get('tap-no-compare') || '') : '';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
@@ -253,6 +266,12 @@
       // (a vote, a filter change) keeps those titles expanded; not persisted,
       // a reload starts collapsed again.
       expandedTitles: {},
+      // Compare selection: up to two session ids picked from the inbox via
+      // the cards' Compare buttons, plus whether the dedicated side-by-side
+      // view is open. Transient, like oneAway: a reload starts empty unless
+      // a ?compare= / ?pick= fixture re-seeds it.
+      compare: [],
+      compareView: false,
     };
 
     // ------------------------------------------------------------------
@@ -820,6 +839,162 @@
       }
     }
 
+    // ------------------------------------------------------------------
+    // Compare. Each card carries a quiet Compare button beside Share;
+    // tapping it adds the proposal to a selection of at most two (tapping
+    // again removes it). While anything is selected, a bar above the list
+    // shows the count, a Compare button that opens the side-by-side view
+    // (enabled at two picks), and a Clear that empties the selection. The
+    // view itself renders the two proposals in two columns: title, status,
+    // counts, key details and working vote buttons. Clearing the selection
+    // from either surface returns to the normal list.
+    // ------------------------------------------------------------------
+
+    var COMPARE_OFF_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="7.5" height="16" rx="1.5"/><rect x="13.5" y="4" width="7.5" height="16" rx="1.5"/></svg><span>Compare</span>';
+    var COMPARE_ON_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Selected</span>';
+    // Whole literals for the Tailwind compiler, matching the Share button's
+    // idle look; the selected state takes the violet used for active chips.
+    var COMPARE_BTN_IDLE = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
+    var COMPARE_BTN_SELECTED = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold text-violet-600 transition-colors dark:text-violet-300';
+
+    function compareButton(p) {
+      var selected = state.compare.indexOf(p.sessionId) !== -1;
+      return '<button data-compare-add data-session="' + esc(p.sessionId) + '" type="button"'
+        + ' aria-pressed="' + (selected ? 'true' : 'false') + '"'
+        + ' aria-label="' + (selected ? 'Remove from compare selection' : 'Add to compare selection') + '"'
+        + ' title="' + (selected ? 'Remove from selection' : 'Add to selection') + '"'
+        + ' class="' + (selected ? COMPARE_BTN_SELECTED : COMPARE_BTN_IDLE) + '">'
+        + (selected ? COMPARE_ON_HTML : COMPARE_OFF_HTML) + '</button>';
+    }
+
+    function compareBarHtml() {
+      var count = state.compare.length;
+      var ready = count === 2;
+      var label = count === 1
+        ? '1 selected · Pick one more proposal'
+        : count + ' selected';
+      return '<div data-compare-bar class="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-violet-500/40 bg-violet-600/10 p-3">'
+        + '<p class="text-sm font-semibold text-violet-700 dark:text-violet-300">' + esc(label) + '</p>'
+        + '<div class="flex shrink-0 gap-2">'
+        + '<button data-compare-open type="button"' + (ready ? '' : ' disabled')
+        + ' title="' + (ready ? 'Open the side-by-side comparison' : 'Pick one more proposal first') + '"'
+        + ' class="rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50">Compare</button>'
+        + '<button data-compare-clear type="button" title="Empty the selection"'
+        + ' class="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Clear</button>'
+        + '</div></div>';
+    }
+
+    // One column of the compare view: everything the card shows for one
+    // proposal, without the clamp and the age-group chrome, plus the same
+    // working vote actions (stacked to fit the narrow column). Key details
+    // carry data attributes so checks can pin them per column.
+    function compareCol(p) {
+      var key = p.status === 'proposed' ? 'voting' : (p.status || 'voting');
+      var style = STATUS_STYLE[key] || STATUS_STYLE.voting;
+      var hasThreshold = p.required != null && p.required > 0;
+      var age = relTime(p.proposedAt);
+      return '<article data-compare-col="' + esc(p.sessionId) + '" class="' + CARD_CLASS + '">'
+        + '<div class="flex items-center gap-1.5">'
+        + appAvatar(p)
+        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + '</div>'
+        + '<h2 class="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
+        + '<div class="flex flex-wrap items-center gap-1.5">'
+        + '<span data-compare-status="' + esc(key) + '" class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
+        + neededPill(p)
+        + '</div>'
+        + '<div class="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">'
+        + '<p data-compare-counts>Yes ' + p.yes + ' · No ' + p.no
+        + (hasThreshold
+          ? ' · <span data-vote-threshold="' + p.yes + ' of ' + p.required + '">' + p.yes + ' of ' + p.required + '</span>'
+          : '')
+        + '</p>'
+        + (p.proposedAt && isFinite(new Date(p.proposedAt).getTime())
+          ? '<p data-compare-proposed>Proposed '
+            + esc(new Date(p.proposedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+            + (age ? ' · ' + esc(age) : '') + '</p>'
+          : '')
+        + (p.author ? '<p>by @' + esc(p.author) + '</p>' : '')
+        + '</div>'
+        + (p.url ? shareLinkButton(p) : '')
+        + voteActions(p, true)
+        + '</article>';
+    }
+
+    function renderCompare() {
+      var a = findProposal(state.compare[0]);
+      var b = findProposal(state.compare[1]);
+      if (!a || !b) return '';
+      return '<section data-compare-view class="flex flex-col gap-3" aria-label="Compare proposals">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Comparing proposals</h2>'
+        + '<button data-compare-clear type="button" title="Empty the selection and go back to the list"'
+        + ' class="shrink-0 rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Clear selection</button>'
+        + '</div>'
+        + '<div class="grid grid-cols-2 items-start gap-3">'
+        + compareCol(a) + compareCol(b)
+        + '</div></section>';
+    }
+
+    function toggleCompare(sessionId) {
+      var idx = state.compare.indexOf(sessionId);
+      if (idx !== -1) {
+        state.compare.splice(idx, 1);
+        if (state.compare.length < 2) state.compareView = false;
+        render();
+        return;
+      }
+      if (state.compare.length >= 2) {
+        toast('Compare holds two proposals. Clear it to pick different ones.');
+        return;
+      }
+      state.compare.push(sessionId);
+      render();
+    }
+
+    function openCompareView() {
+      if (state.compare.length !== 2) return;
+      state.compareView = true;
+      render();
+      // Land at the top so the comparison reads from its heading down.
+      window.scrollTo(0, 0);
+    }
+
+    function clearCompare() {
+      state.compare = [];
+      state.compareView = false;
+      render();
+    }
+
+    // Seed (once, from the ?compare= / ?pick= fixtures) and then keep the
+    // selection honest against the loaded inbox: ids the list no longer
+    // carries are dropped, and a compare view left with fewer than two
+    // proposals falls back to the list. Runs on every inbox load.
+    var compareResolved = false;
+    function resolveCompareSelection() {
+      if (compareResolved) {
+        var kept = [];
+        for (var i = 0; i < state.compare.length; i++) {
+          if (findProposal(state.compare[i])) kept.push(state.compare[i]);
+        }
+        state.compare = kept;
+        if (state.compareView && state.compare.length < 2) state.compareView = false;
+        return;
+      }
+      compareResolved = true;
+      var ids = [];
+      (COMPARE_PARAM || PICK_PARAM).split(',').forEach(function (s) {
+        s = s.trim();
+        if (s && ids.indexOf(s) === -1) ids.push(s);
+      });
+      var resolved = [];
+      for (var j = 0; j < ids.length && resolved.length < 2; j++) {
+        if (findProposal(ids[j])) resolved.push(ids[j]);
+      }
+      state.compare = resolved;
+      if (COMPARE_PARAM && resolved.length === 2) state.compareView = true;
+    }
+
     // Retry pill for a card whose vote failed offline and is queued
     // in-memory. Amber warning treatment, matching the demo banner and the
     // votes-needed pill; tapping the button resends the queued vote as-is.
@@ -835,8 +1010,35 @@
         + '</div>';
     }
 
-    function proposalCard(p) {
+    // Yes/No vote actions, shared by the inbox card (side by side in a row)
+    // and the compare column (stacked to fit the narrow column). Same
+    // classes and behaviour in both; only the width class differs. Whole
+    // literals so the Tailwind compiler sees every variant.
+    var VOTE_YES_ROW = 'min-h-11 flex-1 rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50';
+    var VOTE_YES_STACK = 'min-h-11 w-full rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50';
+    var VOTE_NO_ROW = 'min-h-11 flex-1 rounded-xl border border-zinc-300 bg-white py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50';
+    var VOTE_NO_STACK = 'min-h-11 w-full rounded-xl border border-zinc-300 bg-white py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50';
+
+    function voteActions(p, stacked) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
+      if (voted) {
+        return '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
+          + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>'
+          + 'You voted ' + p.myVote + '</div>'
+          + retryRow(p.sessionId);
+      }
+      var busy = state.pending[p.sessionId];
+      return '<div class="' + (stacked ? 'flex flex-col gap-2' : 'flex gap-2') + '">'
+        + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
+        + ' class="' + (stacked ? VOTE_YES_STACK : VOTE_YES_ROW) + '"'
+        + (busy ? ' disabled' : '') + '>Yes</button>'
+        + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
+        + ' class="' + (stacked ? VOTE_NO_STACK : VOTE_NO_ROW) + '"'
+        + (busy ? ' disabled' : '') + '>No</button>'
+        + '</div>';
+    }
+
+    function proposalCard(p) {
       var titleExpanded = !!state.expandedTitles[p.sessionId];
       var age = relTime(p.proposedAt);
       var ageHtml = age
@@ -853,23 +1055,7 @@
           + esc(new Date(p.proposedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
           + '</p>';
       }
-      var actions;
-      if (voted) {
-        actions = '<div class="flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/10 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300">'
-          + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>'
-          + 'You voted ' + p.myVote + '</div>'
-          + retryRow(p.sessionId);
-      } else {
-        var busy = state.pending[p.sessionId];
-        actions = '<div class="flex gap-2">'
-          + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
-          + ' class="min-h-11 flex-1 rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95 disabled:opacity-50"'
-          + (busy ? ' disabled' : '') + '>Yes</button>'
-          + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
-          + ' class="min-h-11 flex-1 rounded-xl border border-zinc-300 bg-white py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-transform active:scale-95 disabled:opacity-50"'
-          + (busy ? ' disabled' : '') + '>No</button>'
-          + '</div>';
-      }
+      var actions = voteActions(p, false);
       // data-needed lets the declared checks (and deep links) assert what the
       // votes-needed pill shows: omitted when the threshold is unknown.
       return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '"'
@@ -891,7 +1077,10 @@
         + '<div class="flex items-center justify-between gap-2">'
         + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
+        + '<div class="flex shrink-0 items-center gap-0.5">'
+        + compareButton(p)
         + (p.url ? shareLinkButton(p) : '')
+        + '</div>'
         + '</div>'
         + statusProgress(p)
         + actions
@@ -1053,12 +1242,12 @@
         }
       }
       document.getElementById('filter-row').className =
-        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+        'mt-2' + (state.tab === 'inbox' && !state.compareView ? '' : ' hidden');
       document.getElementById('search-row').className =
-        'mt-2' + (state.tab === 'inbox' ? '' : ' hidden');
+        'mt-2' + (state.tab === 'inbox' && !state.compareView ? '' : ' hidden');
       var sortRow = document.getElementById('sort-row');
       if (sortRow) sortRow.className =
-        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' ? '' : ' hidden');
+        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' && !state.compareView ? '' : ' hidden');
       var votesOrderRow = document.getElementById('votes-order-row');
       if (votesOrderRow) votesOrderRow.className =
         'flex items-center gap-2 pt-1' + (state.tab === 'votes' ? '' : ' hidden');
@@ -1273,7 +1462,7 @@
       if (!el) return;
       var proposals = state.inbox && state.inbox.proposals;
       var open = proposals ? proposals.length : 0;
-      if (state.tab !== 'inbox' || state.errorInbox || !open) {
+      if (state.tab !== 'inbox' || state.errorInbox || !open || state.compareView) {
         el.hidden = true;
         return;
       }
@@ -1313,7 +1502,7 @@
     function renderUpdated() {
       var el = document.getElementById('inbox-updated');
       if (!el) return;
-      if (state.tab !== 'inbox' || !state.inboxLoadedAt) {
+      if (state.tab !== 'inbox' || !state.inboxLoadedAt || state.compareView) {
         el.hidden = true;
         return;
       }
@@ -1332,8 +1521,22 @@
       renderSummary();
       renderUpdated();
       renderVotesSummary();
-      document.getElementById('view').innerHTML =
-        state.tab === 'inbox' ? renderInbox() : renderVotes();
+      var viewHtml;
+      if (state.tab === 'inbox' && state.compareView
+          && state.compare.length === 2
+          && findProposal(state.compare[0]) && findProposal(state.compare[1])) {
+        viewHtml = renderCompare();
+      } else if (state.tab === 'inbox') {
+        viewHtml = renderInbox();
+        // The compare bar sits over the list while a selection is open; it
+        // yields to the compare view itself once that is on screen.
+        if (state.compare.length && !state.compareView) {
+          viewHtml = compareBarHtml() + viewHtml;
+        }
+      } else {
+        viewHtml = renderVotes();
+      }
+      document.getElementById('view').innerHTML = viewHtml;
       enhanceTitles();
     }
 
@@ -1602,6 +1805,7 @@
         .then(function (data) {
           state.inbox = data;
           if (data.demo) reanchorDemo(data);
+          resolveCompareSelection();
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
           maybeAutoCast();
@@ -1616,6 +1820,7 @@
           maybeAutoOpenFilter();
           maybeTapNo();
           maybeTapShare();
+          maybeCompareHooks();
           if (state.queuedInbox) {
             state.queuedInbox = false;
             loadInbox(true);
@@ -2009,6 +2214,77 @@
       state.expandedTitles[String(id)] = true;
     }
 
+    // Staging demo hooks for the compare flow, all demo-only, one-shot and
+    // driven through the REAL controls (the delegated click handler), the
+    // way ?tap-no=1 and ?tap-share= work:
+    //   ?tap-compare=1        clicks the compare bar's Compare button (pair
+    //                         with ?pick=a,b so the bar holds two)
+    //   ?tap-clear=1          clicks whichever Clear control is on screen:
+    //                         the bar's on the list, the view's in compare
+    //   ?tap-compare-add=<id> clicks that card's Compare button (adds, or
+    //                         removes when already selected)
+    //   ?tap-no-compare=<id>  in compare view, clears any earlier vote on
+    //                         that session, then clicks its column's No
+    //                         button; ?confirm-no=1 then presses "No,
+    //                         reject" in the dialog that opens.
+    var compareHookDone = { open: false, clear: false, add: false, no: false };
+    function maybeCompareHooks() {
+      if (!DEMO || state.errorInbox || !state.inbox) return;
+      if (TAP_COMPARE && !compareHookDone.open && !state.compareView
+          && state.compare.length === 2) {
+        var openBtn = document.querySelector('[data-compare-open]');
+        if (openBtn && !openBtn.disabled) {
+          compareHookDone.open = true;
+          openBtn.click();
+        }
+      }
+      if (TAP_CLEAR && !compareHookDone.clear
+          && (state.compareView || state.compare.length)) {
+        var clearBtn = document.querySelector('[data-compare-clear]');
+        if (clearBtn) {
+          compareHookDone.clear = true;
+          clearBtn.click();
+        }
+      }
+      if (TAP_COMPARE_ADD && !compareHookDone.add) {
+        var addBtn = document.querySelector(
+          '[data-compare-add][data-session="' + TAP_COMPARE_ADD + '"]');
+        if (addBtn) {
+          compareHookDone.add = true;
+          addBtn.click();
+        }
+      }
+      if (TAP_NO_COMPARE && !compareHookDone.no && state.compareView) {
+        compareHookDone.no = true;
+        var hookSession = TAP_NO_COMPARE;
+        var hookProposal = findProposal(hookSession);
+        if (!hookProposal) return;
+        api('/api/unvote', {
+          method: 'POST',
+          headers: headers({ 'content-type': 'application/json' }),
+          body: JSON.stringify({ sessionId: hookSession }),
+        }).catch(function () {}).then(function () {
+          hookProposal.myVote = null;
+          render();
+          var noBtn = document.querySelector(
+            '[data-compare-col="' + hookSession + '"] [data-vote="no"]');
+          if (!noBtn) return;
+          noBtn.click();
+          if (!CONFIRM_NO) return;
+          var tries = 0;
+          var timer = setInterval(function () {
+            var confirmBtn = findButtonByText('No, reject');
+            if (confirmBtn) {
+              clearInterval(timer);
+              confirmBtn.click();
+            } else if (++tries > 40) {
+              clearInterval(timer);
+            }
+          }, 100);
+        });
+      }
+    }
+
     // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------
@@ -2049,6 +2325,19 @@
       var titleBtn = target.closest ? target.closest('[data-title-toggle]') : null;
       if (titleBtn) {
         toggleTitle(titleBtn);
+        return;
+      }
+      var compareAdd = target.closest ? target.closest('[data-compare-add]') : null;
+      if (compareAdd) {
+        toggleCompare(compareAdd.getAttribute('data-session'));
+        return;
+      }
+      if (target.closest && target.closest('[data-compare-open]')) {
+        openCompareView();
+        return;
+      }
+      if (target.closest && target.closest('[data-compare-clear]')) {
+        clearCompare();
         return;
       }
       var voteBtn = target.closest ? target.closest('[data-vote]') : null;
@@ -2115,6 +2404,9 @@
         var tab = event.currentTarget.getAttribute('data-tab');
         if (tab === state.tab) return;
         state.tab = tab;
+        // Leaving the Inbox closes the compare view (the selection itself
+        // survives; coming back shows the bar again, ready to re-open).
+        if (tab !== 'inbox') state.compareView = false;
         var url = new URL(location.href);
         url.searchParams.set('tab', tab);
         history.replaceState(null, '', url.pathname + url.search + url.hash);
