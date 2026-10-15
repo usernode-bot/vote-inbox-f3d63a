@@ -480,6 +480,37 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "watch.star-button",
+      "name": "Inbox cards offer a star button",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card] [data-star-toggle]",
+      "expectText": "Star",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-controversy-option",
+      "name": "Sort pill offers a Controversy option",
+      "path": "/?demo=1",
+      "expectSelector": "#sort-row [data-sort='controversy']",
+      "expectText": "Controversy"
+    },
+    {
+      "id": "inbox.sort-controversy-active",
+      "name": "Controversy is the selected sort when the URL asks for it",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#sort-row [data-sort='controversy'][aria-checked='true']"
+    },
+    {
+      "id": "inbox.sort-controversy-order",
+      "name": "Controversy sort puts the tightest race on top",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-5']:first-child",
+      "expectText": "pinned notes",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "threads.discuss-button",
       "name": "Proposal cards offer a Discuss button",
       "path": "/?demo=1",
@@ -494,6 +525,124 @@
       "expectSelector": "[data-proposal-detail] [data-vote='yes']",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.star-tap",
+      "name": "Tapping Star stars the card",
+      "path": "/?demo=1&tap-star=demo-1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-star-toggle][aria-pressed='true']",
+      "expectText": "Starred",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-controversy-split-order",
+      "name": "Contested proposals run tightest gap first",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-5'] ~ [data-proposal-card][data-session-id='demo-1'] ~ [data-proposal-card][data-session-id='demo-4']"
+    },
+    {
+      "id": "inbox.sort-controversy-unanimous-last",
+      "name": "A unanimous proposal lands at the bottom",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-3']:last-child",
+      "expectText": "export to CSV"
+    },
+    {
+      "id": "inbox.sort-controversy-sink",
+      "name": "One-sided proposals sit below the contested ones",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-4'] ~ [data-proposal-card][data-session-id='demo-2']"
+    },
+    {
+      "id": "inbox.sort-controversy-one-sided-order",
+      "name": "One-sided cards order by gap below the contested ones",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-2'] ~ [data-proposal-card][data-session-id='demo-6'] ~ [data-proposal-card][data-session-id='demo-3']"
+    },
+    {
+      "id": "inbox.sort-controversy-contested-block",
+      "name": "No one-sided card precedes a contested one",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-contested='false'] ~ [data-proposal-card][data-contested='true']))",
+      "expectText": "Staging demo proposal"
+    },
+    {
+      "id": "inbox.sort-controversy-tie-title",
+      "name": "Equal contested gaps break the tie by title",
+      "path": "/?demo=1&splits=demo-5:3-2,demo-1:4-3&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-1']:first-child",
+      "expectText": "dark mode toggle",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-controversy-tie-order",
+      "name": "Tied races keep their deterministic order with the rest",
+      "path": "/?demo=1&splits=demo-5:3-2,demo-1:4-3&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-1'] ~ [data-proposal-card][data-session-id='demo-5'] ~ [data-proposal-card][data-session-id='demo-4']"
+    },
+    {
+      "id": "inbox.sort-controversy-tie-one-sided",
+      "name": "Equal one-sided gaps break the tie by title too",
+      "path": "/?demo=1&splits=demo-2:2-0,demo-6:2-0&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-6'] ~ [data-proposal-card][data-session-id='demo-2']"
+    },
+    {
+      "id": "inbox.sort-controversy-gap-symmetric",
+      "name": "Gap measures the split whichever side leads",
+      "path": "/?demo=1&splits=demo-1:1-3&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-5'] ~ [data-proposal-card][data-session-id='demo-1']"
+    },
+    {
+      "id": "inbox.sort-controversy-filter-app",
+      "name": "App filter applies first, then controversy orders the rest",
+      "path": "/?demo=1&set-filter=staging-demo-app&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-1']:first-child"
+    },
+    {
+      "id": "inbox.sort-controversy-filter-sunk",
+      "name": "Under a filter the one-sided cards still sink",
+      "path": "/?demo=1&set-filter=staging-demo-app&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-1'] ~ [data-proposal-card][data-session-id='demo-2'] ~ [data-proposal-card][data-session-id='demo-3']"
+    },
+    {
+      "id": "inbox.sort-controversy-filter-other-app",
+      "name": "Controversy sort re-ranks a second app's filtered set",
+      "path": "/?demo=1&set-filter=staging-demo-notes&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-5']:first-child",
+      "expectText": "pinned notes"
+    },
+    {
+      "id": "inbox.sort-controversy-hide-voted",
+      "name": "Hide voted drops the voted card and keeps the ranking",
+      "path": "/?demo=1&hide-voted=1&sort=controversy",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-session-id='demo-1'])) [data-proposal-card][data-session-id='demo-5']"
+    },
+    {
+      "id": "inbox.sort-controversy-hide-merged",
+      "name": "Hide merged drops the merged card and the next tightest leads",
+      "path": "/?demo=1&hide-merged=1&sort=controversy",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'])) #view > [data-proposal-card][data-session-id='demo-1']:first-child"
+    },
+    {
+      "id": "inbox.sort-controversy-one-away",
+      "name": "One vote away chip keeps the controversy ranking",
+      "path": "/?demo=1&one-away=1&sort=controversy",
+      "expectSelector": "body:has([data-one-away-chip][aria-pressed='true']) #view > [data-proposal-card][data-session-id='demo-1']:first-child"
+    },
+    {
+      "id": "inbox.sort-controversy-search",
+      "name": "Title search combines with the controversy sort",
+      "path": "/?demo=1&q=dark&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-1']:first-child",
+      "expectText": "dark mode toggle"
+    },
+    {
+      "id": "inbox.sort-controversy-empty-filter",
+      "name": "Controversy sort shows the app filter's empty state",
+      "path": "/?demo=1&set-filter=staging-demo-archive&sort=controversy",
+      "expectText": "Nothing from this app"
     },
     {
       "id": "threads.empty",
@@ -586,6 +735,132 @@
       "expectText": "Save view",
       "visual": true,
       "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "watch.unstar-tap",
+      "name": "Tapping Star on a starred card unstars it",
+      "path": "/?demo=1&preset-star=demo-3&tap-star=demo-3",
+      "expectSelector": "[data-star-toggle][data-session='demo-3'][aria-pressed='false']",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.star-persist-inbox",
+      "name": "A starred card stays starred after a reload",
+      "path": "/?demo=1&set-star=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-star-toggle][aria-pressed='true']",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.star-state-from-server",
+      "name": "A star recorded earlier is shown on the card without tapping",
+      "path": "/?demo=1&preset-star=demo-3",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-star-toggle][aria-pressed='true']",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-list",
+      "name": "Watchlist tab lists starred proposals",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-row]",
+      "expectText": "Staging demo proposal",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-change-merged",
+      "name": "Watchlist badges a proposal that merged since the last look",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-change='merged']",
+      "expectText": "New: Merged",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-change-merging",
+      "name": "Watchlist badges a proposal that started merging since the last look",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-change='merging']",
+      "expectText": "New: Merging",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-seen-no-badges",
+      "name": "After a look, unchanged rows show no change badges",
+      "path": "/?tab=watchlist&demo=1&watch-seen=1",
+      "expectSelector": "body:not(:has([data-watch-change]))",
+      "expectText": "pinned notes",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-status-pill",
+      "name": "Watchlist rows show the proposal's current status",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-row][data-watch-status='merged']",
+      "expectText": "Merged",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-starred-date",
+      "name": "Watchlist rows show when the proposal was starred",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-row] [data-starred-date]",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-star-button",
+      "name": "Watchlist rows offer a pressed star to unstar",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-row] [data-star-toggle][aria-pressed='true']",
+      "expectText": "Starred",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-unstar",
+      "name": "Unstarring from the Watchlist drops the row",
+      "path": "/?tab=watchlist&demo=1&tap-star=demo-5",
+      "expectSelector": "body:not(:has([data-watch-row][data-session-id='demo-5']))",
+      "expectText": "dark mode",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-empty",
+      "name": "An empty Watchlist shows its empty state",
+      "path": "/?tab=watchlist&demo=1&watch-empty=1",
+      "expectText": "No starred proposals",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-persist",
+      "name": "A star recorded in the Inbox is listed on the Watchlist tab",
+      "path": "/?tab=watchlist&demo=1&set-star=demo-2",
+      "expectSelector": "[data-watch-row][data-session-id='demo-2']",
+      "expectText": "weekly summary email",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-summary",
+      "name": "Watchlist header shows starred and updated counts",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "#watchlist-summary",
+      "expectText": "3 starred, 2 updated"
+    },
+    {
+      "id": "watch.tab-badge-count",
+      "name": "The Watchlist tab shows its row count",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-tab='watchlist'] .tab-badge:not(.hidden)"
+    },
+    {
+      "id": "watch.tab-app-names",
+      "name": "Watchlist rows show the proposal's app name",
+      "path": "/?tab=watchlist&demo=1",
+      "expectText": "Staging Demo Notes"
     },
     {
       "id": "compare.button",

@@ -99,9 +99,11 @@ user's vote history.
 
 ## App-specific conventions
 
-- `my_votes` is the only local table and is marked `staging:private`
-  (one person's vote history). Proposal data stays on the platform —
-  with one exception: the discussion thread.
+- Three local tables: `my_votes` (one person's vote history) and
+  `watchlist` (one person's starred proposals, plus the status each row
+  was last seen in) are both marked `staging:private` (per-person data).
+  Proposal data stays on the platform — with one exception: the
+  discussion thread.
 - `proposal_comments` holds the discussion thread. It is PUBLIC (on
   purpose): comments are in-app content visible to every signed-in
   member, so a stranger seeing every row is fine. Nesting is one level
@@ -118,10 +120,25 @@ user's vote history.
 - Platform responses are normalised server-side (`normalizeProposal`) so
   the frontend deals with one shape; keep field-spelling tolerance there.
 - `?demo=1` (staging only) serves obviously-fake fixture data for the
-  Inbox and My Votes screens; production never serves demo data.
+  Inbox, My Votes and Watchlist screens; production never serves demo data.
+- Watchlist demo knobs (staging + `?demo=1` only): `?tab=watchlist` opens
+  the Watchlist tab on the fixture rows; `?preset-star=<sessionId>` marks
+  inbox cards starred for that load; `?tap-star=<sessionId>` taps a star
+  button after render; `?set-star=<sessionId>` stars for real (a DB row for
+  the signed-in account) then reloads, so persistence is observable — pair
+  it with `?watch-mine=1` on the Watchlist tab to include those real rows;
+  `?watch-seen=1` marks the fixture seen (no change badges) and
+  `?watch-empty=1` empties the tab (the empty state).
 - `?failvote=1` (demo only) makes the next vote cast on that load fail as
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- `?splits=<sessionId>:<yes>-<no>,…` (demo only) overrides named fixture
+  proposals' vote counts so the controversy sort's tie behaviour is
+  reachable by checks without changing the default fixture's numbers.
+- The Controversy sort (closest yes/no split first; unanimous or one-sided
+  proposals sink; equal gaps break by title) ranks the whole loaded inbox,
+  so it renders one flat list — the age-group headers only apply to the
+  default and Newest sorts, where the day buckets are the point.
 - Keep the inbox fetch bounded: parallel with concurrency limit 8 and a
   10 s overall budget, plus short TTL caches (apps 60 s, promoted 30 s).
