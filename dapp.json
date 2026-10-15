@@ -13,14 +13,21 @@
       "expectSelector": "[data-proposal-card]",
       "expectText": "Staging demo proposal",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.share-button",
       "name": "Proposal cards offer a share button",
       "path": "/?demo=1",
       "expectSelector": "[data-share-link]",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.share-sheet",
@@ -28,7 +35,10 @@
       "path": "/?demo=1&share=sheet",
       "expectSelector": "[data-share-link]",
       "expectText": "Share",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.share-copy",
@@ -36,14 +46,20 @@
       "path": "/?demo=1&share=copy",
       "expectSelector": "[data-share-link]",
       "expectText": "Copy link",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.share-copied",
       "name": "Tapping Copy link shows Copied!",
       "path": "/?demo=1&share=copy&tap-share=demo-2",
       "expectText": "Copied!",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.status-bar",
@@ -51,7 +67,11 @@
       "path": "/?demo=1",
       "expectSelector": "[data-proposal-status]",
       "expectText": "Voting",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.relative-age",
@@ -59,7 +79,11 @@
       "path": "/?demo=1",
       "expectSelector": "[data-proposal-card]",
       "expectText": "ago",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.summary-line",
@@ -74,7 +98,10 @@
       "path": "/?demo=1",
       "expectSelector": "#inbox-updated",
       "expectText": "Updated",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.vote-undo",
@@ -82,7 +109,11 @@
       "path": "/?demo=1&cast=demo-2:yes",
       "expectText": "Undo",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.vote-retry",
@@ -91,7 +122,10 @@
       "expectSelector": "[data-retry-vote]",
       "expectText": "Retry vote",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "my-votes.demo",
@@ -100,7 +134,11 @@
       "expectSelector": "[data-vote-row]",
       "expectText": "You voted yes",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "my-votes.order-default",
@@ -108,7 +146,11 @@
       "path": "/?tab=votes&demo=1",
       "expectSelector": "body:has([data-votes-order='newest'][aria-checked='true']) #view [data-vote-row][data-session-id='demo-v1']:first-child",
       "expectText": "weekly summary email",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "my-votes.order-oldest",
@@ -117,7 +159,11 @@
       "expectSelector": "body:has([data-votes-order='oldest'][aria-checked='true']) #view [data-vote-row][data-session-id='demo-v3']:first-child",
       "expectText": "pinned notes",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "my-votes.summary",
@@ -132,7 +178,11 @@
       "path": "/?tab=votes&demo=1",
       "expectSelector": "[data-vote-row][data-vote-status='merged'] [data-merged-date]",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.voter-avatars",
@@ -141,7 +191,11 @@
       "expectSelector": "[data-proposal-card] [data-voter-avatar]",
       "expectText": "+2",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.voter-names",
@@ -150,7 +204,11 @@
       "expectSelector": "[data-yes-voter-names]",
       "expectText": "Maya (demo)",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.trigger",
@@ -159,7 +217,10 @@
       "expectSelector": "[data-app-filter-trigger]",
       "expectText": "All apps",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.counts",
@@ -168,7 +229,11 @@
       "expectSelector": "[data-app-count]",
       "expectText": "(3)",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.one-vote-away",
@@ -177,7 +242,11 @@
       "expectSelector": "body:has([data-one-away-chip][aria-pressed=\"true\"]) #view:not(:has([data-proposal-card]:not([data-needed=\"1\"]))) [data-proposal-card][data-needed=\"1\"]",
       "expectText": "1 vote needed",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.persisted",
@@ -185,7 +254,11 @@
       "path": "/?demo=1&set-filter=staging-demo-archive&set-filter-name=Staging%20Demo%20Archive",
       "expectText": "Staging Demo Archive",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-open-app",
@@ -355,14 +428,20 @@
       "expectSelector": "[data-proposal-card]",
       "expectText": "keyboard shortcuts",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.title-search-empty",
       "name": "Title search shows a no-match empty state",
       "path": "/?demo=1&q=zzz-no-such-title",
       "expectText": "No proposals match",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.vote-share-bar",
@@ -371,7 +450,11 @@
       "expectSelector": "[data-vote-bar]",
       "expectText": "Yes 1 · No 0",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.vote-threshold",
@@ -380,7 +463,11 @@
       "expectSelector": "[data-vote-threshold='2 of 3']",
       "expectText": "2 of 3",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.hide-voted",
@@ -388,7 +475,11 @@
       "path": "/?demo=1&hide-voted=1&allvoted=1",
       "expectText": "Nothing left to vote on",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.hide-merged",
@@ -396,7 +487,11 @@
       "path": "/?demo=1&hide-merged=1&allmerged=1",
       "expectText": "Merged proposals hidden",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.hide-merged-cards",
@@ -404,7 +499,10 @@
       "path": "/?demo=1&hide-merged=1",
       "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'])) #view [data-proposal-card][data-session-id='demo-3']",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.age-groups",
@@ -413,14 +511,21 @@
       "expectSelector": "[data-age-group] [data-age-header]",
       "expectText": "Today",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.sort-default",
       "name": "Default inbox order is most votes needed first",
       "path": "/?demo=1",
       "expectSelector": "[data-proposal-card][data-session-id='demo-4']:first-child",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.sort-newest",
@@ -428,7 +533,11 @@
       "path": "/?demo=1&sort=newest",
       "expectSelector": "[data-proposal-card][data-session-id='demo-2']:first-child",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.no-confirm-dialog",
@@ -436,14 +545,20 @@
       "path": "/?demo=1&tap-no=1",
       "expectText": "No, reject",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.no-confirm-cast",
       "name": "Confirming No, reject records the vote",
       "path": "/?demo=1&tap-no=1&confirm-no=1",
       "expectText": "You voted no",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.title-more",
@@ -452,7 +567,11 @@
       "expectSelector": "[data-proposal-card] [data-title-toggle]",
       "expectText": "More",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.title-expand",
@@ -460,7 +579,11 @@
       "path": "/?demo=1&expand=demo-4",
       "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-title-toggle][aria-expanded='true']",
       "expectText": "Less",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.proposed-date",
@@ -469,7 +592,11 @@
       "expectSelector": "[data-proposal-card] [data-proposed-date]",
       "expectText": "Proposed",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-first",
@@ -669,7 +796,11 @@
       "expectSelector": "#view > [data-proposal-card][data-session-id='demo-5']:first-child",
       "expectText": "pinned notes",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.discuss-button",
@@ -677,7 +808,10 @@
       "path": "/?demo=1",
       "expectSelector": "[data-proposal-card] [data-open-detail]",
       "expectText": "Discuss",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.detail-opens",
@@ -685,7 +819,11 @@
       "path": "/?demo=1&proposal=demo-2",
       "expectSelector": "[data-proposal-detail] [data-vote='yes']",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.star-tap",
@@ -735,7 +873,11 @@
       "expectSelector": "#view > [data-proposal-card][data-session-id='demo-1']:first-child",
       "expectText": "dark mode toggle",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.sort-controversy-tie-order",
@@ -812,7 +954,11 @@
       "expectSelector": "[data-thread-empty]",
       "expectText": "No comments yet",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.thread-renders",
@@ -821,7 +967,11 @@
       "expectSelector": "[data-thread-list]",
       "expectText": "Staging demo comment: how does this affect existing shortcuts?",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.reply-nested",
@@ -830,21 +980,33 @@
       "expectSelector": "[data-replies-of='-101'] [data-comment-id='-102'] [data-comment-body]",
       "expectText": "Staging demo reply: only the new panel keys change.",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.order-top",
       "name": "Top-level comments show oldest first (newest last)",
       "path": "/?demo=1&proposal=demo-4",
       "expectSelector": "[data-thread-list] > article[data-comment-id='-101']:last-of-type",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.order-replies",
       "name": "Replies under a parent show oldest first",
       "path": "/?demo=1&proposal=demo-4",
       "expectSelector": "[data-replies-of='-101'] > article[data-comment-id='-102']:last-of-type",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.post",
@@ -853,7 +1015,11 @@
       "expectSelector": "[data-thread-list]",
       "expectText": "Staging demo posted comment",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.post-last",
@@ -861,7 +1027,11 @@
       "path": "/?demo=1&proposal=demo-2&comment=Staging demo newest comment",
       "expectSelector": "[data-thread-list] > [data-comment]:last-child",
       "expectText": "Staging demo newest comment",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.reply",
@@ -870,14 +1040,22 @@
       "expectSelector": "[data-replies-of='-101'] [data-comment-body]",
       "expectText": "Staging demo posted reply",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.reply-depth",
       "name": "Replying to a reply files it one level up, never deeper",
       "path": "/?demo=1&proposal=demo-4&reply-to=-102&reply=Staging demo depth check",
       "expectSelector": "body:has([data-replies-of='-101'] [data-comment-body]):not(:has([data-replies-of='-102']))",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "threads.detail-vote",
@@ -886,7 +1064,11 @@
       "expectSelector": "[data-proposal-detail]",
       "expectText": "You voted yes",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.row",
@@ -895,7 +1077,10 @@
       "expectSelector": "[data-views-row]",
       "expectText": "Save view",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.unstar-tap",
@@ -1030,7 +1215,10 @@
       "expectSelector": "[data-compare-add]",
       "expectText": "Compare",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.save-appears",
@@ -1039,7 +1227,10 @@
       "expectSelector": "[data-view-chip]",
       "expectText": "My apps",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.pick-one",
@@ -1047,7 +1238,10 @@
       "path": "/?demo=1&pick=demo-1",
       "expectText": "Selected",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.save-captures-filter",
@@ -1055,14 +1249,20 @@
       "path": "/?demo=1&set-filter=staging-demo-app&set-filter-name=Staging%20Demo%20App&add-view=My%20apps&apply-view=My%20apps",
       "expectSelector": "[data-app-filter-trigger]",
       "expectText": "Staging Demo App",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.apply-narrows-list",
       "name": "Applying a saved view filters the list to its app",
       "path": "/?demo=1&set-filter=staging-demo-app&set-filter-name=Staging%20Demo%20App&add-view=My%20apps&apply-view=My%20apps",
       "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-4'])) [data-proposal-card][data-session-id='demo-2']",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.save-persists",
@@ -1071,7 +1271,10 @@
       "expectSelector": "[data-view-chip]",
       "expectText": "My apps",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.bar-one",
@@ -1079,7 +1282,10 @@
       "path": "/?demo=1&pick=demo-1",
       "expectSelector": "[data-compare-bar]",
       "expectText": "Pick one more",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.open-button",
@@ -1087,7 +1293,10 @@
       "path": "/?demo=1&pick=demo-1,demo-2&tap-compare=1",
       "expectSelector": "[data-compare-view]",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.apply-activates",
@@ -1095,7 +1304,10 @@
       "path": "/?demo=1&seed-views=My%20apps&apply-view=My%20apps",
       "expectSelector": "[data-view-chip][aria-pressed='true']",
       "expectText": "My apps",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.apply-filter-label",
@@ -1103,7 +1315,10 @@
       "path": "/?demo=1&seed-views=My%20apps&apply-view=My%20apps",
       "expectSelector": "[data-app-filter-trigger]",
       "expectText": "Staging Demo App",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.apply-one-away",
@@ -1111,7 +1326,10 @@
       "path": "/?demo=1&seed-views=Needs%20one%20vote&apply-view=Needs%20one%20vote",
       "expectSelector": "body:has([data-one-away-chip][aria-pressed='true']) [data-proposal-card][data-needed='1']",
       "expectText": "1 vote needed",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.deep-link",
@@ -1120,14 +1338,20 @@
       "expectSelector": "[data-compare-col='demo-4']",
       "expectText": "dark mode toggle",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.counts",
       "name": "Compare columns show each proposal's vote counts",
       "path": "/?demo=1&compare=demo-1,demo-2",
       "expectText": "Yes 3 · No 1",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.status",
@@ -1136,28 +1360,40 @@
       "expectSelector": "[data-compare-status='merging']",
       "expectText": "Merging",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.votes-needed",
       "name": "Compare columns show votes needed",
       "path": "/?demo=1&compare=demo-1,demo-2",
       "expectText": "1 vote needed",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.apply-resets-one-away",
       "name": "Applying a plain view clears a one-away chip left on",
       "path": "/?demo=1&one-away=1&seed-views=My%20apps&apply-view=My%20apps",
       "expectSelector": "[data-proposal-card][data-session-id='demo-2']",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.apply-sort",
       "name": "A view saved with a sort applies that sort",
       "path": "/?demo=1&sort=newest&add-view=My%20order&apply-view=My%20order",
       "expectSelector": "[data-proposal-card][data-session-id='demo-2']:first-child",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.count-all",
@@ -1166,7 +1402,10 @@
       "expectSelector": "[data-view-chip][data-view-name='All open'] [data-view-count]",
       "expectText": "(6)",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.details",
@@ -1174,7 +1413,10 @@
       "path": "/?demo=1&compare=demo-1,demo-2",
       "expectSelector": "[data-compare-proposed]",
       "expectText": "Proposed",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.vote-buttons",
@@ -1182,7 +1424,10 @@
       "path": "/?demo=1&compare=demo-4,demo-6",
       "expectSelector": "[data-compare-view] [data-vote='yes']",
       "expectText": "No",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.vote-yes",
@@ -1190,7 +1435,10 @@
       "path": "/?demo=1&compare=demo-1,demo-2&cast=demo-2:yes",
       "expectText": "You voted yes",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.count-app",
@@ -1198,7 +1446,10 @@
       "path": "/?demo=1&seed-views=My%20apps",
       "expectSelector": "[data-view-chip][data-view-name='My apps'] [data-view-count]",
       "expectText": "(3)",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.count-one-away",
@@ -1206,7 +1457,10 @@
       "path": "/?demo=1&seed-views=Needs%20one%20vote",
       "expectSelector": "[data-view-chip][data-view-name='Needs one vote'] [data-view-count]",
       "expectText": "(2)",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.count-hide-merged",
@@ -1214,7 +1468,10 @@
       "path": "/?demo=1&seed-views=Unmerged",
       "expectSelector": "[data-view-chip][data-view-name='Unmerged'] [data-view-count]",
       "expectText": "(5)",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.rename",
@@ -1223,7 +1480,10 @@
       "expectSelector": "[data-view-chip]",
       "expectText": "Top picks",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.vote-no-confirm",
@@ -1231,7 +1491,10 @@
       "path": "/?demo=1&compare=demo-1,demo-2&tap-no-compare=demo-1",
       "expectText": "No, reject",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.rename-persists",
@@ -1239,28 +1502,40 @@
       "path": "/?demo=1&seed-views=My%20apps&rename-view=My%20apps:Top%20picks&save-reload=1",
       "expectSelector": "[data-view-chip]",
       "expectText": "Top picks",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.delete",
       "name": "Deleting a view removes its chip, keeps the others",
       "path": "/?demo=1&seed-views=All%20open,My%20apps&delete-view=My%20apps",
       "expectSelector": "body:not(:has([data-view-chip][data-view-name='My apps'])) [data-view-chip][data-view-name='All open']",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.delete-persists",
       "name": "A deleted view stays gone after a reload",
       "path": "/?demo=1&seed-views=All%20open,My%20apps&delete-view=My%20apps&save-reload=1",
       "expectSelector": "body:not(:has([data-view-chip][data-view-name='My apps'])) [data-view-chip][data-view-name='All open']",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.delete-last-empty",
       "name": "Deleting the last view shows the empty hint again",
       "path": "/?demo=1&seed-views=My%20apps&delete-view=My%20apps",
       "expectText": "No saved views yet",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.switch-between",
@@ -1269,14 +1544,20 @@
       "expectSelector": "[data-view-chip][data-view-name='Needs one vote'][aria-pressed='true']",
       "expectText": "All apps",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.vote-no-cast",
       "name": "Confirming No inside compare view records the vote",
       "path": "/?demo=1&compare=demo-1,demo-2&tap-no-compare=demo-1&confirm-no=1",
       "expectText": "You voted no",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.max-two",
@@ -1284,14 +1565,20 @@
       "path": "/?demo=1&pick=demo-1,demo-2,demo-3",
       "expectSelector": "[data-compare-bar]",
       "expectText": "2 selected",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.toggle-off",
       "name": "Tapping a selected card's Compare button removes it",
       "path": "/?demo=1&pick=demo-1&tap-compare-add=demo-1",
       "expectSelector": "body:not(:has([data-compare-bar])) #view [data-proposal-card][data-session-id='demo-1']",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.clear-view",
@@ -1299,7 +1586,10 @@
       "path": "/?demo=1&compare=demo-1,demo-2&tap-clear=1",
       "expectSelector": "body:not(:has([data-compare-view])) #view [data-proposal-card][data-session-id='demo-1']",
       "visual": true,
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.save-updates-existing",
@@ -1307,21 +1597,30 @@
       "path": "/?demo=1&seed-views=My%20apps&save-view=My%20apps",
       "expectSelector": "body:not(:has([data-view-chip][data-view-index='1'])) [data-view-chip][data-view-index='0']",
       "expectText": "My apps",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "views.hidden-on-votes",
       "name": "The views switcher row is hidden on the My Votes tab",
       "path": "/?tab=votes&demo=1",
       "expectSelector": "[data-views-row][data-hidden='1']",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.clear-bar",
       "name": "Clear on the compare bar empties the selection",
       "path": "/?demo=1&pick=demo-1&tap-clear=1",
       "expectSelector": "body:not(:has([data-compare-bar])) #view [data-proposal-card][data-session-id='demo-2']",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "compare.unknown-id",
@@ -1329,7 +1628,178 @@
       "path": "/?demo=1&compare=demo-1,zzz-unknown",
       "expectSelector": "[data-compare-bar]",
       "expectText": "Pick one more",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "bulk.select-control",
+      "name": "Inbox offers a Select control",
+      "path": "/?demo=1",
+      "expectSelector": "[data-select-mode-toggle]",
+      "expectText": "Select",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "bulk.mode-enters",
+      "name": "Select mode shows the bulk bar",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-select-bar]:not([hidden])"
+    },
+    {
+      "id": "bulk.checkboxes-render",
+      "name": "Select mode puts a checkbox on votable cards",
+      "path": "/?demo=1&selectmode=1&select=demo-2&deselect=demo-2",
+      "expectSelector": "[data-proposal-card] [data-select-toggle]"
+    },
+    {
+      "id": "bulk.voted-not-selectable",
+      "name": "Already-voted cards offer no checkbox",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-3']):not(:has([data-proposal-card][data-session-id='demo-3'] [data-select-toggle]))"
+    },
+    {
+      "id": "bulk.card-selects",
+      "name": "Ticking a card marks it selected",
+      "path": "/?demo=1&select=demo-1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-selected='true']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "bulk.counter-one",
+      "name": "Counter reads one selected",
+      "path": "/?demo=1&select=demo-1",
+      "expectText": "1 selected"
+    },
+    {
+      "id": "bulk.counter-three",
+      "name": "Counter reads three selected",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-6",
+      "expectText": "3 selected"
+    },
+    {
+      "id": "bulk.counter-empty-mode",
+      "name": "Select mode with nothing ticked reads zero selected",
+      "path": "/?demo=1&selectmode=1",
+      "expectText": "0 selected"
+    },
+    {
+      "id": "bulk.deselect-card",
+      "name": "Unticking a card unmarks it",
+      "path": "/?demo=1&select=demo-1,demo-2&deselect=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'][data-selected='false']"
+    },
+    {
+      "id": "bulk.counter-after-deselect",
+      "name": "Counter drops after an untick",
+      "path": "/?demo=1&select=demo-1,demo-2&deselect=demo-2",
+      "expectText": "1 selected"
+    },
+    {
+      "id": "bulk.approve-votes",
+      "name": "Bulk approve votes yes on every selected card",
+      "path": "/?demo=1&select=demo-1,demo-6&bulk=approve",
+      "expectText": "You voted yes"
+    },
+    {
+      "id": "bulk.approve-toast",
+      "name": "Bulk approve names its outcome",
+      "path": "/?demo=1&select=demo-1,demo-6&bulk=approve",
+      "expectText": "Approved 2"
+    },
+    {
+      "id": "bulk.approve-clears-counter",
+      "name": "Counter resets after bulk approve",
+      "path": "/?demo=1&select=demo-1,demo-6&bulk=approve",
+      "expectText": "0 selected"
+    },
+    {
+      "id": "bulk.hide-votes",
+      "name": "Bulk hide votes no on every selected card",
+      "path": "/?demo=1&select=demo-1&bulk=hide",
+      "expectText": "You voted no"
+    },
+    {
+      "id": "bulk.hide-toast",
+      "name": "Bulk hide names its outcome",
+      "path": "/?demo=1&select=demo-1&bulk=hide",
+      "expectText": "Hid 1 proposal"
+    },
+    {
+      "id": "bulk.clear-all",
+      "name": "Clear empties the selection",
+      "path": "/?demo=1&select=demo-1,demo-2&clearsel=1",
+      "expectText": "0 selected"
+    },
+    {
+      "id": "bulk.clear-unmarks",
+      "name": "Clear unticks the selected cards",
+      "path": "/?demo=1&select=demo-1,demo-2&clearsel=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-selected='false']"
+    },
+    {
+      "id": "bulk.clear-keeps-mode",
+      "name": "Clear keeps select mode on",
+      "path": "/?demo=1&select=demo-1,demo-2&clearsel=1",
+      "expectSelector": "[data-select-bar]:not([hidden])"
+    },
+    {
+      "id": "bulk.selection-survives-search",
+      "name": "Selection survives the title search filter",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-4&q=tag",
+      "expectText": "3 selected"
+    },
+    {
+      "id": "bulk.selection-survives-app-filter",
+      "name": "Selection survives the app filter",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-6&filter=staging-demo-notes",
+      "expectText": "3 selected"
+    },
+    {
+      "id": "bulk.selection-survives-one-away",
+      "name": "Selection survives the one-vote-away filter",
+      "path": "/?demo=1&select=demo-1,demo-2&one-away=1",
+      "expectText": "2 selected"
+    },
+    {
+      "id": "bulk.deselect-while-filtered",
+      "name": "Unticking a filtered-out card keeps the counter accurate",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-4&filter=staging-demo-notes&deselect=demo-4",
+      "expectText": "2 selected"
+    },
+    {
+      "id": "bulk.done-exits",
+      "name": "Done leaves select mode and clears the checkboxes",
+      "path": "/?demo=1&select=demo-1&exitsel=1",
+      "expectSelector": "body:has(#view [data-proposal-card]):not(:has([data-select-toggle]))"
+    },
+    {
+      "id": "bulk.one-tap-in-select-mode",
+      "name": "One-tap voting keeps working in select mode",
+      "path": "/?demo=1&selectmode=1&cast=demo-1:yes",
+      "expectText": "You voted yes"
+    },
+    {
+      "id": "bulk.approve-button-renders",
+      "name": "Bulk bar offers Approve",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-bulk-approve]",
+      "expectText": "Approve"
+    },
+    {
+      "id": "bulk.hide-button-renders",
+      "name": "Bulk bar offers Hide",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-bulk-hide]",
+      "expectText": "Hide"
     }
   ]
 }
