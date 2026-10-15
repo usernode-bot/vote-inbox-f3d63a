@@ -309,6 +309,181 @@
       "expectText": "Proposed",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "views.row",
+      "name": "Saved views switcher row renders with a Save view button",
+      "path": "/?demo=1",
+      "expectSelector": "[data-views-row]",
+      "expectText": "Save view",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.save-appears",
+      "name": "Saving the current screen shows it as a named chip",
+      "path": "/?demo=1&add-view=My%20apps",
+      "expectSelector": "[data-view-chip]",
+      "expectText": "My apps",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.save-captures-filter",
+      "name": "A saved view captures the app filter in force when saved",
+      "path": "/?demo=1&set-filter=staging-demo-app&set-filter-name=Staging%20Demo%20App&add-view=My%20apps&apply-view=My%20apps",
+      "expectSelector": "[data-app-filter-trigger]",
+      "expectText": "Staging Demo App",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.apply-narrows-list",
+      "name": "Applying a saved view filters the list to its app",
+      "path": "/?demo=1&set-filter=staging-demo-app&set-filter-name=Staging%20Demo%20App&add-view=My%20apps&apply-view=My%20apps",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-4'])) [data-proposal-card][data-session-id='demo-2']",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.save-persists",
+      "name": "A saved view is still there after a clean reload",
+      "path": "/?demo=1&seed-views=My%20apps&save-reload=1",
+      "expectSelector": "[data-view-chip]",
+      "expectText": "My apps",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.apply-activates",
+      "name": "Applying a view marks its chip active",
+      "path": "/?demo=1&seed-views=My%20apps&apply-view=My%20apps",
+      "expectSelector": "[data-view-chip][aria-pressed='true']",
+      "expectText": "My apps",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.apply-filter-label",
+      "name": "Applying a view sets the app filter trigger to its app",
+      "path": "/?demo=1&seed-views=My%20apps&apply-view=My%20apps",
+      "expectSelector": "[data-app-filter-trigger]",
+      "expectText": "Staging Demo App",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.apply-one-away",
+      "name": "Applying a view turns on its one-vote-away chip",
+      "path": "/?demo=1&seed-views=Needs%20one%20vote&apply-view=Needs%20one%20vote",
+      "expectSelector": "body:has([data-one-away-chip][aria-pressed='true']) [data-proposal-card][data-needed='1']",
+      "expectText": "1 vote needed",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.apply-resets-one-away",
+      "name": "Applying a plain view clears a one-away chip left on",
+      "path": "/?demo=1&one-away=1&seed-views=My%20apps&apply-view=My%20apps",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2']",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.apply-sort",
+      "name": "A view saved with a sort applies that sort",
+      "path": "/?demo=1&sort=newest&add-view=My%20order&apply-view=My%20order",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2']:first-child",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.count-all",
+      "name": "A view matching everything shows its count of 6",
+      "path": "/?demo=1&seed-views=All%20open",
+      "expectSelector": "[data-view-chip][data-view-name='All open'] [data-view-count]",
+      "expectText": "(6)",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.count-app",
+      "name": "A view pinned to one app counts that app's proposals",
+      "path": "/?demo=1&seed-views=My%20apps",
+      "expectSelector": "[data-view-chip][data-view-name='My apps'] [data-view-count]",
+      "expectText": "(3)",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.count-one-away",
+      "name": "A one-vote-away view counts only one-needed proposals",
+      "path": "/?demo=1&seed-views=Needs%20one%20vote",
+      "expectSelector": "[data-view-chip][data-view-name='Needs one vote'] [data-view-count]",
+      "expectText": "(2)",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.count-hide-merged",
+      "name": "A hide-merged view counts only unmerged proposals",
+      "path": "/?demo=1&seed-views=Unmerged",
+      "expectSelector": "[data-view-chip][data-view-name='Unmerged'] [data-view-count]",
+      "expectText": "(5)",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.rename",
+      "name": "Renaming a view shows the new name on its chip",
+      "path": "/?demo=1&seed-views=My%20apps&rename-view=My%20apps:Top%20picks",
+      "expectSelector": "[data-view-chip]",
+      "expectText": "Top picks",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.rename-persists",
+      "name": "A renamed view keeps its new name after a reload",
+      "path": "/?demo=1&seed-views=My%20apps&rename-view=My%20apps:Top%20picks&save-reload=1",
+      "expectSelector": "[data-view-chip]",
+      "expectText": "Top picks",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.delete",
+      "name": "Deleting a view removes its chip, keeps the others",
+      "path": "/?demo=1&seed-views=All%20open,My%20apps&delete-view=My%20apps",
+      "expectSelector": "body:not(:has([data-view-chip][data-view-name='My apps'])) [data-view-chip][data-view-name='All open']",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.delete-persists",
+      "name": "A deleted view stays gone after a reload",
+      "path": "/?demo=1&seed-views=All%20open,My%20apps&delete-view=My%20apps&save-reload=1",
+      "expectSelector": "body:not(:has([data-view-chip][data-view-name='My apps'])) [data-view-chip][data-view-name='All open']",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.delete-last-empty",
+      "name": "Deleting the last view shows the empty hint again",
+      "path": "/?demo=1&seed-views=My%20apps&delete-view=My%20apps",
+      "expectText": "No saved views yet",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.switch-between",
+      "name": "Switching views moves the active chip and resets the filter",
+      "path": "/?demo=1&seed-views=My%20apps,Needs%20one%20vote&apply-view=My%20apps,Needs%20one%20vote",
+      "expectSelector": "[data-view-chip][data-view-name='Needs one vote'][aria-pressed='true']",
+      "expectText": "All apps",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.save-updates-existing",
+      "name": "Saving over an existing name updates that one view",
+      "path": "/?demo=1&seed-views=My%20apps&save-view=My%20apps",
+      "expectSelector": "body:not(:has([data-view-chip][data-view-index='1'])) [data-view-chip][data-view-index='0']",
+      "expectText": "My apps",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "views.hidden-on-votes",
+      "name": "The views switcher row is hidden on the My Votes tab",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "[data-views-row][data-hidden='1']",
+      "impact": ["public/index.html", "dapp.json"]
     }
   ]
 }
