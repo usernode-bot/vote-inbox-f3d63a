@@ -311,6 +311,28 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.sort-controversy-option",
+      "name": "Sort pill offers a Controversy option",
+      "path": "/?demo=1",
+      "expectSelector": "#sort-row [data-sort='controversy']",
+      "expectText": "Controversy"
+    },
+    {
+      "id": "inbox.sort-controversy-active",
+      "name": "Controversy is the selected sort when the URL asks for it",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#sort-row [data-sort='controversy'][aria-checked='true']"
+    },
+    {
+      "id": "inbox.sort-controversy-order",
+      "name": "Controversy sort puts the tightest race on top",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-5']:first-child",
+      "expectText": "pinned notes",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "threads.discuss-button",
       "name": "Proposal cards offer a Discuss button",
       "path": "/?demo=1",
@@ -325,6 +347,115 @@
       "expectSelector": "[data-proposal-detail] [data-vote='yes']",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-controversy-split-order",
+      "name": "Contested proposals run tightest gap first",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-5'] ~ [data-proposal-card][data-session-id='demo-1'] ~ [data-proposal-card][data-session-id='demo-4']"
+    },
+    {
+      "id": "inbox.sort-controversy-unanimous-last",
+      "name": "A unanimous proposal lands at the bottom",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-3']:last-child",
+      "expectText": "export to CSV"
+    },
+    {
+      "id": "inbox.sort-controversy-sink",
+      "name": "One-sided proposals sit below the contested ones",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-4'] ~ [data-proposal-card][data-session-id='demo-2']"
+    },
+    {
+      "id": "inbox.sort-controversy-one-sided-order",
+      "name": "One-sided cards order by gap below the contested ones",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-2'] ~ [data-proposal-card][data-session-id='demo-6'] ~ [data-proposal-card][data-session-id='demo-3']"
+    },
+    {
+      "id": "inbox.sort-controversy-contested-block",
+      "name": "No one-sided card precedes a contested one",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-contested='false'] ~ [data-proposal-card][data-contested='true']))",
+      "expectText": "Staging demo proposal"
+    },
+    {
+      "id": "inbox.sort-controversy-tie-title",
+      "name": "Equal contested gaps break the tie by title",
+      "path": "/?demo=1&splits=demo-5:3-2,demo-1:4-3&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-1']:first-child",
+      "expectText": "dark mode toggle",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.sort-controversy-tie-order",
+      "name": "Tied races keep their deterministic order with the rest",
+      "path": "/?demo=1&splits=demo-5:3-2,demo-1:4-3&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-1'] ~ [data-proposal-card][data-session-id='demo-5'] ~ [data-proposal-card][data-session-id='demo-4']"
+    },
+    {
+      "id": "inbox.sort-controversy-tie-one-sided",
+      "name": "Equal one-sided gaps break the tie by title too",
+      "path": "/?demo=1&splits=demo-2:2-0,demo-6:2-0&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-6'] ~ [data-proposal-card][data-session-id='demo-2']"
+    },
+    {
+      "id": "inbox.sort-controversy-gap-symmetric",
+      "name": "Gap measures the split whichever side leads",
+      "path": "/?demo=1&splits=demo-1:1-3&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-5'] ~ [data-proposal-card][data-session-id='demo-1']"
+    },
+    {
+      "id": "inbox.sort-controversy-filter-app",
+      "name": "App filter applies first, then controversy orders the rest",
+      "path": "/?demo=1&set-filter=staging-demo-app&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-1']:first-child"
+    },
+    {
+      "id": "inbox.sort-controversy-filter-sunk",
+      "name": "Under a filter the one-sided cards still sink",
+      "path": "/?demo=1&set-filter=staging-demo-app&sort=controversy",
+      "expectSelector": "#view [data-proposal-card][data-session-id='demo-1'] ~ [data-proposal-card][data-session-id='demo-2'] ~ [data-proposal-card][data-session-id='demo-3']"
+    },
+    {
+      "id": "inbox.sort-controversy-filter-other-app",
+      "name": "Controversy sort re-ranks a second app's filtered set",
+      "path": "/?demo=1&set-filter=staging-demo-notes&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-5']:first-child",
+      "expectText": "pinned notes"
+    },
+    {
+      "id": "inbox.sort-controversy-hide-voted",
+      "name": "Hide voted drops the voted card and keeps the ranking",
+      "path": "/?demo=1&hide-voted=1&sort=controversy",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-session-id='demo-1'])) [data-proposal-card][data-session-id='demo-5']"
+    },
+    {
+      "id": "inbox.sort-controversy-hide-merged",
+      "name": "Hide merged drops the merged card and the next tightest leads",
+      "path": "/?demo=1&hide-merged=1&sort=controversy",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'])) #view > [data-proposal-card][data-session-id='demo-1']:first-child"
+    },
+    {
+      "id": "inbox.sort-controversy-one-away",
+      "name": "One vote away chip keeps the controversy ranking",
+      "path": "/?demo=1&one-away=1&sort=controversy",
+      "expectSelector": "body:has([data-one-away-chip][aria-pressed='true']) #view > [data-proposal-card][data-session-id='demo-1']:first-child"
+    },
+    {
+      "id": "inbox.sort-controversy-search",
+      "name": "Title search combines with the controversy sort",
+      "path": "/?demo=1&q=dark&sort=controversy",
+      "expectSelector": "#view > [data-proposal-card][data-session-id='demo-1']:first-child",
+      "expectText": "dark mode toggle"
+    },
+    {
+      "id": "inbox.sort-controversy-empty-filter",
+      "name": "Controversy sort shows the app filter's empty state",
+      "path": "/?demo=1&set-filter=staging-demo-archive&sort=controversy",
+      "expectText": "Nothing from this app"
     },
     {
       "id": "threads.empty",
