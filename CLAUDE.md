@@ -140,6 +140,17 @@ user's vote history.
   `?select=` are un-voted first, so repeated check runs against a shared
   staging database always start from unvoted cards. Selection lives in
   frontend memory only and is never persisted.
+- Change-summary row on cards: `normalizeProposal` passes through `summary`
+  (from `summary_md`/`summary`/`description` spellings, trimmed, capped at
+  4000 chars) and `filesChanged` (from `files_changed`/`changed_files` — an
+  integer or an array of names, whose length is used) as optional fields;
+  `null` means the row or count simply does not render (no placeholder). The
+  demo fixtures (`DEMO_CHANGE_SUMMARIES` in `server.js`) cover clamp, plural,
+  singular, summary-only, count-only and neither. Demo hooks (staging +
+  `?demo=1` only): `?expand-summary=<sessionId>` presets a card's summary
+  open, `?tap-summary=<sessionId>` taps the line after render (the real
+  click path); paired they show collapsing. Expansion state is per card in
+  frontend memory only.
 - `?turnout-refresh=1` (demo only) reloads the inbox through the real
   refresh path with the fetch carrying `?turnoutalt=1`, which the server
   answers with a variant fixture (two more proposals merged), so the app
