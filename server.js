@@ -901,9 +901,14 @@ function findDemoComment(appSlug, sessionId, id) {
 app.get('/api/inbox', async (req, res) => {
   const userToken = userTokenFrom(req);
   try {
+    // The demo inbox is a fixed fixture, myVote included: the fixture's own
+    // values are the demo truth, so the demo vote hook's persisted my_votes
+    // rows are deliberately NOT overlaid here (they surface on the plain
+    // My Votes route instead). Overlaying them made every load answer
+    // differently depending on what a previous load had cast — one check's
+    // cast vote hid another check's vote buttons.
     if (req.query.demo === '1' && IS_STAGING) {
       const demo = demoInboxPayload(req);
-      await withMyVotes(demo.proposals, req.user.id);
       await withMyStars(demo.proposals, req.user.id, req);
       return res.json(demo);
     }
@@ -912,7 +917,6 @@ app.get('/api/inbox', async (req, res) => {
       // plain local launch; keep the screen reviewable there with fixtures.
       if (IS_STAGING) {
         const demo = demoInboxPayload(req);
-        await withMyVotes(demo.proposals, req.user.id);
         await withMyStars(demo.proposals, req.user.id, req);
         return res.json(demo);
       }
