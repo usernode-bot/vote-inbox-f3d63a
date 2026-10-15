@@ -235,6 +235,16 @@
     // ?tap-share=<sessionId> (demo only) taps that card's share button once
     // the inbox has rendered, the way ?tap-no=1 taps a vote button.
     var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
+    // Staging-check fixture: ?turnout-refresh=1 (demo only) reloads the
+    // inbox through the real refresh path once the app filter dropdown has
+    // opened, with the reloaded fetch carrying ?turnoutalt=1 so the server
+    // serves the variant fixture: two proposals merged since the first
+    // load. The open dropdown's per-app open and merged-this-week counts
+    // must then update in place, which is what the turnout checks assert.
+    // Never sent without demo data.
+    var TURNOUT_REFRESH = DEMO && params.get('turnout-refresh') === '1';
+    // Set just before the hook's reload, so that one fetch gets the variant.
+    var turnoutAltNext = false;
     // ?tap-star=<sessionId> (demo only) taps that card's star button once its
     // list has rendered — the real button, through the real delegated click
     // handler — so starring (and, with ?preset-star=, unstarring) is
@@ -2561,23 +2571,49 @@
     var filterTrigger = document.getElementById('app-filter-trigger');
     var filterPanelEl = document.getElementById('app-filter-panel');
     var openFilter = null; // { dismiss } from the native kit, or a plain fallback
+    // The open dropdown's list renderer, kept so a data reload can refresh
+    // the per-app counts in place (see maybeRerenderFilter). Null while the
+    // dropdown is closed.
+    var activeFilterRender = null;
 
     function filterApps() {
       return (state.inbox && state.inbox.apps) || [];
     }
 
-    // Per-app open counts for the filter list, tallied from the loaded
-    // inbox proposals (no extra request). Counts every loaded proposal,
-    // regardless of the current filter or the Hide voted switch: voted
-    // proposals are still open.
-    function filterCounts() {
-      var counts = {};
+    // True when the proposal merged within the last seven calendar days
+    // (today plus the six before it, in the viewer's own local time — the
+    // same span the age groups call "This week"). Needs a usable merged
+    // timestamp; a merged proposal without one counts nowhere.
+    function mergedThisWeek(p) {
+      if (p.status !== 'merged') return false;
+      var t = p.mergedAt ? Date.parse(p.mergedAt) : NaN;
+      if (isNaN(t)) return false;
+      var now = new Date();
+      var d = new Date(t);
+      var startOfDay = function (x) {
+        return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      };
+      var daysBack = Math.floor((startOfDay(now) - startOfDay(d)) / (24 * 3600 * 1000));
+      return daysBack >= 0 && daysBack <= 6;
+    }
+
+    // Per-app numbers for the filter list, tallied from the loaded inbox
+    // proposals (no extra request), regardless of the current filter or the
+    // Hide switches. Open counts the app's loaded proposals not yet merged
+    // (voted ones are still open, and 'merging' is not merged yet either);
+    // merged counts the app's merged proposals whose merge fell in the last
+    // seven days.
+    function filterStats() {
+      var open = {};
+      var merged = {};
       var proposals = (state.inbox && state.inbox.proposals) || [];
       for (var i = 0; i < proposals.length; i++) {
-        var slug = proposals[i].appSlug;
-        counts[slug] = (counts[slug] || 0) + 1;
+        var p = proposals[i];
+        var slug = p.appSlug;
+        if (p.status !== 'merged') open[slug] = (open[slug] || 0) + 1;
+        else if (mergedThisWeek(p)) merged[slug] = (merged[slug] || 0) + 1;
       }
-      return counts;
+      return { open: open, merged: merged };
     }
 
     function findFilterApp(slug) {
@@ -2615,7 +2651,7 @@
       oneAwayChip.setAttribute('aria-pressed', state.oneAway ? 'true' : 'false');
     }
 
-    function filterRowEl(app, selected, count) {
+    function filterRowEl(app, selected, openCount, mergedCount) {
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.setAttribute('role', 'option');
@@ -2628,12 +2664,17 @@
       if (app) {
         btn.innerHTML = appAvatar({ appSlug: app.slug, appName: app.name, icon: app.icon })
           + '<span class="min-w-0 flex-1 truncate">' + esc(app.name) + '</span>'
-          // Muted count of the app's loaded proposals; font-normal and the
-          // zinc colour keep it quiet on the selected (semibold, violet) row.
-          + (count > 0
-            ? '<span data-app-count class="shrink-0 text-xs font-normal tabular-nums text-zinc-500 dark:text-zinc-400">('
-              + count + ')</span>'
-            : '')
+          // Muted numbers tallied from the loaded inbox: the app's open
+          // proposals, then its merges from the last seven days. font-normal
+          // and the zinc colour keep them quiet on the selected (semibold,
+          // violet) row; data-app-count / data-app-merged carry the values
+          // for the declared checks.
+          + '<span data-app-count="' + openCount + '"'
+          + ' class="shrink-0 text-xs font-normal tabular-nums text-zinc-500 dark:text-zinc-400">('
+          + openCount + ')</span>'
+          + '<span data-app-merged="' + mergedCount + '" title="Merged in the last 7 days"'
+          + ' class="shrink-0 whitespace-nowrap text-xs font-normal tabular-nums text-zinc-500 dark:text-zinc-400">· '
+          + mergedCount + ' merged this week</span>'
           + (selected ? FILTER_CHECK : '');
       } else {
         btn.innerHTML = FILTER_ALL_ICON
@@ -2668,13 +2709,14 @@
       function renderList() {
         var query = input.value.trim().toLowerCase();
         var apps = filterApps();
-        var counts = filterCounts();
+        var stats = filterStats();
         list.innerHTML = '';
         var shown = 0;
         if (!query) list.appendChild(filterRowEl(null, state.filter === ''));
         for (var i = 0; i < apps.length; i++) {
           if (query && apps[i].name.toLowerCase().indexOf(query) === -1) continue;
-          list.appendChild(filterRowEl(apps[i], apps[i].slug === state.filter, counts[apps[i].slug] || 0));
+          list.appendChild(filterRowEl(apps[i], apps[i].slug === state.filter,
+            stats.open[apps[i].slug] || 0, stats.merged[apps[i].slug] || 0));
           shown++;
         }
         if (query && !shown) {
@@ -2693,6 +2735,7 @@
       });
       input.addEventListener('input', renderList);
       renderList();
+      activeFilterRender = renderList;
       return content;
     }
 
@@ -2710,6 +2753,7 @@
       if (!openFilter) return;
       var f = openFilter;
       openFilter = null;
+      activeFilterRender = null;
       filterTrigger.setAttribute('aria-expanded', 'false');
       if (f.dismiss) {
         try { f.dismiss(); } catch (e) { /* already gone */ }
@@ -2734,7 +2778,7 @@
             anchorEl: filterTrigger,
             contentEl: content,
             placement: 'bottom-start',
-            onDismiss: function () { openFilter = null; syncFilter(); },
+            onDismiss: function () { openFilter = null; activeFilterRender = null; syncFilter(); },
           });
         } catch (e) { handle = null; }
         if (handle) {
@@ -2811,6 +2855,8 @@
       if (DEMO) query.push('demo=1');
       if (ALL_VOTED) query.push('allvoted=1');
       if (ALL_MERGED) query.push('allmerged=1');
+      // Check-fixture variant on the hook's reload; see TURNOUT_REFRESH.
+      if (turnoutAltNext) query.push('turnoutalt=1');
       if (PRESET_STAR) query.push('preset-star=' + encodeURIComponent(PRESET_STAR));
       if (SPLITS) query.push('splits=' + encodeURIComponent(SPLITS));
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
@@ -2829,7 +2875,9 @@
         .then(function () {
           state.loadingInbox = false;
           render();
+          maybeRerenderFilter();
           maybeAutoOpenFilter();
+          maybeTurnoutRefresh();
           maybeTapNo();
           maybeTapShare();
           maybeTapStar();
@@ -3359,6 +3407,31 @@
       if (!DEMO || !OPEN_FILTER || state.errorInbox || !state.inbox) return;
       openFilterSet = false;
       openAppFilter();
+    }
+
+    // The dropdown is open while the underlying data reloads: re-render its
+    // list in place so the per-app open and merged-this-week counts show the
+    // fresh numbers. Runs after every inbox load; a no-op when the dropdown
+    // is closed or the load failed (then there is nothing new to tally).
+    // The list rebuild leaves the popover and its search input untouched.
+    function maybeRerenderFilter() {
+      if (!openFilter || !activeFilterRender || !state.inbox) return;
+      activeFilterRender();
+    }
+
+    // Staging check hook (see TURNOUT_REFRESH): once the first load has
+    // rendered and the auto-opened dropdown is up, refresh the inbox through
+    // the real path (loadInbox) with the variant fixture, so the open
+    // dropdown's counts visibly change. Demo only; one-shot.
+    var turnoutRefreshDone = false;
+    function maybeTurnoutRefresh() {
+      if (!TURNOUT_REFRESH || turnoutRefreshDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      turnoutRefreshDone = true;
+      setTimeout(function () {
+        turnoutAltNext = true;
+        loadInbox(true);
+      }, 300);
     }
 
     // Staging demo hook: ?demo=1&expand=<sessionId> expands one proposal's
