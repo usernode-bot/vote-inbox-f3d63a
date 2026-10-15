@@ -118,11 +118,13 @@
     <p id="inbox-updated" class="-mt-1.5 pb-1 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="inbox-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="votes-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
+    <p id="watchlist-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
     <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
       <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
+        <button data-tab="watchlist" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Watchlist<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
       </div>
       <div id="views-row" data-views-row data-hidden="0" class="mt-2 flex items-center gap-2">
@@ -243,6 +245,23 @@
     var TURNOUT_REFRESH = DEMO && params.get('turnout-refresh') === '1';
     // Set just before the hook's reload, so that one fetch gets the variant.
     var turnoutAltNext = false;
+    // ?tap-star=<sessionId> (demo only) taps that card's star button once its
+    // list has rendered — the real button, through the real delegated click
+    // handler — so starring (and, with ?preset-star=, unstarring) is
+    // reachable by a check. Demo only; one-shot.
+    var TAP_STAR = DEMO ? (params.get('tap-star') || '') : '';
+    // ?preset-star=<sessionId,...> (demo only) is forwarded to the demo inbox
+    // so those cards render starred for that load without touching storage.
+    var PRESET_STAR = DEMO ? (params.get('preset-star') || '') : '';
+    // ?watch-mine=1 (demo only) asks the demo watchlist to merge the caller's
+    // own real starred rows (recorded via ?set-star=) into the fixture, so a
+    // check can observe star → reload → still listed from actual storage.
+    var WATCH_MINE = DEMO && params.get('watch-mine') === '1';
+    // ?watch-empty=1 (demo only) asks the demo watchlist for no rows, so the
+    // empty state is reachable by a check. ?watch-seen=1 marks every fixture
+    // row as already seen, so the no-badge state is reachable too.
+    var WATCH_EMPTY = DEMO && params.get('watch-empty') === '1';
+    var WATCH_SEEN = DEMO && params.get('watch-seen') === '1';
     // Compare-flow fixtures, all demo only. ?compare=<id>,<id> seeds a
     // two-proposal selection AND opens the compare view (the deep link the
     // checks use for the side-by-side state); ?pick=<ids> seeds the
@@ -258,9 +277,11 @@
     var TAP_NO_COMPARE = DEMO ? (params.get('tap-no-compare') || '') : '';
 
     var state = {
-      tab: params.get('tab') === 'votes' ? 'votes' : 'inbox',
+      tab: params.get('tab') === 'votes' ? 'votes'
+        : params.get('tab') === 'watchlist' ? 'watchlist' : 'inbox',
       inbox: null,
       votes: null,
+      watchlist: null,
       inboxLoadedAt: null,
       filter: '',
       filterName: '',
@@ -279,15 +300,23 @@
       votesOrder: params.get('votes-order') === 'oldest' ? 'oldest' : 'newest',
       loadingInbox: false,
       loadingVotes: false,
+      loadingWatchlist: false,
       errorInbox: null,
       errorVotes: null,
+      errorWatchlist: null,
       pending: {},
+      // Star toggles in flight, per session and per watchlist row.
+      starPending: {},
+      // The watchlist tab's rows are marked seen once per load of its data,
+      // right after they render, so the next visit only badges new changes.
+      watchSeenMarked: false,
       // In-memory retry queue for votes that failed offline: sessionId ->
       // { choice, payload, snapshot }. Never persisted; a page reload
       // clears it and the next inbox load shows the platform's truth.
       retryQueue: {},
       queuedInbox: false,
       queuedVotes: false,
+      queuedWatchlist: false,
       // Session ids whose card title the user expanded with More. A re-render
       // (a vote, a filter change) keeps those titles expanded; not persisted,
       // a reload starts collapsed again.
@@ -534,6 +563,53 @@
       remainingParams.set('clear-set-filter', '1');
       var remainingQ = remainingParams.toString();
       location.replace(location.pathname + (remainingQ ? '?' + remainingQ : '') + location.hash);
+      return;
+    }
+
+    // Staging-check hook: ?tap-star=<sessionId> taps that card's star button
+    // through the real delegated click handler after the list has rendered.
+    // Because checks share one database and one account, ?tap-star= first
+    // clears any stored star for that proposal (one unstar POST, then a
+    // reload with ?tap-ensured=1) so the tap always acts from an unstarred
+    // card and the outcome never depends on earlier checks. Demo only.
+    // Pair ?tap-star= with ?preset-star=<same id> (display-only) to reach
+    // the unstar direction instead: the card renders starred, the tap
+    // unstars, and no stored row is needed either way.
+    if (TAP_STAR && DEMO && !params.has('tap-ensured')) {
+      api('/api/watchlist/unstar', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ demo: true, sessionId: TAP_STAR }),
+      }).catch(function () {}).then(function () {
+        var remainingTapParams = new URLSearchParams(params);
+        remainingTapParams.set('tap-ensured', '1');
+        var remainingTapQ = remainingTapParams.toString();
+        location.replace(location.pathname + (remainingTapQ ? '?' + remainingTapQ : '') + location.hash);
+      });
+      return;
+    }
+
+    // Staging-check hook: ?set-star=<sessionId> stars that demo proposal for
+    // real (a demo star records the row for the signed-in account, the same
+    // way a demo vote is recorded), then reloads without the parameter, so
+    // one check URL observes star → reload → still starred from the server.
+    // Opening it on the Watchlist tab also turns on ?watch-mine= for the
+    // reloaded page, so the persisted row is listed there. Demo only.
+    var setStarParam = params.get('set-star');
+    if (setStarParam && DEMO) {
+      api('/api/watchlist/star', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ demo: true, sessionId: setStarParam }),
+      }).catch(function () {}).then(function () {
+        var remainingStarParams = new URLSearchParams(params);
+        remainingStarParams.delete('set-star');
+        if (remainingStarParams.get('tab') === 'watchlist') {
+          remainingStarParams.set('watch-mine', '1');
+        }
+        var remainingStarQ = remainingStarParams.toString();
+        location.replace(location.pathname + (remainingStarQ ? '?' + remainingStarQ : '') + location.hash);
+      });
       return;
     }
 
@@ -1242,6 +1318,32 @@
     var COPY_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Copy link</span>';
     var COPY_DONE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg><span>Copied!</span>';
 
+    // Star: a quiet ghost button beside Share on every proposal card, and on
+    // each Watchlist row (where it is pressed). Whole literals for the
+    // Tailwind compiler.
+    var STAR_OUTLINE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.48 3.5a.56.56 0 0 1 1.04 0l2.13 4.46 4.9.62c.5.06.7.68.33 1.02l-3.6 3.32.92 4.85a.56.56 0 0 1-.8.6L12 16.06l-4.4 2.31a.56.56 0 0 1-.8-.6l.92-4.85-3.6-3.32a.56.56 0 0 1 .33-1.02l4.9-.62z"/></svg><span>Star</span>';
+    var STAR_FILLED_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M11.48 3.5a.56.56 0 0 1 1.04 0l2.13 4.46 4.9.62c.5.06.7.68.33 1.02l-3.6 3.32.92 4.85a.56.56 0 0 1-.8.6L12 16.06l-4.4 2.31a.56.56 0 0 1-.8-.6l.92-4.85-3.6-3.32a.56.56 0 0 1 .33-1.02l4.9-.62z"/></svg><span>Starred</span>';
+    var STAR_IDLE_CLASS = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
+    var STAR_ACTIVE_CLASS = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-amber-600 transition-colors hover:text-amber-500 dark:text-amber-300 dark:hover:text-amber-200';
+    // "Since last look" change badges on Watchlist rows, one label per
+    // status key the rows can carry.
+    var WATCH_CHANGE_CLASS = 'whitespace-nowrap rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300';
+    var WATCH_CHANGE_LABEL = {
+      voting: 'New: Voting',
+      merging: 'New: Merging',
+      merged: 'New: Merged',
+      closed: 'New: Ended',
+    };
+
+    function starToggleButton(sessionId, starred, busy) {
+      return '<button data-star-toggle data-session="' + esc(sessionId) + '"'
+        + ' aria-pressed="' + (starred ? 'true' : 'false') + '"'
+        + ' aria-label="' + (starred ? 'Remove from Watchlist' : 'Add to Watchlist') + '"'
+        + (busy ? ' disabled' : '')
+        + ' class="' + (starred ? STAR_ACTIVE_CLASS : STAR_IDLE_CLASS) + '">'
+        + (starred ? STAR_FILLED_HTML : STAR_OUTLINE_HTML) + '</button>';
+    }
+
     // Copy mode is the fallback everywhere the native sheet is unavailable
     // (desktop, or the app frame without the web-share grant). The demo-only
     // ?share= param wins so the checks can pin either label deterministically.
@@ -1608,10 +1710,10 @@
         + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
         + '<div class="flex shrink-0 items-center gap-0.5">'
+        + starToggleButton(p.sessionId, !!p.myStar, !!state.starPending['star:' + p.sessionId])
         + discussButton(p)
         + compareButton(p)
         + (p.url ? shareLinkButton(p) : '')
-        + '</span>'
         + '</div>'
         + '</div>'
         + statusProgress(p)
@@ -1870,6 +1972,44 @@
         + '</article>';
     }
 
+    // One Watchlist row: the app name, the proposal title, the row's current
+    // status pill and — when the status differs from the one recorded at the
+    // last look — an amber "New: <status>" change badge. The star button is
+    // pressed here; tapping it unstars and drops the row.
+    function watchRow(r) {
+      var key = r.status === 'proposed' ? 'voting' : (r.status || 'voting');
+      var style = STATUS_STYLE[key] || STATUS_STYLE.closed;
+      var changeHtml = '';
+      if (r.changed) {
+        var label = WATCH_CHANGE_LABEL[key] || ('New: ' + style[0]);
+        changeHtml = '<span data-watch-change="' + esc(key) + '" class="' + WATCH_CHANGE_CLASS + '">'
+          + esc(label) + '</span>';
+      }
+      var starredDate = '';
+      if (r.starredAt && isFinite(new Date(r.starredAt).getTime())) {
+        starredDate = new Date(r.starredAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      }
+      return '<article data-watch-row data-session-id="' + esc(r.sessionId) + '"'
+        + ' data-watch-status="' + esc(key) + '"'
+        + ' class="' + CARD_CLASS + '">'
+        + '<div class="flex items-start justify-between gap-2">'
+        + '<span class="flex min-w-0 items-center gap-1.5">'
+        + appAvatar({ appSlug: r.appSlug, appName: r.appName, icon: r.icon })
+        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(r.appName || r.appSlug) + '</span>'
+        + '</span>'
+        + changeHtml
+        + '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
+        + '</div>'
+        + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(r.title) + '</h2>'
+        + '<div class="flex items-center justify-between gap-2">'
+        + (starredDate
+          ? '<p data-starred-date class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">Starred ' + esc(starredDate) + '</p>'
+          : '<span></span>')
+        + starToggleButton(r.sessionId, true, !!state.starPending['star:' + r.sessionId])
+        + '</div>'
+        + '</article>';
+    }
+
     function skeletonCard() {
       return '<div class="animate-pulse rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70">'
         + '<div class="flex items-center justify-between gap-2">'
@@ -1921,11 +2061,13 @@
       var buttons = document.querySelectorAll('.tab-btn');
       var inboxCount = state.inbox && state.inbox.proposals ? state.inbox.proposals.length : null;
       var votesCount = state.votes && state.votes.votes ? state.votes.votes.length : null;
+      var watchlistCount = state.watchlist && state.watchlist.rows ? state.watchlist.rows.length : null;
       for (var i = 0; i < buttons.length; i++) {
         var btn = buttons[i];
-        var active = btn.getAttribute('data-tab') === state.tab;
+        var tab = btn.getAttribute('data-tab');
+        var active = tab === state.tab;
         var badge = btn.querySelector('.tab-badge');
-        var count = btn.getAttribute('data-tab') === 'inbox' ? inboxCount : votesCount;
+        var count = tab === 'inbox' ? inboxCount : tab === 'watchlist' ? watchlistCount : votesCount;
         btn.className = 'tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors '
           + (active ? TAB_ACTIVE : TAB_IDLE);
         btn.setAttribute('aria-selected', active ? 'true' : 'false');
@@ -2202,6 +2344,21 @@
       return html;
     }
 
+    function renderWatchlist() {
+      if (state.errorWatchlist) return errorHtml(state.errorWatchlist);
+      if (!state.watchlist || state.loadingWatchlist && !state.watchlist.rows) return skeletons();
+      var rows = state.watchlist.rows || [];
+      if (!rows.length) {
+        return emptyHtml(
+          'No starred proposals',
+          'Star proposals in the Inbox to keep an eye on them here.',
+          BROWSE_CTA);
+      }
+      var html = '';
+      for (var i = 0; i < rows.length; i++) html += watchRow(rows[i]);
+      return html;
+    }
+
     // One-line summary under the header, computed from the loaded inbox
     // list (no extra request): how many proposals are open and how many
     // yes votes they still need in total. Proposals without a known
@@ -2245,6 +2402,26 @@
       el.hidden = false;
     }
 
+    // One-line summary under the header on the Watchlist tab, computed from
+    // the loaded rows (no extra request): how many are starred and how many
+    // show a change badge since the last look.
+    function renderWatchlistSummary() {
+      var el = document.getElementById('watchlist-summary');
+      if (!el) return;
+      var rows = state.watchlist && state.watchlist.rows;
+      var total = rows ? rows.length : 0;
+      if (state.tab !== 'watchlist' || state.errorWatchlist || !total) {
+        el.hidden = true;
+        return;
+      }
+      var updated = 0;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].changed) updated++;
+      }
+      el.textContent = total + ' starred, ' + updated + ' updated';
+      el.hidden = false;
+    }
+
     // "Updated X ago" under the header, stamped on every successful inbox
     // load so it always reflects the most recent data fetch. Uses the same
     // relative-time wording as the proposal age chips.
@@ -2271,6 +2448,7 @@
       renderSummary();
       renderUpdated();
       renderVotesSummary();
+      renderWatchlistSummary();
       var viewHtml;
       if (state.tab === 'inbox' && state.compareView
           && state.compare.length === 2
@@ -2283,8 +2461,10 @@
         if (state.compare.length && !state.compareView) {
           viewHtml = compareBarHtml() + viewHtml;
         }
-      } else {
+      } else if (state.tab === 'votes') {
         viewHtml = renderVotes();
+      } else {
+        viewHtml = renderWatchlist();
       }
       document.getElementById('view').innerHTML = viewHtml;
       enhanceTitles();
@@ -2677,6 +2857,7 @@
       if (ALL_MERGED) query.push('allmerged=1');
       // Check-fixture variant on the hook's reload; see TURNOUT_REFRESH.
       if (turnoutAltNext) query.push('turnoutalt=1');
+      if (PRESET_STAR) query.push('preset-star=' + encodeURIComponent(PRESET_STAR));
       if (SPLITS) query.push('splits=' + encodeURIComponent(SPLITS));
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
@@ -2699,6 +2880,7 @@
           maybeTurnoutRefresh();
           maybeTapNo();
           maybeTapShare();
+          maybeTapStar();
           maybeAutoComment();
           maybeAutoReply();
           // A ?proposal= deep link lands on the inbox first; once the list
@@ -2739,7 +2921,65 @@
     }
 
     function refreshCurrent() {
-      return state.tab === 'inbox' ? loadInbox(true) : loadVotes(true);
+      return state.tab === 'inbox' ? loadInbox(true)
+        : state.tab === 'votes' ? loadVotes(true)
+        : loadWatchlist(true);
+    }
+
+    function loadWatchlist(force) {
+      if (state.loadingWatchlist) {
+        // Same queued-refetch contract as the other two tabs: a pull or
+        // Refresh tap while a load is in flight queues one fresh fetch.
+        if (force) state.queuedWatchlist = true;
+        return Promise.resolve();
+      }
+      state.loadingWatchlist = true;
+      state.errorWatchlist = null;
+      if (force) state.watchlist = null;
+      render();
+      var query = [];
+      if (DEMO) query.push('demo=1');
+      if (WATCH_MINE) query.push('watch-mine=1');
+      if (WATCH_EMPTY) query.push('watch-empty=1');
+      if (WATCH_SEEN) query.push('watch-seen=1');
+      return api('/api/watchlist' + (query.length ? '?' + query.join('&') : ''))
+        .then(function (data) {
+          state.watchlist = data;
+          markWatchlistSeen(data);
+        })
+        .catch(function (err) {
+          state.errorWatchlist = err.message || 'Could not load your watchlist.';
+        })
+        .then(function () {
+          state.loadingWatchlist = false;
+          render();
+          maybeTapStar();
+          if (state.queuedWatchlist) {
+            state.queuedWatchlist = false;
+            loadWatchlist(true);
+          }
+        });
+    }
+
+    // Once per load of watchlist data: record the status each row showed at
+    // this view, so the next visit only badges what changed since. Demo
+    // fixtures are static, so there is nothing to record there.
+    function markWatchlistSeen(data) {
+      if (state.watchSeenMarked) return;
+      if (!data || data.demo || !data.rows || !data.rows.length) return;
+      var statuses = [];
+      for (var i = 0; i < data.rows.length; i++) {
+        if (data.rows[i].status) {
+          statuses.push({ sessionId: data.rows[i].sessionId, status: data.rows[i].status });
+        }
+      }
+      if (!statuses.length) return;
+      state.watchSeenMarked = true;
+      api('/api/watchlist/seen', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ statuses: statuses }),
+      }).catch(function () { /* best effort; badges just re-show next time */ });
     }
 
     // ------------------------------------------------------------------
@@ -2916,6 +3156,75 @@
       }).then(render);
     }
 
+    // Star / unstar from wherever the button sits: an inbox card or a
+    // Watchlist row. Optimistic in both directions, rolled back on failure;
+    // the star request carries the card's own fields so the server can
+    // store the row without a second lookup.
+    function toggleStar(sessionId) {
+      var p = findProposal(sessionId);
+      var r = null;
+      if (!p && state.watchlist && state.watchlist.rows) {
+        var rows = state.watchlist.rows;
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].sessionId === sessionId) { r = rows[i]; break; }
+        }
+      }
+      if (!p && !r) return;
+      var pendingKey = 'star:' + sessionId;
+      if (state.starPending[pendingKey]) return;
+      var wasStarred, payload, rowIdx = -1;
+      if (p) {
+        wasStarred = !!p.myStar;
+        payload = {
+          sessionId: sessionId,
+          appSlug: p.appSlug,
+          appName: p.appName,
+          title: p.title,
+          proposalId: p.proposalId,
+          status: p.status === 'proposed' ? 'voting' : (p.status || 'voting'),
+          demo: !!(state.inbox && state.inbox.demo),
+        };
+      } else {
+        wasStarred = true;
+        rowIdx = state.watchlist.rows.indexOf(r);
+        payload = {
+          sessionId: sessionId,
+          appSlug: r.appSlug,
+          appName: r.appName,
+          title: r.title,
+          proposalId: r.proposalId,
+          status: r.status === 'proposed' ? 'voting' : (r.status || 'voting'),
+          demo: !!(state.watchlist && state.watchlist.demo),
+        };
+      }
+      state.starPending[pendingKey] = true;
+      if (p) p.myStar = !wasStarred;
+      if (r) state.watchlist.rows.splice(rowIdx, 1);
+      render();
+      var request = wasStarred
+        ? api('/api/watchlist/unstar', {
+            method: 'POST',
+            headers: headers({ 'content-type': 'application/json' }),
+            body: JSON.stringify({ sessionId: sessionId, demo: payload.demo }),
+          })
+        : api('/api/watchlist/star', {
+            method: 'POST',
+            headers: headers({ 'content-type': 'application/json' }),
+            body: JSON.stringify(payload),
+          });
+      request.then(function () {
+        toast(wasStarred ? 'Removed from Watchlist' : 'Added to Watchlist');
+      }).catch(function (err) {
+        // Roll the optimistic state back so the card/row shows the truth.
+        if (p) p.myStar = wasStarred;
+        if (r && rowIdx >= 0) state.watchlist.rows.splice(rowIdx, 0, r);
+        toast('Could not update the watchlist: ' + (err.message || 'try again'));
+      }).then(function () {
+        delete state.starPending[pendingKey];
+        render();
+      });
+    }
+
     // Confirm before a No vote: rejecting is the direction worth a second
     // look (it can sink a proposal), so the card's "No" button opens a small
     // confirm first; "Yes" stays one-tap. The native kit's alert carries the
@@ -3006,6 +3315,21 @@
       var btn = document.querySelector(
         '[data-proposal-card][data-session-id="' + TAP_SHARE + '"] [data-share-link]');
       if (!btn) return;
+      btn.click();
+    }
+
+    // Staging demo hook: ?demo=1&tap-star=<sessionId> clicks that card's
+    // star button once its list has rendered — the real button, through the
+    // real delegated click handler. Pair it with ?preset-star=<same id> to
+    // exercise unstarring. Works on the Inbox and the Watchlist tab alike.
+    // Demo only; one-shot.
+    var tapStarDone = false;
+    function maybeTapStar() {
+      if (!DEMO || !TAP_STAR || tapStarDone) return;
+      var btn = document.querySelector(
+        '[data-star-toggle][data-session="' + TAP_STAR + '"]');
+      if (!btn) return;
+      tapStarDone = true;
       btn.click();
     }
 
@@ -3286,6 +3610,11 @@
         toggleTitle(titleBtn);
         return;
       }
+      var starBtn = target.closest ? target.closest('[data-star-toggle]') : null;
+      if (starBtn) {
+        toggleStar(starBtn.getAttribute('data-session'));
+        return;
+      }
       var discussBtn = target.closest ? target.closest('[data-open-detail]') : null;
       if (discussBtn) {
         openDetail(discussBtn.getAttribute('data-session'));
@@ -3426,6 +3755,7 @@
         // and a tab switch used to keep the previous tab's scroll offset.
         window.scrollTo(0, 0);
         if (tab === 'votes') loadVotes(!state.votes);
+        else if (tab === 'watchlist') loadWatchlist(!state.watchlist);
       });
     }
 
@@ -3450,7 +3780,9 @@
     if (hideMergedBox) hideMergedBox.checked = state.hideMerged;
     var searchBox = document.getElementById('inbox-search');
     if (searchBox && state.search) searchBox.value = state.search;
-    if (state.tab === 'votes') loadVotes(true); else loadInbox(true);
+    if (state.tab === 'votes') loadVotes(true);
+    else if (state.tab === 'watchlist') loadWatchlist(true);
+    else loadInbox(true);
   })();
   </script>
 </body>
