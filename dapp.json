@@ -309,6 +309,150 @@
       "expectText": "Proposed",
       "visual": true,
       "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.star-button",
+      "name": "Inbox cards offer a star button",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card] [data-star-toggle]",
+      "expectText": "Star",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.star-tap",
+      "name": "Tapping Star stars the card",
+      "path": "/?demo=1&tap-star=demo-1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-star-toggle][aria-pressed='true']",
+      "expectText": "Starred",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "watch.unstar-tap",
+      "name": "Tapping Star on a starred card unstars it",
+      "path": "/?demo=1&preset-star=demo-3&tap-star=demo-3",
+      "expectSelector": "[data-star-toggle][data-session='demo-3'][aria-pressed='false']",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.star-persist-inbox",
+      "name": "A starred card stays starred after a reload",
+      "path": "/?demo=1&set-star=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-star-toggle][aria-pressed='true']",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.star-state-from-server",
+      "name": "A star recorded earlier is shown on the card without tapping",
+      "path": "/?demo=1&preset-star=demo-3",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-star-toggle][aria-pressed='true']",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-list",
+      "name": "Watchlist tab lists starred proposals",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-row]",
+      "expectText": "Staging demo proposal",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-change-merged",
+      "name": "Watchlist badges a proposal that merged since the last look",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-change='merged']",
+      "expectText": "New: Merged",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-change-merging",
+      "name": "Watchlist badges a proposal that started merging since the last look",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-change='merging']",
+      "expectText": "New: Merging",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-seen-no-badges",
+      "name": "After a look, unchanged rows show no change badges",
+      "path": "/?tab=watchlist&demo=1&watch-seen=1",
+      "expectSelector": "body:not(:has([data-watch-change]))",
+      "expectText": "pinned notes",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-status-pill",
+      "name": "Watchlist rows show the proposal's current status",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-row][data-watch-status='merged']",
+      "expectText": "Merged",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-starred-date",
+      "name": "Watchlist rows show when the proposal was starred",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-row] [data-starred-date]",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-star-button",
+      "name": "Watchlist rows offer a pressed star to unstar",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-watch-row] [data-star-toggle][aria-pressed='true']",
+      "expectText": "Starred",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-unstar",
+      "name": "Unstarring from the Watchlist drops the row",
+      "path": "/?tab=watchlist&demo=1&tap-star=demo-5",
+      "expectSelector": "body:not(:has([data-watch-row][data-session-id='demo-5']))",
+      "expectText": "dark mode",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-empty",
+      "name": "An empty Watchlist shows its empty state",
+      "path": "/?tab=watchlist&demo=1&watch-empty=1",
+      "expectText": "No starred proposals",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-persist",
+      "name": "A star recorded in the Inbox is listed on the Watchlist tab",
+      "path": "/?tab=watchlist&demo=1&set-star=demo-2",
+      "expectSelector": "[data-watch-row][data-session-id='demo-2']",
+      "expectText": "weekly summary email",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "watch.tab-summary",
+      "name": "Watchlist header shows starred and updated counts",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "#watchlist-summary",
+      "expectText": "3 starred, 2 updated"
+    },
+    {
+      "id": "watch.tab-badge-count",
+      "name": "The Watchlist tab shows its row count",
+      "path": "/?tab=watchlist&demo=1",
+      "expectSelector": "[data-tab='watchlist'] .tab-badge:not(.hidden)"
+    },
+    {
+      "id": "watch.tab-app-names",
+      "name": "Watchlist rows show the proposal's app name",
+      "path": "/?tab=watchlist&demo=1",
+      "expectText": "Staging Demo Notes"
     }
   ]
 }
