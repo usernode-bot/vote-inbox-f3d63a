@@ -2,7 +2,7 @@
   "description": "One inbox for all open proposals with vote counts. Vote fast, track mine.",
   "icon": {
     "image": "brand/icon.png",
-    "emoji": "📥"
+    "emoji": "\ud83d\udce5"
   },
   "secrets": [],
   "tests": [
@@ -178,7 +178,11 @@
       "path": "/?tab=votes&demo=1",
       "expectSelector": "body:has(#view > [data-vote-row]:nth-child(3):last-child) [data-tab='votes'] [data-tab-count='3']",
       "expectText": "(3)",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "my-votes.merged-date",
@@ -274,7 +278,11 @@
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='3']",
       "expectText": "(3)",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-merged-zero-app",
@@ -282,7 +290,11 @@
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-merged='0']",
       "expectText": "0 merged this week",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-open-notes",
@@ -290,7 +302,11 @@
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
       "expectText": "(2)",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-merged-notes",
@@ -299,7 +315,11 @@
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-merged='1']",
       "expectText": "1 merged this week",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-open-archive",
@@ -307,7 +327,11 @@
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-count='0']",
       "expectText": "(0)",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-merged-zero-archive",
@@ -315,28 +339,41 @@
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-merged='0']",
       "expectText": "0 merged this week",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-both-on-row",
       "name": "Open and merged-this-week counts sit on the same app row",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-notes']:has([data-app-count='2']):has([data-app-merged='1'])",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-all-row-plain",
       "name": "All apps row carries no per-app counts",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "body:not(:has([data-app-option=''] [data-app-count]))",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-app-row-pair",
       "name": "Staging Demo App row carries open and merged-this-week together",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-app']:has([data-app-count='3']):has([data-app-merged='0'])",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-hides-keep-counts",
@@ -344,7 +381,10 @@
       "path": "/?demo=1&openfilter=1&hide-voted=1&hide-merged=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
       "expectText": "(2)",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-open-app",
@@ -353,7 +393,11 @@
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='2']",
       "expectText": "(2)",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-merged-app",
@@ -361,7 +405,11 @@
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-merged='1']",
       "expectText": "1 merged this week",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-open-notes",
@@ -369,7 +417,11 @@
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='1']",
       "expectText": "(1)",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-merged-notes",
@@ -377,7 +429,11 @@
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-merged='2']",
       "expectText": "2 merged this week",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-archive-unchanged",
@@ -385,49 +441,75 @@
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-count='0']",
       "expectText": "0 merged this week",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-stale-open-gone",
       "name": "The refresh replaced the old open count of 3",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "body:not(:has([data-app-count='3']))",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-stale-merged-gone",
       "name": "The refresh replaced the app's old merged count of 0",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "body:not(:has([data-app-option='staging-demo-app'] [data-app-merged='0']))",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-still-open",
       "name": "The dropdown stays open across the data refresh",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-filter-trigger][aria-expanded='true']",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-both-open-updated",
       "name": "One refresh updates the open counts of both apps",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "body:has([data-app-option='staging-demo-app'] [data-app-count='2']):has([data-app-option='staging-demo-notes'] [data-app-count='1'])",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-both-merged-updated",
       "name": "One refresh updates the merged counts of both apps",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "body:has([data-app-option='staging-demo-app'] [data-app-merged='1']):has([data-app-option='staging-demo-notes'] [data-app-merged='2'])",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "app-filter.turnout-refresh-notes-row-pair",
       "name": "After the refresh the Notes row carries its new pair together",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-option='staging-demo-notes']:has([data-app-count='1']):has([data-app-merged='2'])",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.title-search",
@@ -456,7 +538,7 @@
       "name": "Proposal cards show proportional yes/no vote bar",
       "path": "/?demo=1",
       "expectSelector": "[data-vote-bar]",
-      "expectText": "Yes 1 · No 0",
+      "expectText": "Yes 1 \u00b7 No 0",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -613,7 +695,11 @@
       "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
       "expectText": "1st in queue",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-second",
@@ -621,7 +707,11 @@
       "path": "/?demo=1&queue=1",
       "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-queue-badge]",
       "expectText": "2nd in queue",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-third",
@@ -630,7 +720,11 @@
       "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-queue-badge]",
       "expectText": "3rd in queue",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-fourth",
@@ -638,35 +732,55 @@
       "path": "/?demo=1&queue=1",
       "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-queue-badge]",
       "expectText": "4th in queue",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-first-state",
       "name": "First in queue is marked next to merge",
       "path": "/?demo=1&queue=1",
       "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge][data-queue-first='1']",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-first-only",
       "name": "Only the first queued card carries the next-to-merge mark",
       "path": "/?demo=1&queue=1",
       "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-queue-first='1'])):not(:has([data-proposal-card][data-session-id='demo-6'] [data-queue-first='1'])):not(:has([data-proposal-card][data-session-id='demo-1'] [data-queue-first='1']))",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-not-voting",
       "name": "Still-voting cards show no queue badge",
       "path": "/?demo=1&queue=1",
       "expectSelector": "body:has([data-proposal-card][data-session-id='demo-4']):not(:has([data-proposal-card][data-session-id='demo-4'] [data-queue-badge]))",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-not-merged",
       "name": "Already-merged cards show no queue badge",
       "path": "/?demo=1&queue=1",
       "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'] [data-queue-badge]))",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-eta-order",
@@ -674,7 +788,11 @@
       "path": "/?demo=1&queue=1&queue-eta=reverse",
       "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-queue-badge][data-queue-first='1']",
       "expectText": "1st in queue",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-eta-order-last",
@@ -682,7 +800,11 @@
       "path": "/?demo=1&queue=1&queue-eta=reverse",
       "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
       "expectText": "4th in queue",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-no-eta-fallback",
@@ -690,7 +812,11 @@
       "path": "/?demo=1&queue=1&no-eta=1",
       "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-queue-badge]",
       "expectText": "1st in queue",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-no-eta-fallback-last",
@@ -698,7 +824,11 @@
       "path": "/?demo=1&queue=1&no-eta=1",
       "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
       "expectText": "4th in queue",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-merges-clears",
@@ -707,7 +837,11 @@
       "expectSelector": "body:has([data-proposal-card][data-session-id='demo-2']):not(:has([data-proposal-card][data-session-id='demo-2'] [data-queue-badge]))",
       "expectText": "Merged",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-merges-shift",
@@ -715,14 +849,22 @@
       "path": "/?demo=1&queue=1&merged=demo-2",
       "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-queue-badge]",
       "expectText": "2nd in queue",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-merges-keep-first",
       "name": "First in queue keeps its place when another merges",
       "path": "/?demo=1&queue=1&merged=demo-2",
       "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge][data-queue-first='1']",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-all-merged",
@@ -730,7 +872,11 @@
       "path": "/?demo=1&allmerged=1",
       "expectSelector": "body:not(:has([data-queue-badge]))",
       "expectText": "Merged",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-plain-inbox",
@@ -738,42 +884,63 @@
       "path": "/?demo=1",
       "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
       "expectText": "1st in queue",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-plain-no-voting-badge",
       "name": "Voting cards show no badge on the plain demo inbox",
       "path": "/?demo=1",
       "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-queue-badge]))",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-info-only",
       "name": "Queue badge is plain text, not a control",
       "path": "/?demo=1&queue=1",
       "expectSelector": "body:has(span[data-queue-badge]):not(:has(button[data-queue-badge]))",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-hide-merged",
       "name": "Hide merged keeps the badges on merging cards",
       "path": "/?demo=1&queue=1&hide-merged=1",
       "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'])):has([data-proposal-card][data-session-id='demo-3'] [data-queue-badge])",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-status-row",
       "name": "Queue badge sits beside the Merging status label",
       "path": "/?demo=1&queue=1",
       "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-proposal-status] [data-queue-badge]",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.queue-pos-attr",
       "name": "Queue badge carries its numeric position",
       "path": "/?demo=1&queue=1",
       "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-queue-badge][data-queue-pos='3']",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.star-button",
@@ -782,7 +949,11 @@
       "expectSelector": "[data-proposal-card] [data-star-toggle]",
       "expectText": "Star",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.sort-controversy-option",
@@ -840,7 +1011,11 @@
       "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-star-toggle][aria-pressed='true']",
       "expectText": "Starred",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "inbox.sort-controversy-split-order",
@@ -1096,7 +1271,11 @@
       "path": "/?demo=1&preset-star=demo-3&tap-star=demo-3",
       "expectSelector": "[data-star-toggle][data-session='demo-3'][aria-pressed='false']",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.star-persist-inbox",
@@ -1104,14 +1283,22 @@
       "path": "/?demo=1&set-star=demo-2",
       "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-star-toggle][aria-pressed='true']",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.star-state-from-server",
       "name": "A star recorded earlier is shown on the card without tapping",
       "path": "/?demo=1&preset-star=demo-3",
       "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-star-toggle][aria-pressed='true']",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-list",
@@ -1120,7 +1307,11 @@
       "expectSelector": "[data-watch-row]",
       "expectText": "Staging demo proposal",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-change-merged",
@@ -1129,7 +1320,11 @@
       "expectSelector": "[data-watch-change='merged']",
       "expectText": "New: Merged",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-change-merging",
@@ -1137,7 +1332,11 @@
       "path": "/?tab=watchlist&demo=1",
       "expectSelector": "[data-watch-change='merging']",
       "expectText": "New: Merging",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-seen-no-badges",
@@ -1146,7 +1345,11 @@
       "expectSelector": "body:not(:has([data-watch-change]))",
       "expectText": "pinned notes",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-status-pill",
@@ -1154,14 +1357,22 @@
       "path": "/?tab=watchlist&demo=1",
       "expectSelector": "[data-watch-row][data-watch-status='merged']",
       "expectText": "Merged",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-starred-date",
       "name": "Watchlist rows show when the proposal was starred",
       "path": "/?tab=watchlist&demo=1",
       "expectSelector": "[data-watch-row] [data-starred-date]",
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-star-button",
@@ -1169,7 +1380,10 @@
       "path": "/?tab=watchlist&demo=1",
       "expectSelector": "[data-watch-row] [data-star-toggle][aria-pressed='true']",
       "expectText": "Starred",
-      "impact": ["public/index.html", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-unstar",
@@ -1178,7 +1392,11 @@
       "expectSelector": "body:not(:has([data-watch-row][data-session-id='demo-5']))",
       "expectText": "dark mode",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-empty",
@@ -1186,7 +1404,11 @@
       "path": "/?tab=watchlist&demo=1&watch-empty=1",
       "expectText": "No starred proposals",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-persist",
@@ -1195,7 +1417,11 @@
       "expectSelector": "[data-watch-row][data-session-id='demo-2']",
       "expectText": "weekly summary email",
       "visual": true,
-      "impact": ["public/index.html", "server.js", "dapp.json"]
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     },
     {
       "id": "watch.tab-summary",
@@ -1355,7 +1581,7 @@
       "id": "compare.counts",
       "name": "Compare columns show each proposal's vote counts",
       "path": "/?demo=1&compare=demo-1,demo-2",
-      "expectText": "Yes 3 · No 1",
+      "expectText": "Yes 3 \u00b7 No 1",
       "impact": [
         "public/index.html",
         "dapp.json"
@@ -1808,6 +2034,238 @@
       "path": "/?demo=1&selectmode=1",
       "expectSelector": "[data-bulk-hide]",
       "expectText": "Hide"
+    },
+    {
+      "id": "inbox.summary-line",
+      "name": "Inbox cards show a change summary",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-change-summary] [data-summary-toggle]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "Staging demo summary: adds keyboard shortcuts",
+      "visual": true
+    },
+    {
+      "id": "inbox.summary-collapsed-default",
+      "name": "Change summary starts collapsed",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='false']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-one-line",
+      "name": "Change summary clamps to one line",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle].truncate",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-short",
+      "name": "Short change summary renders whole",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-summary-toggle]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "sends a weekly email"
+    },
+    {
+      "id": "inbox.summary-expand",
+      "name": "Expanded change summary deep link",
+      "path": "/?demo=1&expand-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='true']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-expand-full",
+      "name": "Expanded change summary shows full text",
+      "path": "/?demo=1&expand-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle].whitespace-pre-line",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "turned off in settings"
+    },
+    {
+      "id": "inbox.summary-tap-expand",
+      "name": "Tapping summary expands it",
+      "path": "/?demo=1&tap-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='true']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-tap-collapse",
+      "name": "Tapping an open summary collapses it",
+      "path": "/?demo=1&expand-summary=demo-4&tap-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='false'].truncate",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-expand-one-card",
+      "name": "Expanding one summary leaves others closed",
+      "path": "/?demo=1&expand-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-summary-toggle][aria-expanded='false']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-expand-survives-vote",
+      "name": "Open summary survives a vote re-render",
+      "path": "/?demo=1&expand-summary=demo-4&cast=demo-2:yes",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='true']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.files-count-plural",
+      "name": "Plural files-changed count",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-files-changed='12']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "12 files changed"
+    },
+    {
+      "id": "inbox.files-count-singular",
+      "name": "Singular files-changed count",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-files-changed='1']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "1 file changed"
+    },
+    {
+      "id": "inbox.files-count-accuracy",
+      "name": "Files-changed count matches fixture",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-files-changed='5']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "5 files changed"
+    },
+    {
+      "id": "inbox.files-count-only",
+      "name": "Count-only card shows its count",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-files-changed='3']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "3 files changed"
+    },
+    {
+      "id": "inbox.summary-fallback-no-count",
+      "name": "Summary without a count",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-change-summary]:not(:has([data-files-changed]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "switches the app between light and dark"
+    },
+    {
+      "id": "inbox.summary-fallback-no-summary",
+      "name": "Count without a summary",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-change-summary]:not(:has([data-summary-toggle]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-fallback-neither",
+      "name": "Card with neither summary nor count has no summary row",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-5']:not(:has([data-change-summary]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-fallback-card-intact",
+      "name": "Fallback card still renders its title",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-5'] [data-proposal-title]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "pinned notes"
+    },
+    {
+      "id": "inbox.summary-select-mode",
+      "name": "Select mode keeps the summary row",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "adds keyboard shortcuts"
+    },
+    {
+      "id": "inbox.summary-controversy-sort",
+      "name": "Controversy sort keeps the summary row",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-files-changed='12']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "12 files changed"
     }
   ]
 }

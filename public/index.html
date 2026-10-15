@@ -265,6 +265,14 @@
     // ?tap-share=<sessionId> (demo only) taps that card's share button once
     // the inbox has rendered, the way ?tap-no=1 taps a vote button.
     var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
+    // Change-summary hooks (demo only): ?expand-summary=<sessionId> presets
+    // that card's summary open before the first demo render (the way
+    // ?expand= opens a clamped title), and ?tap-summary=<sessionId> taps the
+    // card's summary line once it has rendered — the real button, through
+    // the real delegated click handler. Paired, they show collapsing. Demo
+    // only; the tap is one-shot. Unknown ids do nothing.
+    var EXPAND_SUMMARY = DEMO ? (params.get('expand-summary') || '') : '';
+    var TAP_SUMMARY = DEMO ? (params.get('tap-summary') || '') : '';
     // Bulk-triage hooks (demo only), one URL per check behaviour:
     // ?selectmode=1 turns select mode on with nothing selected;
     // ?select=<ids> / ?deselect=<ids> tick and untick cards through the same
@@ -364,6 +372,11 @@
       // (a vote, a filter change) keeps those titles expanded; not persisted,
       // a reload starts collapsed again.
       expandedTitles: {},
+      // Cards whose change-summary line the user tapped open. Keyed by
+      // session id and remembered the same way expandedTitles is: a
+      // re-render keeps them open, a reload starts closed again. Not
+      // persisted.
+      expandedSummaries: {},
       // Bulk triage: select mode (checkbox on each votable card) and the
       // selected session ids. Selection is in-memory only and keyed by
       // session id, so it survives filter, search and sort changes —
@@ -1405,6 +1418,13 @@
     var TITLE_EXPANDED = 'text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100';
     var TITLE_TOGGLE = 'self-start rounded-full text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300';
 
+    // Change-summary row spellings (whole literals for the Tailwind
+    // compiler). The clamped one truncates to a single line; the expanded
+    // one keeps the summary's own line breaks and wraps.
+    var SUMMARY_CLAMPED = 'min-w-0 flex-1 truncate text-left text-xs leading-snug text-zinc-600 dark:text-zinc-300';
+    var SUMMARY_EXPANDED = 'min-w-0 flex-1 whitespace-pre-line break-words text-left text-xs leading-snug text-zinc-600 dark:text-zinc-300';
+    var FILES_CHANGED_CLASS = 'shrink-0 text-xs font-medium text-zinc-500 dark:text-zinc-400';
+
     // Share: a quiet ghost button on each proposal card. Shown only when the
     // server could build the proposal's canonical platform URL. Inside the
     // Homeroom iframe the Web Share API is unavailable (no web-share grant),
@@ -1779,6 +1799,33 @@
         + DISCUSS_IDLE_HTML + '</button>';
     }
 
+    // Change-summary row: what the proposal does (one grey line under the
+    // title) and how many files it touches, both as the server normalised
+    // them off the platform response. Summary-only cards render just the
+    // line, count-only cards just the count; a card with neither renders
+    // nothing, exactly as before this row existed. The line is a tap target
+    // that expands to the full summary in place and collapses again —
+    // display only, no other action on it.
+    function changeSummaryRow(p) {
+      var summary = typeof p.summary === 'string' && p.summary.trim() ? p.summary : '';
+      var count = typeof p.filesChanged === 'number' && Number.isFinite(p.filesChanged)
+        && p.filesChanged >= 0 ? p.filesChanged : null;
+      if (!summary && count == null) return '';
+      var expanded = !!state.expandedSummaries[p.sessionId];
+      return '<div data-change-summary class="flex items-start gap-2">'
+        + (summary
+          ? '<button type="button" data-summary-toggle data-session="' + esc(p.sessionId) + '"'
+            + ' aria-expanded="' + (expanded ? 'true' : 'false') + '"'
+            + ' class="' + (expanded ? SUMMARY_EXPANDED : SUMMARY_CLAMPED) + '">'
+            + esc(summary) + '</button>'
+          : '')
+        + (count != null
+          ? '<span data-files-changed="' + count + '" class="' + FILES_CHANGED_CLASS + '">'
+            + count + (count === 1 ? ' file changed' : ' files changed') + '</span>'
+          : '')
+        + '</div>';
+    }
+
     function proposalCard(p) {
       var voted = p.myVote === 'yes' || p.myVote === 'no';
       // Select-mode checkbox: only on cards a bulk action can still act on —
@@ -1821,6 +1868,7 @@
         + '</div>'
         + proposedDateLine(p)
         + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">' + esc(p.title) + '</h2>'
+        + changeSummaryRow(p)
         + voteBar(p)
         + voterAvatarRow(p)
         + voterNamesRow(p)
@@ -1883,6 +1931,21 @@
       h2.className = expanded ? TITLE_EXPANDED : TITLE_CLAMPED;
       btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
       btn.textContent = expanded ? 'Less' : 'More';
+    }
+
+    // Tap on a card's change-summary line: flip that one line between the
+    // one-line clamp and the full summary in place (no full re-render, so
+    // no scroll jump) and remember the choice per session, the way
+    // toggleTitle does for titles.
+    function toggleSummary(btn) {
+      var sessionId = btn.getAttribute('data-session');
+      if (!sessionId) return;
+      var expanded = !!state.expandedSummaries[sessionId];
+      if (expanded) delete state.expandedSummaries[sessionId];
+      else state.expandedSummaries[sessionId] = true;
+      expanded = !expanded;
+      btn.className = expanded ? SUMMARY_EXPANDED : SUMMARY_CLAMPED;
+      btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     }
 
     // ------------------------------------------------------------------
@@ -3040,6 +3103,7 @@
           pruneSelection();
           maybeAutoCast();
           maybeAutoExpand();
+          maybePresetSummary();
         })
         .catch(function (err) {
           state.errorInbox = err.message || 'Could not load proposals.';
@@ -3054,6 +3118,7 @@
           maybeTapShare();
           maybeApplyBulkHooks();
           maybeTapStar();
+          maybeTapSummary();
           maybeAutoComment();
           maybeAutoReply();
           // A ?proposal= deep link lands on the inbox first; once the list
@@ -3570,6 +3635,21 @@
       btn.click();
     }
 
+    // Staging demo hook: ?demo=1&tap-summary=<sessionId> clicks that card's
+    // summary line once the demo inbox has rendered — the real button,
+    // through the real delegated click handler — so expansion (and, paired
+    // with ?expand-summary=<same id>, collapsing) runs through the real tap
+    // path. Demo only; one-shot.
+    var tapSummaryDone = false;
+    function maybeTapSummary() {
+      if (!DEMO || !TAP_SUMMARY || tapSummaryDone) return;
+      var btn = document.querySelector(
+        '[data-proposal-card][data-session-id="' + TAP_SUMMARY + '"] [data-summary-toggle]');
+      if (!btn) return;
+      tapSummaryDone = true;
+      btn.click();
+    }
+
     // Staging demo hook: ?demo=1&tap-no=1 clicks the demo-4 card's "No"
     // button once the demo inbox has rendered — the real button, through the
     // real delegated click handler — so the confirm-before-No dialog is
@@ -3682,6 +3762,16 @@
       if (!id) return;
       if (!findProposal(id)) return;
       state.expandedTitles[String(id)] = true;
+    }
+
+    // The same preset for the change-summary row: ?expand-summary=<sessionId>
+    // marks that card's summary open before the first demo render, so the
+    // expanded state is reachable by a check URL. A session id not in the
+    // list does nothing. Demo only.
+    function maybePresetSummary() {
+      if (!DEMO || !EXPAND_SUMMARY) return;
+      if (!findProposal(EXPAND_SUMMARY)) return;
+      state.expandedSummaries[String(EXPAND_SUMMARY)] = true;
     }
 
     // Staging demo hooks for the bulk triage checks (see BULK_HOOKS above
@@ -3904,6 +3994,11 @@
       var titleBtn = target.closest ? target.closest('[data-title-toggle]') : null;
       if (titleBtn) {
         toggleTitle(titleBtn);
+        return;
+      }
+      var summaryBtn = target.closest ? target.closest('[data-summary-toggle]') : null;
+      if (summaryBtn) {
+        toggleSummary(summaryBtn);
         return;
       }
       var selToggle = target.closest ? target.closest('[data-select-toggle]') : null;

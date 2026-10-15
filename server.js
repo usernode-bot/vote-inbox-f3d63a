@@ -304,6 +304,23 @@ function normalizeProposal(raw, appItem) {
     })
     .filter((v) => v && v.username)
     .slice(0, 50);
+  // The change summary, when the platform sends one: an optional field under
+  // any of the usual spellings, trimmed and capped so a large payload cannot
+  // bloat the inbox response (the same reasoning as the 50-voter cap). Null
+  // when the response carries none, so the card's summary row simply does
+  // not render.
+  const rawSummary = [raw.summary_md, raw.summaryMd, raw.summary, raw.description]
+    .find((v) => typeof v === 'string' && v.trim()) || null;
+  const summary = rawSummary === null ? null : rawSummary.trim().slice(0, 4000);
+  // How many files the change touches, when the response says so: either a
+  // non-negative integer, used as is, or an array of file names (its length
+  // — some responses list the files instead of counting them). Negative,
+  // fractional, string and non-finite values count as missing, so the card
+  // shows no number rather than a wrong one.
+  const rawFiles = [raw.files_changed, raw.filesChanged, raw.changed_files, raw.changedFiles]
+    .find((v) => (Number.isInteger(v) && v >= 0) || Array.isArray(v));
+  const filesChanged = rawFiles === undefined ? null
+    : Array.isArray(rawFiles) ? rawFiles.length : rawFiles;
   return {
     sessionId: String(sessionId),
     proposalId,
@@ -321,6 +338,8 @@ function normalizeProposal(raw, appItem) {
     no,
     required,
     yesVoters,
+    summary,
+    filesChanged,
     needed: required != null ? Math.max(0, required - yes) : null,
   };
 }
@@ -678,6 +697,38 @@ function demoInbox() {
     mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }, null),
     mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }, 2 * D),
   ];
+  // Change summaries for the cards' one-line summary row (demo only). Keyed
+  // by sessionId; every fixture not covered gets an explicit null pair so
+  // the demo shape matches what normalizeProposal produces in production.
+  // The text is obviously fake ("Staging demo summary: …"). Between them the
+  // fixtures cover the clamped long summary (demo-4), a short one with the
+  // singular count (demo-2), count accuracy (demo-3), summary with no count
+  // (demo-1), count with no summary (demo-6) and neither (demo-5).
+  const DEMO_CHANGE_SUMMARIES = {
+    'demo-4': {
+      summary: 'Staging demo summary: adds keyboard shortcuts for voting, moving between cards and opening the detail view. Shortcuts are listed in a help sheet opened with the question mark key, and every shortcut can be turned off in settings.',
+      filesChanged: 12,
+    },
+    'demo-2': {
+      summary: 'Staging demo summary: sends a weekly email listing open proposals.',
+      filesChanged: 1,
+    },
+    'demo-3': {
+      summary: 'Staging demo summary: adds an Export button that downloads the visible list as a CSV file.',
+      filesChanged: 5,
+    },
+    'demo-1': {
+      summary: 'Staging demo summary: adds a toggle that switches the app between light and dark looks.',
+      filesChanged: null,
+    },
+    'demo-6': { summary: null, filesChanged: 3 },
+    'demo-5': { summary: null, filesChanged: null },
+  };
+  for (const p of proposals) {
+    const s = DEMO_CHANGE_SUMMARIES[p.sessionId] || {};
+    p.summary = s.summary != null ? s.summary : null;
+    p.filesChanged = s.filesChanged != null ? s.filesChanged : null;
+  }
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }
 
