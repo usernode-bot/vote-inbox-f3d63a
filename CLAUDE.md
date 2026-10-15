@@ -99,9 +99,11 @@ user's vote history.
 
 ## App-specific conventions
 
-- `my_votes` is the only local table and is marked `staging:private`
-  (one person's vote history). No other tables — proposal data stays on
-  the platform.
+- Local tables (both marked `staging:private`, one person's own data):
+  `my_votes` (vote history) and `my_proposals` (proposals composed in the
+  app's New proposal screen — the platform's app-facing API is read-only,
+  so a sent proposal is recorded here and the Sent list renders from it;
+  nothing is submitted to any approval pipeline from this app).
 - Platform responses are normalised server-side (`normalizeProposal`) so
   the frontend deals with one shape; keep field-spelling tolerance there.
 - `?demo=1` (staging only) serves obviously-fake fixture data for the
@@ -110,5 +112,13 @@ user's vote history.
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- Compose check fixtures (demo only, one-shot, replayed through the real
+  controls after the compose screen renders): `?compose=1` itself is a
+  real deep link (all environments, not demo-gated); `&template=<id>`,
+  `&switch-template=<id>`, `&set-title=<text>`, `&set-body=<text>` and
+  `&send=1` walk one user path, and `&back=1` taps the compose screen's
+  back chevron at the end of the chain. Check paths must URL-encode
+  spaces (`%20`): the platform's test reader rejects paths with literal
+  whitespace.
 - Keep the inbox fetch bounded: parallel with concurrency limit 8 and a
   10 s overall budget, plus short TTL caches (apps 60 s, promoted 30 s).

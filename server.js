@@ -374,6 +374,23 @@ async function migrate() {
   `);
   await pool.query(
     'ALTER TABLE my_votes ADD COLUMN IF NOT EXISTS merged_at TIMESTAMPTZ');
+  // Proposals the user composed in the app's New proposal screen. The
+  // app-facing platform API is read-only, so a sent proposal is recorded
+  // here (see the routes below); it is one person's own composed text,
+  // which is the same private-by-nature case as the vote history.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS my_proposals (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      template VARCHAR(16) NOT NULL DEFAULT 'blank',
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'sent',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    COMMENT ON TABLE my_proposals IS 'staging:private';
+  `);
 }
 
 async function seedStaging() {
@@ -794,6 +811,65 @@ app.get('/api/my-votes', async (req, res) => {
     }
 
     res.json({ demo: false, votes: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// New proposal screen: templates plus sending.
+//
+// Templates are a frontend concern (the picker prefills title and
+// description and everything stays editable); the server only needs to
+// know the valid template ids so a sent row records which one was used.
+// The platform's app-facing API is read-only — there is no endpoint an
+// app can call to submit a proposal into another app's approval
+// pipeline — so "sending" records the composed proposal in this app's
+// own Sent list (my_proposals above). That is also why these routes
+// touch no platform call at all.
+// ---------------------------------------------------------------------------
+
+const PROPOSAL_TEMPLATES = new Set(['blank', 'bugfix', 'feature', 'copy']);
+
+// The signed-in user's sent proposals, newest first. The compose screen's
+// Sent section renders from this; 50 is plenty for a review surface.
+app.get('/api/proposals', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, template, title, status, created_at
+       FROM my_proposals WHERE user_id = $1
+       ORDER BY created_at DESC, id DESC LIMIT 50`,
+      [req.user.id]);
+    res.json({ proposals: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Send a composed proposal: validate the edited title and description
+// (the prefill is fully editable, so what arrives is whatever the user
+// left in the fields), record it, and hand the row back so the
+// confirmation and the Sent list can show it without a refetch.
+app.post('/api/proposals', async (req, res) => {
+  const body = req.body || {};
+  const title = typeof body.title === 'string' ? body.title.trim() : '';
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
+  const template = PROPOSAL_TEMPLATES.has(body.template) ? body.template : 'blank';
+  if (!title) return res.status(400).json({ error: 'A title is required' });
+  if (!text) return res.status(400).json({ error: 'A description is required' });
+  if (title.length > 300) {
+    return res.status(400).json({ error: 'Title is too long (300 characters max)' });
+  }
+  if (text.length > 20000) {
+    return res.status(400).json({ error: 'Description is too long (20000 characters max)' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO my_proposals (user_id, username, template, title, body)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, template, title, status, created_at`,
+      [req.user.id, req.user.username, template, title, text]);
+    res.status(201).json({ ok: true, proposal: rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
