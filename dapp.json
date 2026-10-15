@@ -311,6 +311,105 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "threads.discuss-button",
+      "name": "Proposal cards offer a Discuss button",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card] [data-open-detail]",
+      "expectText": "Discuss",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "threads.detail-opens",
+      "name": "Opening a proposal shows the detail view with vote buttons",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "[data-proposal-detail] [data-vote='yes']",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.empty",
+      "name": "A proposal with no comments shows the empty state",
+      "path": "/?demo=1&proposal=demo-5",
+      "expectSelector": "[data-thread-empty]",
+      "expectText": "No comments yet",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.thread-renders",
+      "name": "The demo thread renders its fixture comments",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-thread-list]",
+      "expectText": "Staging demo comment: how does this affect existing shortcuts?",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.reply-nested",
+      "name": "A reply renders indented under its parent comment",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-replies-of='-101'] [data-comment-id='-102'] [data-comment-body]",
+      "expectText": "Staging demo reply: only the new panel keys change.",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.order-top",
+      "name": "Top-level comments show oldest first (newest last)",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-thread-list] > article[data-comment-id='-101']:last-of-type",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.order-replies",
+      "name": "Replies under a parent show oldest first",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-replies-of='-101'] > article[data-comment-id='-102']:last-of-type",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.post",
+      "name": "Posting a comment adds it to the thread",
+      "path": "/?demo=1&proposal=demo-2&comment=Staging demo posted comment",
+      "expectSelector": "[data-thread-list]",
+      "expectText": "Staging demo posted comment",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.post-last",
+      "name": "A just-posted comment appears last in the thread",
+      "path": "/?demo=1&proposal=demo-2&comment=Staging demo newest comment",
+      "expectSelector": "[data-thread-list] > [data-comment]:last-child",
+      "expectText": "Staging demo newest comment",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.reply",
+      "name": "Replying adds the reply under the parent",
+      "path": "/?demo=1&proposal=demo-4&reply-to=-101&reply=Staging demo posted reply",
+      "expectSelector": "[data-replies-of='-101'] [data-comment-body]",
+      "expectText": "Staging demo posted reply",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.reply-depth",
+      "name": "Replying to a reply files it one level up, never deeper",
+      "path": "/?demo=1&proposal=demo-4&reply-to=-102&reply=Staging demo depth check",
+      "expectSelector": "body:has([data-replies-of='-101'] [data-comment-body]):not(:has([data-replies-of='-102']))",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "threads.detail-vote",
+      "name": "Voting from the detail view records the vote",
+      "path": "/?demo=1&proposal=demo-2&cast=demo-2:yes",
+      "expectSelector": "[data-proposal-detail]",
+      "expectText": "You voted yes",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "views.row",
       "name": "Saved views switcher row renders with a Save view button",
       "path": "/?demo=1",

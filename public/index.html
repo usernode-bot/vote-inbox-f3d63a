@@ -273,6 +273,18 @@
       // (a vote, a filter change) keeps those titles expanded; not persisted,
       // a reload starts collapsed again.
       expandedTitles: {},
+      // Proposal detail (?proposal=<sessionId> deep link, or a card's
+      // Discuss button): while open it replaces the inbox list. Comments
+      // are fetched per proposal; commentsKey remembers which thread is
+      // loaded so a re-render (a vote, a reply) never refetches it.
+      detail: params.get('proposal') || '',
+      detailComments: [],
+      commentsKey: '',
+      commentsLoading: false,
+      commentsError: null,
+      // Stringified id of the comment whose reply form is open; null when
+      // none is. One reply form at a time.
+      replyForm: null,
       // Saved views, loaded from localStorage right after the state object
       // (see the saved-views section below).
       views: [],
@@ -1482,6 +1494,26 @@
         + '</div>';
     }
 
+    // Relative-age chip beside the app name ("· 3h ago"). Empty when the
+    // platform did not send a proposed timestamp.
+    function ageSpan(p) {
+      var age = relTime(p.proposedAt);
+      if (!age) return '';
+      return '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
+        + ' title="Proposed ' + esc(new Date(p.proposedAt).toLocaleString()) + '">'
+        + '· ' + esc(age) + '</span>';
+    }
+
+    // Promotion date ("Proposed Oct 12") on its own line under the app
+    // name. Empty when the platform did not send a proposed timestamp.
+    function proposedDateLine(p) {
+      if (!p.proposedAt || !isFinite(new Date(p.proposedAt).getTime())) return '';
+      return '<p data-proposed-date class="text-xs text-zinc-500 dark:text-zinc-400">'
+        + 'Proposed '
+        + esc(new Date(p.proposedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+        + '</p>';
+    }
+
     // Yes/No vote actions, shared by the inbox card (side by side in a row)
     // and the compare column (stacked to fit the narrow column). Same
     // classes and behaviour in both; only the width class differs. Whole
@@ -1510,24 +1542,26 @@
         + '</div>';
     }
 
+    // The voting block, shared by the card and the proposal detail screen
+    // so both always offer the same vote buttons.
+    function proposalActions(p) {
+      return voteActions(p, false);
+    }
+
+    // Discussion entry point on a proposal card: a quiet ghost button,
+    // styled like the share button, that opens the proposal's detail
+    // screen where the thread lives.
+    var DISCUSS_IDLE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>Discuss</span>';
+
+    function discussButton(p) {
+      return '<button data-open-detail data-session="' + esc(p.sessionId) + '"'
+        + ' aria-label="Open discussion for this proposal" title="Discuss"'
+        + ' class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">'
+        + DISCUSS_IDLE_HTML + '</button>';
+    }
+
     function proposalCard(p) {
       var titleExpanded = !!state.expandedTitles[p.sessionId];
-      var age = relTime(p.proposedAt);
-      var ageHtml = age
-        ? '<span class="whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500"'
-          + ' title="Proposed ' + esc(new Date(p.proposedAt).toLocaleString()) + '">'
-          + '· ' + esc(age) + '</span>'
-        : '';
-      // Promotion date ("Proposed Oct 12") on its own line under the app
-      // name. Empty when the platform did not send a proposed timestamp.
-      var proposedDateHtml = '';
-      if (p.proposedAt && isFinite(new Date(p.proposedAt).getTime())) {
-        proposedDateHtml = '<p data-proposed-date class="text-xs text-zinc-500 dark:text-zinc-400">'
-          + 'Proposed '
-          + esc(new Date(p.proposedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
-          + '</p>';
-      }
-      var actions = voteActions(p, false);
       // data-needed lets the declared checks (and deep links) assert what the
       // votes-needed pill shows: omitted when the threshold is unknown.
       return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '"'
@@ -1537,11 +1571,11 @@
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
         + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
-        + ageHtml
+        + ageSpan(p)
         + '</span>'
         + neededPill(p)
         + '</div>'
-        + proposedDateHtml
+        + proposedDateLine(p)
         + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">' + esc(p.title) + '</h2>'
         + voteBar(p)
         + voterAvatarRow(p)
@@ -1550,12 +1584,14 @@
         + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
         + '<div class="flex shrink-0 items-center gap-0.5">'
+        + discussButton(p)
         + compareButton(p)
         + (p.url ? shareLinkButton(p) : '')
+        + '</span>'
         + '</div>'
         + '</div>'
         + statusProgress(p)
-        + actions
+        + proposalActions(p)
         + '</article>';
     }
 
@@ -1603,6 +1639,171 @@
       h2.className = expanded ? TITLE_EXPANDED : TITLE_CLAMPED;
       btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
       btn.textContent = expanded ? 'Less' : 'More';
+    }
+
+    // ------------------------------------------------------------------
+    // Proposal detail: the full proposal with the same vote buttons the
+    // card has, plus the discussion thread. Opened from a card's Discuss
+    // button or the ?proposal=<sessionId> deep link.
+    // ------------------------------------------------------------------
+
+    var COMMENT_FIELD_CLASS = 'w-full resize-none rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500';
+    var COMMENT_SUBMIT_CLASS = 'min-h-9 rounded-full bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition-transform hover:bg-violet-500 active:scale-95 disabled:opacity-50';
+    var COMMENT_CANCEL_CLASS = 'min-h-9 rounded-full px-3 text-sm font-semibold text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
+
+    function commentClass(isTop) {
+      return isTop
+        ? 'rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/70'
+        : 'rounded-lg bg-zinc-50 p-2.5 dark:bg-zinc-800/50';
+    }
+
+    function commentHtml(c, isTop) {
+      return '<article data-comment data-comment-id="' + esc(c.id) + '"'
+        + (isTop ? ' data-comment-top' : '')
+        + ' class="' + commentClass(isTop) + '">'
+        + '<div class="flex items-baseline justify-between gap-2">'
+        + '<span class="min-w-0 truncate text-xs font-semibold text-zinc-700 dark:text-zinc-200">@' + esc(c.username) + '</span>'
+        + '<span class="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">' + esc(relTime(c.createdAt)) + '</span>'
+        + '</div>'
+        + '<p data-comment-body class="mt-1 whitespace-pre-wrap text-sm leading-snug text-zinc-800 dark:text-zinc-100">' + esc(c.body) + '</p>'
+        // Every comment offers Reply. On a reply it targets the tapped
+        // comment itself; the server files that under the reply's own
+        // top-level parent, so the thread never nests deeper than one.
+        + '<button data-reply-btn data-comment="' + esc(c.id) + '"'
+        + ' aria-label="' + (isTop ? 'Reply to this comment' : 'Reply in this thread') + '"'
+        + ' class="mt-1.5 rounded-full text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">Reply</button>'
+        + '</article>';
+    }
+
+    function replyFormHtml(parentId) {
+      return '<div data-reply-form class="flex flex-col gap-2">'
+        + '<textarea data-reply-input rows="2" maxlength="2000" placeholder="Write a reply"'
+        + ' aria-label="Write a reply" class="' + COMMENT_FIELD_CLASS + '"></textarea>'
+        + '<div class="flex items-center justify-end gap-1">'
+        + '<button data-reply-cancel class="' + COMMENT_CANCEL_CLASS + '">Cancel</button>'
+        + '<button data-reply-submit data-parent="' + esc(parentId) + '"'
+        + ' class="' + COMMENT_SUBMIT_CLASS + '">Reply</button>'
+        + '</div></div>';
+    }
+
+    // A top-level comment's replies, oldest first, indented under a left
+    // rule so the one-level nesting reads at a glance. The reply form
+    // opens at the end of this block when the tapped comment was the
+    // parent itself or any reply inside it; it submits with the tapped
+    // id, and the server files a reply-to-reply under the top parent.
+    function repliesHtml(parent, replies) {
+      var open = String(state.replyForm) === String(parent.id);
+      for (var j = 0; !open && j < replies.length; j++) {
+        open = String(state.replyForm) === String(replies[j].id);
+      }
+      if (!replies.length && !open) return '';
+      var html = '<div data-replies data-replies-of="' + esc(parent.id) + '"'
+        + ' class="ml-3 mt-2 flex flex-col gap-2 border-l-2 border-zinc-200 pl-3 dark:border-zinc-800">';
+      for (var i = 0; i < replies.length; i++) html += commentHtml(replies[i], false);
+      if (open) html += replyFormHtml(state.replyForm);
+      html += '</div>';
+      return html;
+    }
+
+    // Thread order, client-side: oldest first (time, then id), so the
+    // newest comment renders last in every thread and reply block.
+    function sortedComments(list) {
+      return (list || []).slice().sort(function (a, b) {
+        var ta = Date.parse(a.createdAt); if (isNaN(ta)) ta = 0;
+        var tb = Date.parse(b.createdAt); if (isNaN(tb)) tb = 0;
+        if (ta !== tb) return ta - tb;
+        return a.id > b.id ? 1 : a.id < b.id ? -1 : 0;
+      });
+    }
+
+    function commentFormHtml() {
+      return '<div data-comment-form class="mt-1 flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/70">'
+        + '<textarea data-comment-input rows="2" maxlength="2000"'
+        + ' placeholder="Add a comment" aria-label="Add a comment"'
+        + ' class="' + COMMENT_FIELD_CLASS + '"></textarea>'
+        + '<div class="flex justify-end">'
+        + '<button data-comment-post class="' + COMMENT_SUBMIT_CLASS + '">Post</button>'
+        + '</div></div>';
+    }
+
+    function renderThread() {
+      var heading = '<h3 data-thread-heading class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Discussion</h3>';
+      if (state.commentsError) {
+        return heading
+          + '<div class="flex flex-col items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/5 px-6 py-8 text-center">'
+          + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(state.commentsError) + '</p>'
+          + '<button data-action="reload-comments" class="mt-1 rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Try again</button>'
+          + '</div>'
+          + commentFormHtml();
+      }
+      if (state.commentsLoading && !state.detailComments.length) {
+        // No post form while the thread is loading: posting before the
+        // list settles would race the fetch that replaces it.
+        return heading
+          + '<p data-thread-loading class="text-xs text-zinc-500 dark:text-zinc-400">Loading comments…</p>';
+      }
+      var list = sortedComments(state.detailComments);
+      var tops = [];
+      var byParent = {};
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (c.parentId == null) tops.push(c);
+        else {
+          var key = String(c.parentId);
+          if (!byParent[key]) byParent[key] = [];
+          byParent[key].push(c);
+        }
+      }
+      if (!tops.length) {
+        return heading
+          + '<div data-thread-empty class="flex flex-col items-center gap-1 rounded-2xl border border-dashed border-zinc-300 bg-white/60 px-6 py-8 text-center dark:border-zinc-700 dark:bg-zinc-900/40">'
+          + '<svg viewBox="0 0 24 24" class="h-8 w-8 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>'
+          + '<p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">No comments yet</p>'
+          + '<p class="text-xs text-zinc-500 dark:text-zinc-400">Ask or answer a question before voting.</p>'
+          + '</div>'
+          + commentFormHtml();
+      }
+      var html = '<div data-thread-list class="flex flex-col gap-2">';
+      for (var t = 0; t < tops.length; t++) {
+        var top = tops[t];
+        html += commentHtml(top, true);
+        html += repliesHtml(top, byParent[String(top.id)] || []);
+      }
+      html += '</div>';
+      return heading + html + commentFormHtml();
+    }
+
+    function renderDetail() {
+      var p = findProposal(state.detail);
+      if (!p) return '';
+      return '<div data-proposal-detail data-session-id="' + esc(p.sessionId) + '" class="flex flex-col gap-3">'
+        + '<button data-action="close-detail"'
+        + ' class="self-start inline-flex items-center gap-1 rounded-full text-sm font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back</button>'
+        + '<article class="' + CARD_CLASS + '">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<span class="flex min-w-0 items-center gap-1.5">'
+        + appAvatar(p)
+        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + ageSpan(p)
+        + '</span>'
+        + neededPill(p)
+        + '</div>'
+        + proposedDateLine(p)
+        + '<h2 data-proposal-title class="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
+        + voteBar(p)
+        + voterAvatarRow(p)
+        + voterNamesRow(p)
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
+        + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
+        + (p.url ? shareLinkButton(p) : '')
+        + '</div>'
+        + statusProgress(p)
+        + proposalActions(p)
+        + '</article>'
+        + '<section data-thread class="flex flex-col gap-2">' + renderThread() + '</section>'
+        + '</div>';
     }
 
     function voteRow(v) {
@@ -1713,13 +1914,17 @@
           }
         }
       }
+      // The inbox list's filter/search/sort controls belong to the list;
+      // hide them while a proposal detail is open.
+      var inDetail = state.tab === 'inbox'
+        && !!(state.detail && findProposal(state.detail));
       document.getElementById('filter-row').className =
-        'mt-2' + (state.tab === 'inbox' && !state.compareView ? '' : ' hidden');
+        'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail ? '' : ' hidden');
       document.getElementById('search-row').className =
-        'mt-2' + (state.tab === 'inbox' && !state.compareView ? '' : ' hidden');
+        'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail ? '' : ' hidden');
       var sortRow = document.getElementById('sort-row');
       if (sortRow) sortRow.className =
-        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' && !state.compareView ? '' : ' hidden');
+        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' && !state.compareView && !inDetail ? '' : ' hidden');
       var votesOrderRow = document.getElementById('votes-order-row');
       if (votesOrderRow) votesOrderRow.className =
         'flex items-center gap-2 pt-1' + (state.tab === 'votes' ? '' : ' hidden');
@@ -2006,7 +2211,7 @@
           && findProposal(state.compare[0]) && findProposal(state.compare[1])) {
         viewHtml = renderCompare();
       } else if (state.tab === 'inbox') {
-        viewHtml = renderInbox();
+        viewHtml = state.detail && findProposal(state.detail) ? renderDetail() : renderInbox();
         // The compare bar sits over the list while a selection is open; it
         // yields to the compare view itself once that is on screen.
         if (state.compare.length && !state.compareView) {
@@ -2017,6 +2222,96 @@
       }
       document.getElementById('view').innerHTML = viewHtml;
       enhanceTitles();
+    }
+
+    // ------------------------------------------------------------------
+    // Detail navigation and thread data.
+    // ------------------------------------------------------------------
+
+    function detailThreadKey() {
+      var p = findProposal(state.detail);
+      return p ? p.appSlug + '|' + p.sessionId : '';
+    }
+
+    function loadDetailComments() {
+      var p = findProposal(state.detail);
+      if (!p) return;
+      var key = p.appSlug + '|' + p.sessionId;
+      if (state.commentsKey === key && !state.commentsError) return;
+      state.commentsKey = key;
+      state.detailComments = [];
+      state.commentsLoading = true;
+      state.commentsError = null;
+      render();
+      var query = '?appSlug=' + encodeURIComponent(p.appSlug)
+        + '&sessionId=' + encodeURIComponent(p.sessionId)
+        + (DEMO ? '&demo=1' : '');
+      api('/api/comments' + query)
+        .then(function (data) {
+          // The user may have navigated away while the fetch ran.
+          if (detailThreadKey() !== key) return;
+          state.detailComments = (data && data.comments) || [];
+          state.commentsLoading = false;
+          state.commentsError = null;
+          render();
+        })
+        .catch(function (err) {
+          if (detailThreadKey() !== key) return;
+          state.commentsLoading = false;
+          state.commentsError = err.message || 'Could not load the discussion.';
+          render();
+        });
+    }
+
+    function openDetail(sessionId) {
+      if (!findProposal(sessionId)) return;
+      state.detail = sessionId;
+      state.replyForm = null;
+      render();
+      window.scrollTo(0, 0);
+      loadDetailComments();
+    }
+
+    function closeDetail() {
+      state.detail = '';
+      state.replyForm = null;
+      render();
+      window.scrollTo(0, 0);
+    }
+
+    // Post a comment (parentId null) or a reply (parentId = the top-level
+    // comment's id, as a string in the markup). The busy state disables the
+    // submit button in place: a re-render here would wipe the form's text.
+    function postThreadComment(parentId) {
+      var p = findProposal(state.detail);
+      if (!p || state.commentBusy) return;
+      var field = document.querySelector(parentId == null ? '[data-comment-input]' : '[data-reply-input]');
+      var btn = document.querySelector(parentId == null ? '[data-comment-post]' : '[data-reply-submit]');
+      if (!field) return;
+      var text = field.value.trim();
+      if (!text) return;
+      state.commentBusy = true;
+      if (btn) btn.disabled = true;
+      api('/api/comments', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({
+          appSlug: p.appSlug,
+          sessionId: p.sessionId,
+          body: text,
+          parentId: parentId == null ? null : Number(parentId),
+          demo: !!(state.inbox && state.inbox.demo),
+        }),
+      }).then(function (res) {
+        if (res && res.comment) state.detailComments.push(res.comment);
+        state.replyForm = null;
+        state.commentBusy = false;
+        render();
+      }).catch(function (err) {
+        state.commentBusy = false;
+        if (btn && document.contains(btn)) btn.disabled = false;
+        toast('Could not post the comment: ' + (err.message || 'try again'));
+      });
     }
 
     // ------------------------------------------------------------------
@@ -2299,6 +2594,11 @@
           maybeAutoOpenFilter();
           maybeTapNo();
           maybeTapShare();
+          maybeAutoComment();
+          maybeAutoReply();
+          // A ?proposal= deep link lands on the inbox first; once the list
+          // holds the proposal, the detail view can load its thread.
+          if (state.detail && findProposal(state.detail)) loadDetailComments();
           maybeCompareHooks();
           if (state.queuedInbox) {
             state.queuedInbox = false;
@@ -2693,6 +2993,51 @@
       state.expandedTitles[String(id)] = true;
     }
 
+    // Poll for a selector and hand the element over, so the demo hooks
+    // below can act on controls that only exist once the thread (or a
+    // reply form) has rendered. Gives up after ~4s.
+    function waitFor(selector, fn, tries) {
+      var n = tries || 0;
+      var el = document.querySelector(selector);
+      if (el) { fn(el); return; }
+      if (n > 40) return;
+      setTimeout(function () { waitFor(selector, fn, n + 1); }, 100);
+    }
+
+    // Staging demo hook: ?demo=1&proposal=<sessionId>&comment=<text> posts
+    // a comment through the REAL detail form (fills the field, taps Post,
+    // so the POST and the thread update are the code a person runs). Pairs
+    // with the ?proposal= deep link. Demo only; does nothing without it.
+    function maybeAutoComment() {
+      if (!DEMO || !state.detail) return;
+      var text = params.get('comment');
+      if (!text) return;
+      waitFor('[data-comment-input]', function (input) {
+        input.value = text;
+        var btn = document.querySelector('[data-comment-post]');
+        if (btn) btn.click();
+      });
+    }
+
+    // Staging demo hook: ?demo=1&reply-to=<commentId>&reply=<text> opens
+    // that comment's reply form and posts through it, the way ?comment=
+    // posts a top-level comment. Replying to a reply exercises the
+    // server's one-level-only rule. Demo only.
+    function maybeAutoReply() {
+      if (!DEMO || !state.detail) return;
+      var id = params.get('reply-to');
+      var text = params.get('reply');
+      if (!id || !text) return;
+      waitFor('[data-comment][data-comment-id="' + id + '"] [data-reply-btn]', function (btn) {
+        btn.click();
+        waitFor('[data-reply-input]', function (input) {
+          input.value = text;
+          var submit = document.querySelector('[data-reply-submit]');
+          if (submit) submit.click();
+        });
+      });
+    }
+
     // Staging demo hooks for the compare flow, all demo-only, one-shot and
     // driven through the REAL controls (the delegated click handler), the
     // way ?tap-no=1 and ?tap-share= work:
@@ -2798,12 +3143,48 @@
           // engage right away; the pull only fires at scroll offset 0.
           window.scrollTo(0, 0);
           loadInbox(!state.inbox);
+        } else if (action === 'close-detail') {
+          closeDetail();
+        } else if (action === 'reload-comments') {
+          state.commentsKey = '';
+          loadDetailComments();
         }
         return;
       }
       var titleBtn = target.closest ? target.closest('[data-title-toggle]') : null;
       if (titleBtn) {
         toggleTitle(titleBtn);
+        return;
+      }
+      var discussBtn = target.closest ? target.closest('[data-open-detail]') : null;
+      if (discussBtn) {
+        openDetail(discussBtn.getAttribute('data-session'));
+        return;
+      }
+      var replyBtn = target.closest ? target.closest('[data-reply-btn]') : null;
+      if (replyBtn) {
+        var replyId = replyBtn.getAttribute('data-comment');
+        // Reply is a toggle: tapping it again closes the form.
+        state.replyForm = String(state.replyForm) === String(replyId) ? null : String(replyId);
+        render();
+        var replyInput = document.querySelector('[data-reply-input]');
+        if (replyInput) replyInput.focus();
+        return;
+      }
+      var replyCancel = target.closest ? target.closest('[data-reply-cancel]') : null;
+      if (replyCancel) {
+        state.replyForm = null;
+        render();
+        return;
+      }
+      var replySubmit = target.closest ? target.closest('[data-reply-submit]') : null;
+      if (replySubmit) {
+        postThreadComment(replySubmit.getAttribute('data-parent'));
+        return;
+      }
+      var postBtn = target.closest ? target.closest('[data-comment-post]') : null;
+      if (postBtn) {
+        postThreadComment(null);
         return;
       }
       var compareAdd = target.closest ? target.closest('[data-compare-add]') : null;
