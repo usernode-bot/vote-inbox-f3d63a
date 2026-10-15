@@ -472,6 +472,175 @@
       "impact": ["public/index.html", "server.js", "dapp.json"]
     },
     {
+      "id": "inbox.queue-first",
+      "name": "Next-to-merge card shows 1st in queue",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
+      "expectText": "1st in queue",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-second",
+      "name": "Second in queue shows its position",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-queue-badge]",
+      "expectText": "2nd in queue",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-third",
+      "name": "Third in queue shows its position",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-queue-badge]",
+      "expectText": "3rd in queue",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-fourth",
+      "name": "Fourth in queue shows its position",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-queue-badge]",
+      "expectText": "4th in queue",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-first-state",
+      "name": "First in queue is marked next to merge",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge][data-queue-first='1']",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-first-only",
+      "name": "Only the first queued card carries the next-to-merge mark",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-queue-first='1'])):not(:has([data-proposal-card][data-session-id='demo-6'] [data-queue-first='1'])):not(:has([data-proposal-card][data-session-id='demo-1'] [data-queue-first='1']))",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-not-voting",
+      "name": "Still-voting cards show no queue badge",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-4']):not(:has([data-proposal-card][data-session-id='demo-4'] [data-queue-badge]))",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-not-merged",
+      "name": "Already-merged cards show no queue badge",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'] [data-queue-badge]))",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-eta-order",
+      "name": "Queue position follows the merge countdown (reversed etas)",
+      "path": "/?demo=1&queue=1&queue-eta=reverse",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-queue-badge][data-queue-first='1']",
+      "expectText": "1st in queue",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-eta-order-last",
+      "name": "The latest countdown queues last (reversed etas)",
+      "path": "/?demo=1&queue=1&queue-eta=reverse",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
+      "expectText": "4th in queue",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-no-eta-fallback",
+      "name": "Without countdowns the queue keeps the loaded order",
+      "path": "/?demo=1&queue=1&no-eta=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-queue-badge]",
+      "expectText": "1st in queue",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-no-eta-fallback-last",
+      "name": "Without countdowns the loaded order fills the queue end",
+      "path": "/?demo=1&queue=1&no-eta=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
+      "expectText": "4th in queue",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-merges-clears",
+      "name": "A merged proposal loses its queue badge",
+      "path": "/?demo=1&queue=1&merged=demo-2",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-2']):not(:has([data-proposal-card][data-session-id='demo-2'] [data-queue-badge]))",
+      "expectText": "Merged",
+      "visual": true,
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-merges-shift",
+      "name": "Queue positions move up when one proposal merges",
+      "path": "/?demo=1&queue=1&merged=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-queue-badge]",
+      "expectText": "2nd in queue",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-merges-keep-first",
+      "name": "First in queue keeps its place when another merges",
+      "path": "/?demo=1&queue=1&merged=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge][data-queue-first='1']",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-all-merged",
+      "name": "No queue badges when every proposal has merged",
+      "path": "/?demo=1&allmerged=1",
+      "expectSelector": "body:not(:has([data-queue-badge]))",
+      "expectText": "Merged",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-plain-inbox",
+      "name": "Queue badge renders on the plain demo inbox too",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
+      "expectText": "1st in queue",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-plain-no-voting-badge",
+      "name": "Voting cards show no badge on the plain demo inbox",
+      "path": "/?demo=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-queue-badge]))",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-info-only",
+      "name": "Queue badge is plain text, not a control",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "body:has(span[data-queue-badge]):not(:has(button[data-queue-badge]))",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-hide-merged",
+      "name": "Hide merged keeps the badges on merging cards",
+      "path": "/?demo=1&queue=1&hide-merged=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'])):has([data-proposal-card][data-session-id='demo-3'] [data-queue-badge])",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-status-row",
+      "name": "Queue badge sits beside the Merging status label",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-proposal-status] [data-queue-badge]",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "inbox.queue-pos-attr",
+      "name": "Queue badge carries its numeric position",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-queue-badge][data-queue-pos='3']",
+      "impact": ["public/index.html", "server.js", "dapp.json"]
+    },
+    {
       "id": "watch.star-button",
       "name": "Inbox cards offer a star button",
       "path": "/?demo=1",
