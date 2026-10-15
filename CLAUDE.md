@@ -133,5 +133,12 @@ user's vote history.
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- `?splits=<sessionId>:<yes>-<no>,…` (demo only) overrides named fixture
+  proposals' vote counts so the controversy sort's tie behaviour is
+  reachable by checks without changing the default fixture's numbers.
+- The Controversy sort (closest yes/no split first; unanimous or one-sided
+  proposals sink; equal gaps break by title) ranks the whole loaded inbox,
+  so it renders one flat list — the age-group headers only apply to the
+  default and Newest sorts, where the day buckets are the point.
 - Keep the inbox fetch bounded: parallel with concurrency limit 8 and a
   10 s overall budget, plus short TTL caches (apps 60 s, promoted 30 s).

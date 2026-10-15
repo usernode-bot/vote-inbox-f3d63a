@@ -173,6 +173,8 @@
           class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Votes needed</button>
         <button data-sort="newest" type="button" role="radio" aria-checked="false"
           class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Newest</button>
+        <button data-sort="controversy" type="button" role="radio" aria-checked="false"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Controversy</button>
       </div>
     </div>
 
@@ -206,6 +208,12 @@
     // without demo data.
     var OPEN_FILTER = params.get('openfilter') === '1';
     var ALL_MERGED = params.get('allmerged') === '1';
+    // Staging-check fixture: ?splits=<sessionId>:<yes>-<no>,… (demo only)
+    // asks the demo inbox to override named proposals' vote counts, so the
+    // controversy sort's tie behaviour is reachable without changing the
+    // default fixture's numbers. Forwarded to /api/inbox; never sent
+    // without demo data.
+    var SPLITS = DEMO ? (params.get('splits') || '') : '';
     // Staging-check fixture for the confirm-before-No flow: ?tap-no=1 asks
     // the demo inbox to click the demo-4 card's "No" button once loaded (the
     // real button, through the real delegated click handler), and
@@ -274,6 +282,7 @@
       // hideVoted: it starts off on every fresh load.
       oneAway: params.get('one-away') === '1',
       hideMerged: false,
+      // Inbox order: 'needed' | 'newest' | 'controversy'.
       sort: 'needed',
       // My Votes order: 'newest' | 'oldest'. Not persisted; the
       // ?votes-order= param is a one-load override, the same pattern as
@@ -452,17 +461,18 @@
     // ------------------------------------------------------------------
     // Sort order preference. Same shape as the hide-voted preference:
     // persists in localStorage so the choice survives reloads, and
-    // ?sort=needed|newest overrides it for one load (used by the staging
-    // checks) without writing back. Storage can be refused in an iframe —
-    // the choice then just doesn't persist.
+    // ?sort=needed|newest|controversy overrides it for one load (used by
+    // the staging checks) without writing back. Storage can be refused in
+    // an iframe — the choice then just doesn't persist.
     // ------------------------------------------------------------------
 
     var SORT_KEY = 'vote-inbox:sort';
+    var SORT_VALUES = ['needed', 'newest', 'controversy'];
 
     function loadSort() {
       try {
         var v = localStorage.getItem(SORT_KEY);
-        return v === 'newest' || v === 'needed' ? v : 'needed';
+        return SORT_VALUES.indexOf(v) !== -1 ? v : 'needed';
       } catch (e) { return 'needed'; }
     }
 
@@ -472,10 +482,10 @@
 
     var sortParam = params.get('sort');
     state.sort = loadSort();
-    if (sortParam === 'newest' || sortParam === 'needed') state.sort = sortParam;
+    if (SORT_VALUES.indexOf(sortParam) !== -1) state.sort = sortParam;
 
     function setSort(v) {
-      if (v !== 'needed' && v !== 'newest' || v === state.sort) return;
+      if (SORT_VALUES.indexOf(v) === -1 || v === state.sort) return;
       state.sort = v;
       saveSort(v);
       render();
@@ -1666,8 +1676,12 @@
       var titleExpanded = !!state.expandedTitles[p.sessionId];
       // data-needed lets the declared checks (and deep links) assert what the
       // votes-needed pill shows: omitted when the threshold is unknown.
+      // data-contested marks whether both sides hold at least one vote, the
+      // split property the controversy sort ranks on.
+      var contested = splitContested(p);
       return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '"'
         + (p.needed != null ? ' data-needed="' + p.needed + '"' : '')
+        + ' data-contested="' + (contested ? 'true' : 'false') + '"'
         + ' class="' + CARD_CLASS + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
@@ -2118,6 +2132,33 @@
         : 'hidden';
     }
 
+    // Controversy order: the closest yes/no split first, so a tight race is
+    // seen ahead of a landslide. A proposal with no votes on one side
+    // (unanimous, or untouched) has no contest to measure, so every such
+    // card sinks below the contested ones. Equal gaps break by title, then
+    // session id, so repeated renders match. A copy is sorted: the loaded
+    // array's order stays canonical for the default sort and the server's
+    // caches.
+    function splitContested(p) {
+      return (p.yes || 0) > 0 && (p.no || 0) > 0;
+    }
+
+    function splitGap(p) {
+      return Math.abs((p.yes || 0) - (p.no || 0));
+    }
+
+    function controversyCompare(a, b) {
+      var ca = splitContested(a);
+      var cb = splitContested(b);
+      if (ca !== cb) return ca ? -1 : 1;
+      var ga = splitGap(a);
+      var gb = splitGap(b);
+      if (ga !== gb) return ga - gb;
+      var t = String(a.title || '').localeCompare(String(b.title || ''));
+      if (t !== 0) return t;
+      return String(a.sessionId || '').localeCompare(String(b.sessionId || ''));
+    }
+
     function renderInbox() {
       if (state.errorInbox) return errorHtml(state.errorInbox);
       if (!state.inbox || state.loadingInbox && !state.inbox.proposals) return skeletons();
@@ -2155,6 +2196,11 @@
           if (isNaN(tb)) return -1;
           return tb - ta;
         });
+      } else if (state.sort === 'controversy') {
+        // Closest yes/no split first over the already-filtered set; the
+        // app, hide-voted, hide-merged and search filters above have all
+        // run, so the ranking only orders what survived them.
+        filtered = filtered.slice().sort(controversyCompare);
       }
       // One-vote-away chip: keep only proposals exactly one yes short of
       // their threshold (the same number the "1 vote needed" pill shows).
@@ -2195,6 +2241,16 @@
             ? 'No open proposals for this app right now.'
             : 'No open proposals to vote on. New ones show up here.',
           proposals.length ? CLEAR_FILTER_CTA : REFRESH_CTA);
+      }
+      // Controversy ranks the whole loaded inbox, tightest race first, so
+      // it renders one flat list: the age-group headers would cut the
+      // ranking into day buckets and bury a tight older race under a
+      // lopsided one from today. Same cards, same spacing (#view is
+      // already a gap-3 column); no proposals added or dropped.
+      if (state.sort === 'controversy') {
+        var flat = '';
+        for (var c = 0; c < filtered.length; c++) flat += proposalCard(filtered[c]);
+        return flat;
       }
       // Age groups: small section headers over the same filtered, sorted
       // cards. Bucketed on the proposal's proposed date in the viewer's own
@@ -2756,6 +2812,7 @@
       if (ALL_VOTED) query.push('allvoted=1');
       if (ALL_MERGED) query.push('allmerged=1');
       if (PRESET_STAR) query.push('preset-star=' + encodeURIComponent(PRESET_STAR));
+      if (SPLITS) query.push('splits=' + encodeURIComponent(SPLITS));
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;

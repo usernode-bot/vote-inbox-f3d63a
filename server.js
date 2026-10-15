@@ -656,6 +656,22 @@ function demoInboxPayload(req) {
   if (req.query.allmerged === '1') {
     for (const p of demo.proposals) p.status = 'merged';
   }
+  // ?splits=<sessionId>:<yes>-<no>,… (demo only) overrides named proposals'
+  // vote counts, so the controversy-sort checks can pin tie behaviour — two
+  // proposals with the same gap — without changing the default fixture's
+  // numbers. Values stay in the fixture's fake-identity style: counts only.
+  const splits = String(req.query.splits || '');
+  if (splits) {
+    const bySession = new Map(demo.proposals.map((p) => [p.sessionId, p]));
+    for (const part of splits.split(',')) {
+      const m = /^([A-Za-z0-9_-]+):(\d+)-(\d+)$/.exec(part.trim());
+      const p = m && bySession.get(m[1]);
+      if (!p) continue;
+      p.yes = Number(m[2]);
+      p.no = Number(m[3]);
+      p.needed = p.required != null ? Math.max(0, p.required - p.yes) : null;
+    }
+  }
   return demo;
 }
 
