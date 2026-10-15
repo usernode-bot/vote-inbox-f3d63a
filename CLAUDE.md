@@ -99,9 +99,11 @@ user's vote history.
 
 ## App-specific conventions
 
-- `my_votes` is the only local table and is marked `staging:private`
-  (one person's vote history). Proposal data stays on the platform —
-  with one exception: the discussion thread.
+- Three local tables: `my_votes` (one person's vote history) and
+  `watchlist` (one person's starred proposals, plus the status each row
+  was last seen in) are both marked `staging:private` (per-person data).
+  Proposal data stays on the platform — with one exception: the
+  discussion thread.
 - `proposal_comments` holds the discussion thread. It is PUBLIC (on
   purpose): comments are in-app content visible to every signed-in
   member, so a stranger seeing every row is fine. Nesting is one level
@@ -118,7 +120,15 @@ user's vote history.
 - Platform responses are normalised server-side (`normalizeProposal`) so
   the frontend deals with one shape; keep field-spelling tolerance there.
 - `?demo=1` (staging only) serves obviously-fake fixture data for the
-  Inbox and My Votes screens; production never serves demo data.
+  Inbox, My Votes and Watchlist screens; production never serves demo data.
+- Watchlist demo knobs (staging + `?demo=1` only): `?tab=watchlist` opens
+  the Watchlist tab on the fixture rows; `?preset-star=<sessionId>` marks
+  inbox cards starred for that load; `?tap-star=<sessionId>` taps a star
+  button after render; `?set-star=<sessionId>` stars for real (a DB row for
+  the signed-in account) then reloads, so persistence is observable — pair
+  it with `?watch-mine=1` on the Watchlist tab to include those real rows;
+  `?watch-seen=1` marks the fixture seen (no change badges) and
+  `?watch-empty=1` empties the tab (the empty state).
 - `?failvote=1` (demo only) makes the next vote cast on that load fail as
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
@@ -130,6 +140,16 @@ user's vote history.
   `?select=` are un-voted first, so repeated check runs against a shared
   staging database always start from unvoted cards. Selection lives in
   frontend memory only and is never persisted.
+- `?turnout-refresh=1` (demo only) reloads the inbox through the real
+  refresh path with the fetch carrying `?turnoutalt=1`, which the server
+  answers with a variant fixture (two more proposals merged), so the app
+  filter's per-app open and merged-this-week counts are observable
+  updating in place.
+- The app filter dropdown shows each app's open count (loaded proposals
+  not yet merged) plus its merged-this-week count (merged within the
+  last seven calendar days), both tallied from the already-loaded inbox
+  data and re-tallied whenever the inbox reloads while the dropdown is
+  open. No extra platform calls.
 - `?splits=<sessionId>:<yes>-<no>,…` (demo only) overrides named fixture
   proposals' vote counts so the controversy sort's tie behaviour is
   reachable by checks without changing the default fixture's numbers.

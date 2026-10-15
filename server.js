@@ -392,6 +392,25 @@ async function migrate() {
   `);
   await pool.query(
     'ALTER TABLE my_votes ADD COLUMN IF NOT EXISTS merged_at TIMESTAMPTZ');
+  // The user's starred proposals and the status each row was last seen in.
+  // Like my_votes this is one person's own data (what they watch), so it is
+  // staging:private. No foreign keys; proposal content stays on the platform.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS watchlist (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      last_seen_status VARCHAR(16),
+      starred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE watchlist IS 'staging:private';
+  `);
 }
 
 async function seedStaging() {
@@ -446,6 +465,85 @@ async function withMyVotes(proposals, userId) {
 }
 
 // ---------------------------------------------------------------------------
+// Watchlist: proposals the user starred, with the status each row was last
+// seen in. Rows are per user (staging:private — it is one person's tracking
+// data). The proposal content itself stays on the platform; the row keeps
+// just enough to render the tab and to re-find the proposal's app.
+// ---------------------------------------------------------------------------
+
+// The session ids this user has starred, for stamping the inbox cards.
+async function watchSetFor(userId) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT session_id FROM watchlist WHERE user_id = $1', [userId]);
+    return new Set(rows.map((r) => r.session_id));
+  } catch {
+    return new Set();
+  }
+}
+
+// Stamp each proposal with the caller's own star. Real rows always win;
+// ?preset-star=<sessionId,...> (demo checks) marks extra ones starred for
+// that one load without touching storage.
+async function withMyStars(proposals, userId, req) {
+  const mine = await watchSetFor(userId);
+  const preset = req && req.query['preset-star']
+    ? String(req.query['preset-star']).split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  for (const p of proposals) {
+    p.myStar = mine.has(p.sessionId) || preset.includes(p.sessionId) || p.myStar === true;
+  }
+  return proposals;
+}
+
+// Status a row is on now, for the "since last look" badge. Current status
+// comes from the app's promoted list when the platform answers for it:
+// still listed means open ('voting', or the platform's own merging state),
+// dropped from the list means the vote ended ('closed'). When the app's
+// list cannot be loaded the last-seen status stands, so a platform outage
+// never fabricates a change badge.
+async function withCurrentStatuses(rows, userToken) {
+  const byApp = new Map();
+  for (const r of rows) {
+    if (!byApp.has(r.app_slug)) byApp.set(r.app_slug, []);
+    byApp.get(r.app_slug).push(r);
+  }
+  for (const [slug, list] of byApp) {
+    let items = null;
+    try { items = await loadPromoted(slug, userToken); } catch { items = null; }
+    const bySession = items ? new Map(items.map((i) => [i.sessionId, i])) : null;
+    for (const r of list) {
+      if (bySession) {
+        const item = bySession.get(r.session_id);
+        r.current_status = item
+          ? (item.status === 'merging' || item.status === 'merged' ? item.status : 'voting')
+          : 'closed';
+      } else {
+        r.current_status = r.last_seen_status || 'voting';
+      }
+    }
+  }
+}
+
+function watchRowPayload(r) {
+  const changed = !!r.current_status
+    && r.last_seen_status != null
+    && r.current_status !== r.last_seen_status;
+  return {
+    sessionId: r.session_id,
+    appSlug: r.app_slug,
+    appName: r.app_name || r.app_slug,
+    icon: r.icon || null,
+    proposalId: r.proposal_id || null,
+    title: r.title,
+    starredAt: r.starred_at || null,
+    seenStatus: r.last_seen_status,
+    status: r.current_status || r.last_seen_status || 'voting',
+    changed,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Staging demo data (?demo=1)
 //
 // The inbox and history screens render against real platform calls in
@@ -476,8 +574,10 @@ function demoInbox() {
   // from today, and for day 0 how many hours ago, plus a floor in minutes
   // past local midnight so just-after-midnight runs cannot clamp two
   // fixtures onto the same instant. proposedAt stays the real elapsed-time
-  // stamp for any consumer that does not re-anchor.
-  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters, anchor) => ({
+  // stamp for any consumer that does not re-anchor. `mergedAgeMs` stamps
+  // when a merged proposal merged (ms ago), for the app filter's
+  // merged-this-week count.
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters, anchor, mergedAgeMs) => ({
     sessionId,
     proposalId,
     // Without a configured platform origin (a bare check worker, not real
@@ -492,6 +592,7 @@ function demoInbox() {
     status: status || null,
     eta: null,
     proposedAt: ageMs != null ? new Date(Date.now() - ageMs).toISOString() : null,
+    mergedAt: mergedAgeMs != null ? new Date(Date.now() - mergedAgeMs).toISOString() : null,
     demoAnchor: anchor || null,
     appSlug: slug,
     appName: apps.find((a) => a.slug === slug).name,
@@ -516,7 +617,10 @@ function demoInbox() {
   const todayCap = () => Date.now() % D;
   // Two of the six are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
-  // null (an open proposal, Voting), 'merging' and 'merged'. demo-4 carries
+  // null (an open proposal, Voting), 'merging' and 'merged'. demo-5 is the
+  // one merged proposal, and it merged 2 days ago (within the week) so the
+  // app filter's merged-this-week count is nonzero for its app while the
+  // other app reads 0. demo-4 carries
   // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
   // avatar row shows its max-5-then-"+N" case in previews and checks, and a
   // deliberately long title (3+ rendered lines) so the expandable-title
@@ -529,13 +633,13 @@ function demoInbox() {
   // demo-4/demo-2/demo-1/demo-6. demo-1 and demo-6 each sit exactly one yes
   // vote from their threshold so the One vote away chip has something to show.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, Math.min(8 * H, todayCap()), null,
-      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }),
-    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }),
+      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }, null),
+    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }, null),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }, null),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }, 2 * D),
   ];
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }
@@ -557,6 +661,24 @@ function demoInboxPayload(req) {
   }
   if (req.query.allmerged === '1') {
     for (const p of demo.proposals) p.status = 'merged';
+  }
+  // Check-fixture variant (?turnoutalt=1, staging demo only): demo-3 and
+  // demo-6 have merged since the first load, so the app filter's per-app
+  // open and merged-this-week counts change and the page's refresh of those
+  // numbers is observable (?turnout-refresh=1 drives that reload). Applied
+  // before the allvoted/allmerged overrides; no declared check combines
+  // them. demo-5's merge (2 days ago) is unchanged, so Notes gains one
+  // merge and App gains its first.
+  if (req.query.turnoutalt === '1') {
+    for (const p of demo.proposals) {
+      if (p.sessionId === 'demo-3') {
+        p.status = 'merged';
+        p.mergedAt = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+      } else if (p.sessionId === 'demo-6') {
+        p.status = 'merged';
+        p.mergedAt = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+      }
+    }
   }
   // ?splits=<sessionId>:<yes>-<no>,… (demo only) overrides named proposals'
   // vote counts, so the controversy-sort checks can pin tie behaviour — two
@@ -605,6 +727,53 @@ function demoVoteRows() {
     row('demo-v3', 'staging-demo-notes', 'Staging Demo Notes',
         'Staging demo proposal: pinned notes', 'yes', 'closed', 4, 2, 5, daysAgo(9)),
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Watchlist demo data (?demo=1). Fixed fixture rows keyed to the demo inbox
+// proposals, so the Watchlist tab and its "since last look" badges are
+// deterministic in previews and checks. demo-5 (merged) and demo-3 (now
+// merging) carry a last-seen status of 'voting', so both show a change
+// badge; demo-1 is unchanged. Request-time injection, staging only.
+// ---------------------------------------------------------------------------
+
+function demoWatchRows() {
+  const byId = new Map(demoInbox().proposals.map((p) => [p.sessionId, p]));
+  const daysAgo = (d) => new Date(Date.now() - d * 24 * 3600 * 1000).toISOString();
+  const mk = (sessionId, seenStatus, starredDays) => {
+    const p = byId.get(sessionId);
+    if (!p) return null;
+    const status = p.status === 'proposed' ? 'voting' : (p.status || 'voting');
+    return {
+      sessionId,
+      appSlug: p.appSlug,
+      appName: p.appName,
+      icon: p.icon || null,
+      proposalId: p.proposalId,
+      title: p.title,
+      starredAt: daysAgo(starredDays),
+      seenStatus,
+      status,
+      changed: seenStatus != null && status !== seenStatus,
+    };
+  };
+  return [mk('demo-5', 'voting', 6), mk('demo-3', 'voting', 3), mk('demo-1', 'voting', 2)]
+    .filter(Boolean);
+}
+
+// ?watch-seen=1 marks every fixture row as seen right now (no badges);
+// ?watch-empty=1 serves no rows (the empty state). Both demo-only knobs so
+// the declared checks can reach those states deterministically.
+function demoWatchlistPayload(req) {
+  const rows = demoWatchRows();
+  if (req.query['watch-seen'] === '1') {
+    for (const r of rows) {
+      r.seenStatus = r.status;
+      r.changed = false;
+    }
+  }
+  if (req.query['watch-empty'] === '1') return { demo: true, rows: [] };
+  return { demo: true, rows };
 }
 
 // ---------------------------------------------------------------------------
@@ -674,6 +843,7 @@ app.get('/api/inbox', async (req, res) => {
     if (req.query.demo === '1' && IS_STAGING) {
       const demo = demoInboxPayload(req);
       await withMyVotes(demo.proposals, req.user.id);
+      await withMyStars(demo.proposals, req.user.id, req);
       return res.json(demo);
     }
     if (!PLATFORM_ORIGIN) {
@@ -682,6 +852,7 @@ app.get('/api/inbox', async (req, res) => {
       if (IS_STAGING) {
         const demo = demoInboxPayload(req);
         await withMyVotes(demo.proposals, req.user.id);
+        await withMyStars(demo.proposals, req.user.id, req);
         return res.json(demo);
       }
       return res.status(500).json({ error: 'Platform origin is not configured' });
@@ -710,6 +881,7 @@ app.get('/api/inbox', async (req, res) => {
     });
 
     await withMyVotes(proposals, req.user.id);
+    await withMyStars(proposals, req.user.id, req);
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
     proposals.sort(neededFirst);
@@ -888,6 +1060,60 @@ app.get('/api/my-votes', async (req, res) => {
   }
 });
 
+// Watchlist: proposals the signed-in user starred, each with its current
+// status and the status it was last seen in, so the tab can badge what
+// changed since the last look.
+app.get('/api/watchlist', async (req, res) => {
+  const userToken = userTokenFrom(req);
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      const demo = demoWatchlistPayload(req);
+      // ?watch-mine=1 (demo checks) adds the caller's own real rows, recorded
+      // through the ?set-star= hook, so one URL observes star → reload →
+      // still starred from actual storage. Without it the demo payload stays
+      // the pure fixture, keeping the other watchlist checks deterministic.
+      if (req.query['watch-mine'] === '1') {
+        const { rows } = await pool.query(
+          `SELECT app_slug, app_name, session_id, proposal_id, title,
+                  last_seen_status, starred_at
+           FROM watchlist WHERE user_id = $1 ORDER BY starred_at DESC`,
+          [req.user.id]);
+        const present = new Set(demo.rows.map((r) => r.sessionId));
+        const fixtureById = new Map(demoWatchRows().map((r) => [r.sessionId, r]));
+        for (const r of rows) {
+          if (present.has(r.session_id)) continue;
+          const fixture = fixtureById.get(r.session_id);
+          const status = fixture ? fixture.status
+            : (r.last_seen_status || 'voting');
+          demo.rows.unshift({
+            sessionId: r.session_id,
+            appSlug: r.app_slug,
+            appName: r.app_name || r.app_slug,
+            icon: fixture ? fixture.icon : null,
+            proposalId: r.proposal_id,
+            title: r.title,
+            starredAt: r.starred_at,
+            seenStatus: r.last_seen_status,
+            status,
+            changed: r.last_seen_status != null && status !== r.last_seen_status,
+          });
+        }
+      }
+      return res.json(demo);
+    }
+
+    const { rows } = await pool.query(
+      `SELECT app_slug, app_name, session_id, proposal_id, title,
+              last_seen_status, starred_at
+       FROM watchlist WHERE user_id = $1 ORDER BY starred_at DESC`,
+      [req.user.id]);
+    await withCurrentStatuses(rows, userToken);
+    res.json({ demo: false, rows: rows.map(watchRowPayload) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Discussion threads
 //
@@ -927,6 +1153,80 @@ app.get('/api/comments', async (req, res) => {
        ORDER BY created_at ASC, id ASC`,
       [appSlug, sessionId]);
     res.json({ demo: false, comments: rows.map(normalizeComment) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Star a proposal. Demo bodies (staging only) carry just the session id and
+// take their metadata from the demo fixture, so a check URL can star a
+// known proposal; real stars carry what the card showed. Starred again with
+// the row already there is a no-op.
+app.post('/api/watchlist/star', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    let meta = body;
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo starring is staging-only' });
+      const p = demoInbox().proposals.find((x) => x.sessionId === sessionId);
+      if (!p) return res.status(400).json({ error: 'Unknown demo proposal' });
+      meta = {
+        appSlug: p.appSlug,
+        appName: p.appName,
+        proposalId: p.proposalId,
+        title: p.title,
+        status: p.status === 'proposed' ? 'voting' : (p.status || 'voting'),
+      };
+    }
+    await pool.query(`
+      INSERT INTO watchlist
+        (user_id, username, app_slug, app_name, session_id, proposal_id, title, last_seen_status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (user_id, session_id) DO NOTHING
+    `, [req.user.id, req.user.username, meta.appSlug || '', meta.appName || '',
+        sessionId, meta.proposalId || null, meta.title || 'Untitled proposal',
+        meta.status || 'voting']);
+    res.json({ ok: true, demo: body.demo === true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Unstar: remove this user's row for one session.
+app.post('/api/watchlist/unstar', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM watchlist WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, removed: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark watched: record the status each row showed at this view, so the next
+// visit only badges what changed since. The frontend posts it after the tab
+// renders. Rows that were unstarred meanwhile simply update nothing.
+app.post('/api/watchlist/seen', async (req, res) => {
+  const body = req.body || {};
+  const statuses = Array.isArray(body.statuses) ? body.statuses.slice(0, 200) : [];
+  try {
+    for (const s of statuses) {
+      if (!s || s.sessionId == null || typeof s.status !== 'string' || !s.status) continue;
+      await pool.query(
+        'UPDATE watchlist SET last_seen_status = $3 WHERE user_id = $1 AND session_id = $2',
+        [req.user.id, String(s.sessionId), s.status]);
+    }
+    res.json({ ok: true, marked: statuses.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
