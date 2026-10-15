@@ -100,8 +100,21 @@ user's vote history.
 ## App-specific conventions
 
 - `my_votes` is the only local table and is marked `staging:private`
-  (one person's vote history). No other tables — proposal data stays on
-  the platform.
+  (one person's vote history). Proposal data stays on the platform —
+  with one exception: the discussion thread.
+- `proposal_comments` holds the discussion thread. It is PUBLIC (on
+  purpose): comments are in-app content visible to every signed-in
+  member, so a stranger seeing every row is fine. Nesting is one level
+  only, enforced server-side at write time (a reply to a reply is
+  filed under the reply's own top-level parent).
+- Proposal detail view: the Discuss button on a card opens it, and
+  `?proposal=<sessionId>` deep-links to it. Both work in production;
+  the detail reuses the card's vote buttons via shared `proposalActions`.
+- Demo thread hooks (staging demo only): `?comment=<text>` posts a
+  top-level comment, `?reply-to=<id>&reply=<text>` posts a reply, both
+  through the real form. Demo-4 carries fixture comments (negative ids
+  -100..-102); demo-5 stays comment-free for the empty-state check.
+  Demo comments live in server MEMORY, never the DB.
 - Platform responses are normalised server-side (`normalizeProposal`) so
   the frontend deals with one shape; keep field-spelling tolerance there.
 - `?demo=1` (staging only) serves obviously-fake fixture data for the
@@ -117,5 +130,12 @@ user's vote history.
   `?select=` are un-voted first, so repeated check runs against a shared
   staging database always start from unvoted cards. Selection lives in
   frontend memory only and is never persisted.
+- `?splits=<sessionId>:<yes>-<no>,…` (demo only) overrides named fixture
+  proposals' vote counts so the controversy sort's tie behaviour is
+  reachable by checks without changing the default fixture's numbers.
+- The Controversy sort (closest yes/no split first; unanimous or one-sided
+  proposals sink; equal gaps break by title) ranks the whole loaded inbox,
+  so it renders one flat list — the age-group headers only apply to the
+  default and Newest sorts, where the day buckets are the point.
 - Keep the inbox fetch bounded: parallel with concurrency limit 8 and a
   10 s overall budget, plus short TTL caches (apps 60 s, promoted 30 s).
