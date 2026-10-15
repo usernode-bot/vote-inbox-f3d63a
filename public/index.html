@@ -125,6 +125,13 @@
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
       </div>
+      <div id="views-row" data-views-row data-hidden="0" class="mt-2 flex items-center gap-2">
+        <div id="views-chips" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5" role="group" aria-label="Saved views"></div>
+        <button id="save-view-btn" type="button" class="flex shrink-0 items-center gap-1 rounded-full py-1.5 pl-2 pr-3 text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">
+          <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          <span>Save view</span>
+        </button>
+      </div>
       <div id="filter-row" class="mt-2">
         <div class="flex items-center gap-3">
           <label for="app-filter-trigger" class="sr-only">Filter by app</label>
@@ -266,6 +273,9 @@
       // (a vote, a filter change) keeps those titles expanded; not persisted,
       // a reload starts collapsed again.
       expandedTitles: {},
+      // Saved views, loaded from localStorage right after the state object
+      // (see the saved-views section below).
+      views: [],
       // Compare selection: up to two session ids picked from the inbox via
       // the cards' Compare buttons, plus whether the dedicated side-by-side
       // view is open. Transient, like oneAway: a reload starts empty unless
@@ -493,6 +503,468 @@
       var remainingQ = remainingParams.toString();
       location.replace(location.pathname + (remainingQ ? '?' + remainingQ : '') + location.hash);
       return;
+    }
+
+    // ------------------------------------------------------------------
+    // Saved views. A view is a named snapshot of the current filter + sort
+    // (plus the one-away chip and the hide toggles), shown as a switcher
+    // row of chips under the tabs. Views live in localStorage so they
+    // survive reloads; the proposals themselves stay on the platform.
+    // Each chip's count answers "how many loaded proposals would this
+    // view match", from the inbox already in memory, no extra request.
+    // ------------------------------------------------------------------
+
+    var VIEWS_KEY = 'vote-inbox:views';
+
+    function loadViews() {
+      try {
+        var v = JSON.parse(localStorage.getItem(VIEWS_KEY) || '[]');
+        if (!Array.isArray(v)) return [];
+        return v.filter(function (x) {
+          return x && typeof x.name === 'string' && x.name.trim();
+        }).map(function (x) {
+          var view = normalizeViewConfig(x);
+          view.name = x.name.trim();
+          return view;
+        });
+      } catch (e) { return []; }
+    }
+
+    function saveViews() {
+      try { localStorage.setItem(VIEWS_KEY, JSON.stringify(state.views)); }
+      catch (e) { /* not persistable here */ }
+    }
+    state.views = loadViews();
+
+    // A view's configuration with every field normalised, so a stored view
+    // and the live state compare cleanly (the storage may hold an older
+    // shape from a previous version of the app).
+    function normalizeViewConfig(v) {
+      return {
+        filter: v && typeof v.filter === 'string' ? v.filter : '',
+        filterName: v && typeof v.filterName === 'string' ? v.filterName : '',
+        sort: v && v.sort === 'newest' ? 'newest' : 'needed',
+        oneAway: !!(v && v.oneAway),
+        hideVoted: !!(v && v.hideVoted),
+        hideMerged: !!(v && v.hideMerged),
+        search: v && typeof v.search === 'string' ? v.search.trim() : '',
+      };
+    }
+
+    // What the screen shows right now, in the same shape as a view.
+    function currentViewConfig() {
+      return {
+        filter: state.filter, filterName: state.filterName, sort: state.sort,
+        oneAway: state.oneAway, hideVoted: state.hideVoted,
+        hideMerged: state.hideMerged, search: state.search.trim(),
+      };
+    }
+
+    function sameViewConfig(a, b) {
+      return a.filter === b.filter && a.sort === b.sort
+        && a.oneAway === b.oneAway && a.hideVoted === b.hideVoted
+        && a.hideMerged === b.hideMerged && a.search === b.search;
+    }
+
+    function findView(name) {
+      for (var i = 0; i < state.views.length; i++) {
+        if (state.views[i].name === name) return state.views[i];
+      }
+      return null;
+    }
+
+    // The saved view whose configuration the screen currently shows, or
+    // '' when nothing matches (a manual change deactivates the chip on
+    // its own, no bookkeeping needed).
+    function activeViewName() {
+      var cfg = currentViewConfig();
+      for (var i = 0; i < state.views.length; i++) {
+        if (state.views[i].name && sameViewConfig(normalizeViewConfig(state.views[i]), cfg)) {
+          return state.views[i].name;
+        }
+      }
+      return '';
+    }
+
+    // Whether one loaded proposal matches a view's configuration: the
+    // same rules renderInbox applies, in the same order.
+    function matchesViewConfig(p, cfg) {
+      if (cfg.filter && p.appSlug !== cfg.filter) return false;
+      if (cfg.hideVoted && isVoted(p)) return false;
+      if (cfg.hideMerged && p.status === 'merged') return false;
+      if (cfg.search) {
+        var q = cfg.search.toLowerCase();
+        if (String(p.title || '').toLowerCase().indexOf(q) === -1) return false;
+      }
+      if (cfg.oneAway && p.needed !== 1) return false;
+      return true;
+    }
+
+    function viewCount(view) {
+      var proposals = state.inbox && state.inbox.proposals;
+      if (!proposals) return null;
+      var cfg = normalizeViewConfig(view);
+      var n = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        if (matchesViewConfig(proposals[i], cfg)) n++;
+      }
+      return n;
+    }
+
+    // Save the current configuration under a name. Saving over an
+    // existing name updates that view in place (no duplicate chips).
+    function saveView(name) {
+      name = String(name == null ? '' : name).trim();
+      if (!name) return false;
+      var view = Object.assign({ name: name }, currentViewConfig());
+      var replaced = false;
+      for (var i = 0; i < state.views.length; i++) {
+        if (state.views[i].name === name) { state.views[i] = view; replaced = true; break; }
+      }
+      if (!replaced) state.views.push(view);
+      saveViews();
+      render();
+      toast(replaced ? 'View updated' : 'View saved');
+      return true;
+    }
+
+    // Apply a saved view: the screen takes on its filter, sort and
+    // toggles, persisted exactly as if they had been set by hand.
+    // ephemeral skips that persistence (used by the staging check hooks,
+    // so a check URL leaves the browser's preferences the way it found
+    // them); a real tap always persists.
+    function applyView(view, ephemeral) {
+      var cfg = normalizeViewConfig(view);
+      state.filter = cfg.filter;
+      state.filterName = cfg.filterName;
+      state.sort = cfg.sort;
+      state.oneAway = cfg.oneAway;
+      state.hideVoted = cfg.hideVoted;
+      state.hideMerged = cfg.hideMerged;
+      state.search = cfg.search;
+      if (!ephemeral) {
+        saveSort(cfg.sort);
+        saveHideVoted(cfg.hideVoted);
+        saveHideMerged(cfg.hideMerged);
+        saveFilter(cfg.filter ? { slug: cfg.filter, name: cfg.filterName } : null);
+      }
+      render();
+    }
+
+    function renameView(oldName, newName) {
+      newName = String(newName == null ? '' : newName).trim();
+      var view = findView(oldName);
+      if (!view || !newName || newName === oldName) return false;
+      if (findView(newName)) { toast('That name is already in use'); return false; }
+      view.name = newName;
+      saveViews();
+      render();
+      toast('View renamed');
+      return true;
+    }
+
+    function deleteView(name) {
+      var kept = state.views.filter(function (v) { return v.name !== name; });
+      if (kept.length === state.views.length) return false;
+      state.views = kept;
+      saveViews();
+      render();
+      toast('View deleted');
+      return true;
+    }
+
+    // ------------------------------------------------------------------
+    // Saved views: rendering and dialogs.
+    // ------------------------------------------------------------------
+
+    var VIEW_CHIP_IDLE = 'flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
+    var VIEW_CHIP_ACTIVE = 'flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap rounded-full border border-violet-500/60 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300';
+    var VIEW_COUNT_CLASS = 'shrink-0 text-[10px] font-normal tabular-nums text-zinc-500 dark:text-zinc-400';
+    var VIEW_MENU_CLASS = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300';
+    var VIEW_MENU_ICON = '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+    var VIEWS_EMPTY_CLASS = 'shrink-0 whitespace-nowrap text-xs text-zinc-400 dark:text-zinc-500';
+
+    // Plain-words description for a chip's tooltip: which app and sort the
+    // view holds, and which of the toggles it turns on.
+    function viewDescription(view) {
+      var cfg = normalizeViewConfig(view);
+      var bits = [];
+      bits.push((cfg.filterName || cfg.filter) ? 'App: ' + (cfg.filterName || cfg.filter) : 'All apps');
+      bits.push(cfg.sort === 'newest' ? 'Sort: newest' : 'Sort: votes needed');
+      if (cfg.oneAway) bits.push('One vote away');
+      if (cfg.hideVoted) bits.push('Hides voted');
+      if (cfg.hideMerged) bits.push('Hides merged');
+      if (cfg.search) bits.push('Search: "' + cfg.search + '"');
+      return bits.join(' · ');
+    }
+
+    function renderViews() {
+      var chips = document.getElementById('views-chips');
+      if (!chips) return;
+      if (!state.views.length) {
+        chips.innerHTML = '<span data-views-empty class="' + VIEWS_EMPTY_CLASS + '">No saved views yet</span>';
+        return;
+      }
+      var active = activeViewName();
+      var html = '';
+      for (var i = 0; i < state.views.length; i++) {
+        var view = state.views[i];
+        var on = view.name === active;
+        var count = viewCount(view);
+        html += '<span class="flex shrink-0 items-center gap-0.5">'
+          + '<button type="button" data-view-chip data-view-name="' + esc(view.name) + '"'
+          + ' data-view-index="' + i + '" aria-pressed="' + (on ? 'true' : 'false') + '"'
+          + ' title="' + esc(viewDescription(view)) + '"'
+          + ' class="' + (on ? VIEW_CHIP_ACTIVE : VIEW_CHIP_IDLE) + '">'
+          + '<span class="truncate">' + esc(view.name) + '</span>'
+          + (count != null ? '<span data-view-count class="' + VIEW_COUNT_CLASS + '">(' + count + ')</span>' : '')
+          + '</button>'
+          + '<button type="button" data-view-menu data-view-name="' + esc(view.name) + '"'
+          + ' aria-label="Options for view ' + esc(view.name) + '" class="' + VIEW_MENU_CLASS + '">'
+          + VIEW_MENU_ICON + '</button>'
+          + '</span>';
+      }
+      chips.innerHTML = html;
+    }
+
+    // Name prompt for Save view / Rename. The native kit's alert carries
+    // the text field where it is available; loads without the kit get a
+    // plain in-app dialog with the same field and answers. The kit both
+    // invokes the button's handler and resolves its promise, so submit is
+    // guarded against firing twice.
+    function promptViewName(title, message, initial, onOk) {
+      var done = false;
+      var submit = function (value) {
+        if (done) return;
+        done = true;
+        if (value && String(value).trim()) onOk(String(value).trim());
+      };
+      if (window.unNative && unNative.alert) {
+        try {
+          var answered = unNative.alert({
+            title: title,
+            message: message,
+            field: { placeholder: 'View name', value: initial || '', submitOnEnter: true },
+            buttons: [
+              // The kit passes the field's value as the handler's argument.
+              { label: 'Save', style: 'default', handler: function (value) { submit(typeof value === 'string' ? value : undefined); } },
+              { label: 'Cancel', style: 'cancel' },
+            ],
+          });
+          if (answered && typeof answered.then === 'function') {
+            answered.then(function (res) {
+              var label = res && res.button;
+              if (label && typeof label === 'object') label = label.label;
+              if (label === 'Save') submit(res && res.value);
+            }).catch(function () { /* dismissed; nothing to save */ });
+          }
+          return;
+        } catch (e) { /* fall through to the plain dialog */ }
+      }
+      fallbackPromptDialog(title, message, initial, submit);
+    }
+
+    function fallbackPromptDialog(title, message, initial, submit) {
+      var overlay = document.createElement('div');
+      overlay.setAttribute('data-view-prompt', '');
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-label', title);
+      overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6';
+      overlay.innerHTML = '<div class="w-72 rounded-2xl bg-white p-4 shadow-xl dark:bg-zinc-900">'
+        + '<p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">' + esc(title) + '</p>'
+        + (message ? '<p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">' + esc(message) + '</p>' : '')
+        + '<input data-view-name-input type="text" autocomplete="off" placeholder="View name" aria-label="View name"'
+        + ' class="mt-3 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500">'
+        + '<div class="mt-3 flex flex-col gap-2">'
+        + '<button data-view-prompt-save class="min-h-9 rounded-xl bg-violet-600 py-2 text-sm font-semibold text-white active:scale-95">Save</button>'
+        + '<button data-view-prompt-cancel class="min-h-9 rounded-xl bg-zinc-100 py-2 text-sm font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200">Cancel</button>'
+        + '</div></div>';
+      var input = overlay.querySelector('[data-view-name-input]');
+      input.value = initial || '';
+      var close = function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+      overlay.addEventListener('click', function (event) {
+        if (event.target.closest('[data-view-prompt-save]')) { var v = input.value; close(); submit(v); }
+        else if (event.target.closest('[data-view-prompt-cancel]') || event.target === overlay) close();
+      });
+      overlay.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') close();
+        else if (event.key === 'Enter' && input.value.trim()) { var v = input.value; close(); submit(v); }
+      });
+      document.body.appendChild(overlay);
+      input.focus();
+    }
+
+    function confirmDeleteView(name) {
+      var title = 'Delete view';
+      var message = 'Deletes "' + name + '". Your filters stay as they are.';
+      var confirmed = false;
+      var confirmDelete = function () {
+        if (confirmed) return;
+        confirmed = true;
+        deleteView(name);
+      };
+      if (window.unNative && unNative.alert) {
+        try {
+          var answered = unNative.alert({
+            title: title,
+            message: message,
+            buttons: [
+              { label: 'Delete', style: 'destructive', handler: confirmDelete },
+              { label: 'Cancel', style: 'cancel' },
+            ],
+          });
+          if (answered && typeof answered.then === 'function') {
+            answered.then(function (res) {
+              var label = res && res.button;
+              if (label && typeof label === 'object') label = label.label;
+              if (label === 'Delete') confirmDelete();
+            }).catch(function () { /* dismissed */ });
+          }
+          return;
+        } catch (e) { /* fall through to the plain dialog */ }
+      }
+      fallbackConfirmDialog(title, message, 'Delete', confirmDelete);
+    }
+
+    function fallbackConfirmDialog(title, message, okLabel, onOk) {
+      var overlay = document.createElement('div');
+      overlay.setAttribute('data-view-confirm', '');
+      overlay.setAttribute('role', 'alertdialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-label', title);
+      overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6';
+      overlay.innerHTML = '<div class="w-64 rounded-2xl bg-white p-4 text-center shadow-xl dark:bg-zinc-900">'
+        + '<p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">' + esc(title) + '</p>'
+        + '<p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">' + esc(message) + '</p>'
+        + '<div class="mt-3 flex flex-col gap-2">'
+        + '<button data-view-confirm-ok class="min-h-9 rounded-xl bg-red-600 py-2 text-sm font-semibold text-white active:scale-95">' + esc(okLabel) + '</button>'
+        + '<button data-view-confirm-cancel class="min-h-9 rounded-xl bg-zinc-100 py-2 text-sm font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200">Cancel</button>'
+        + '</div></div>';
+      var close = function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+      overlay.addEventListener('click', function (event) {
+        if (event.target.closest('[data-view-confirm-ok]')) { close(); onOk(); }
+        else if (event.target.closest('[data-view-confirm-cancel]') || event.target === overlay) close();
+      });
+      document.body.appendChild(overlay);
+    }
+
+    // Rename / delete live behind a small "⋯" button beside each chip, so
+    // the chip itself stays a one-tap switch. The kit's menu is an action
+    // sheet on touch and an anchored popover on desktop; standalone loads
+    // get a plain in-app menu with the same two answers.
+    function openViewMenu(name, anchorEl) {
+      if (!findView(name)) return;
+      var items = [
+        { label: 'Rename', handler: function () {
+          promptViewName('Rename view', 'A new name for "' + name + '".', name,
+            function (next) { renameView(name, next); });
+        } },
+        { label: 'Delete', destructive: true, handler: function () { confirmDeleteView(name); } },
+      ];
+      if (window.unNative && unNative.menu) {
+        try {
+          unNative.menu({ anchorEl: anchorEl, title: name, items: items, cancelLabel: 'Cancel' });
+          return;
+        } catch (e) { /* fall through to the plain menu */ }
+      }
+      fallbackViewMenu(name, items);
+    }
+
+    function fallbackViewMenu(name, items) {
+      var overlay = document.createElement('div');
+      overlay.setAttribute('data-view-menu-fallback', '');
+      overlay.setAttribute('role', 'menu');
+      overlay.setAttribute('aria-label', 'Options for view ' + name);
+      overlay.className = 'fixed inset-0 z-50 flex items-end justify-center bg-zinc-900/40 p-6 sm:items-center';
+      var rows = '';
+      for (var i = 0; i < items.length; i++) {
+        rows += '<button data-view-menu-item="' + i + '"'
+          + ' class="min-h-11 w-full rounded-xl py-2.5 text-sm font-semibold active:scale-95 '
+          + (items[i].destructive
+            ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400'
+            : 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100')
+          + '">' + esc(items[i].label) + '</button>';
+      }
+      overlay.innerHTML = '<div class="flex w-full max-w-xs flex-col gap-2">'
+        + '<div class="flex flex-col gap-2 rounded-2xl bg-white p-3 shadow-xl dark:bg-zinc-900">'
+        + rows
+        + '<button data-view-menu-cancel class="min-h-11 w-full rounded-xl bg-white py-2.5 text-sm font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200">Cancel</button>'
+        + '</div></div>';
+      var close = function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+      overlay.addEventListener('click', function (event) {
+        var row = event.target.closest ? event.target.closest('[data-view-menu-item]') : null;
+        if (row) { var item = items[Number(row.getAttribute('data-view-menu-item'))]; close(); if (item && item.handler) item.handler(); }
+        else if (event.target.closest('[data-view-menu-cancel]') || event.target === overlay) close();
+      });
+      document.body.appendChild(overlay);
+    }
+
+    function openSaveViewDialog() {
+      promptViewName('Save view', 'Saves the current filters and sort as a view.',
+        state.filterName || 'New view',
+        function (name) { saveView(name); });
+    }
+
+    // Staging check hooks for saved views (?demo=1 only). Each hook drives
+    // the real function the tap would, at boot, before the first render:
+    //   seed-views=A,B   replaces the stored views with fixed demo views
+    //   rename-view=A:B  renames through renameView()
+    //   delete-view=A    deletes through deleteView()
+    //   add-view=A       saves the screen as it currently stands (no reload)
+    //   apply-view=A,B   applies views in order through applyView()
+    //   save-view=A      saves, then reloads a clean URL (persistence)
+    //   save-reload=1    reloads a clean URL after the other hooks
+    // The reload drops every hook parameter, so the page after it shows
+    // only what storage restored on its own. The apply hook runs
+    // applyView's ephemeral mode so a check URL leaves the browser's
+    // stored preferences the way it found them. Production never reads
+    // these parameters.
+    var VIEW_SEEDS = {
+      'All open': { filter: '', filterName: '', sort: 'needed' },
+      'My apps': { filter: 'staging-demo-app', filterName: 'Staging Demo App', sort: 'needed' },
+      'Needs one vote': { filter: '', filterName: '', sort: 'needed', oneAway: true },
+      'Unmerged': { filter: '', filterName: '', sort: 'needed', hideMerged: true },
+    };
+
+    function runViewsHooks() {
+      if (!DEMO) return;
+      var seedParam = params.get('seed-views');
+      if (seedParam) {
+        state.views = [];
+        seedParam.split(',').forEach(function (name) {
+          name = name.trim();
+          var seed = VIEW_SEEDS[name];
+          if (seed) state.views.push(Object.assign({ name: name }, seed));
+        });
+        saveViews();
+      }
+      var renameMatch = (params.get('rename-view') || '').match(/^(.+):(.+)$/);
+      if (renameMatch) renameView(renameMatch[1], renameMatch[2]);
+      var deleteParam = params.get('delete-view');
+      if (deleteParam) deleteView(deleteParam.trim());
+      var addParam = params.get('add-view');
+      if (addParam) saveView(addParam.trim());
+      var applyParam = params.get('apply-view');
+      if (applyParam) {
+        applyParam.split(',').forEach(function (name) {
+          var view = findView(name.trim());
+          if (view) applyView(view, true);
+        });
+      }
+      var reload = false;
+      var saveParam = params.get('save-view');
+      if (saveParam) { saveView(saveParam.trim()); reload = true; }
+      if (params.get('save-reload') === '1') reload = true;
+      if (reload) {
+        // Reload a clean URL, dropping the view-hook parameters but keeping
+        // the rest (token, theme, preview-now), the way ?set-filter= does.
+        var remaining = new URLSearchParams(params);
+        ['seed-views', 'rename-view', 'delete-view', 'add-view',
+          'apply-view', 'save-view', 'save-reload'].forEach(function (k) { remaining.delete(k); });
+        var restQ = remaining.toString();
+        location.replace(location.pathname + (restQ ? '?' + restQ : '') + location.hash);
+      }
     }
 
     // ------------------------------------------------------------------
@@ -1251,6 +1723,12 @@
       var votesOrderRow = document.getElementById('votes-order-row');
       if (votesOrderRow) votesOrderRow.className =
         'flex items-center gap-2 pt-1' + (state.tab === 'votes' ? '' : ' hidden');
+      var viewsRow = document.getElementById('views-row');
+      if (viewsRow) {
+        var showViews = state.tab === 'inbox';
+        viewsRow.className = 'mt-2 flex items-center gap-2' + (showViews ? '' : ' hidden');
+        viewsRow.setAttribute('data-hidden', showViews ? '0' : '1');
+      }
     }
 
     // The segmented sort pill: keep each option's fill and aria-checked in
@@ -1514,6 +1992,7 @@
       syncFilter();
       syncOneAway();
       renderTabs();
+      renderViews();
       renderSort();
       renderVotesOrder();
       renderDemoBanner();
@@ -2358,6 +2837,26 @@
       if (openFilter) closeFilter(); else openAppFilter();
     });
 
+    // Saved views: tap a chip to switch, tap its "⋯" to rename or delete.
+    var viewsChips = document.getElementById('views-chips');
+    if (viewsChips) {
+      viewsChips.addEventListener('click', function (event) {
+        var target = event.target;
+        var menuBtn = target.closest ? target.closest('[data-view-menu]') : null;
+        if (menuBtn) {
+          openViewMenu(menuBtn.getAttribute('data-view-name'), menuBtn);
+          return;
+        }
+        var chip = target.closest ? target.closest('[data-view-chip]') : null;
+        if (chip) {
+          var view = findView(chip.getAttribute('data-view-name'));
+          if (view) applyView(view);
+        }
+      });
+    }
+    var saveViewBtn = document.getElementById('save-view-btn');
+    if (saveViewBtn) saveViewBtn.addEventListener('click', openSaveViewDialog);
+
     if (oneAwayChip) {
       oneAwayChip.addEventListener('click', function () {
         state.oneAway = !state.oneAway;
@@ -2430,6 +2929,9 @@
     // Boot: render the shell instantly, then fetch the active tab's data.
     // ------------------------------------------------------------------
 
+    // Staging check hooks run before the first render, so the page shows
+    // their result as if it had come from a tap.
+    runViewsHooks();
     render();
     var hideVotedBox = document.getElementById('hide-voted');
     if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
