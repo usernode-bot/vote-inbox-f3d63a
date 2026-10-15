@@ -320,11 +320,28 @@
       "impact": ["public/index.html", "dapp.json"]
     },
     {
+      "id": "compare.button",
+      "name": "Proposal cards offer a Compare button",
+      "path": "/?demo=1",
+      "expectSelector": "[data-compare-add]",
+      "expectText": "Compare",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "views.save-appears",
       "name": "Saving the current screen shows it as a named chip",
       "path": "/?demo=1&add-view=My%20apps",
       "expectSelector": "[data-view-chip]",
       "expectText": "My apps",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.pick-one",
+      "name": "Picking a proposal marks its card Selected",
+      "path": "/?demo=1&pick=demo-1",
+      "expectText": "Selected",
       "visual": true,
       "impact": ["public/index.html", "dapp.json"]
     },
@@ -353,6 +370,22 @@
       "impact": ["public/index.html", "dapp.json"]
     },
     {
+      "id": "compare.bar-one",
+      "name": "One pick shows the compare bar asking for one more",
+      "path": "/?demo=1&pick=demo-1",
+      "expectSelector": "[data-compare-bar]",
+      "expectText": "Pick one more",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.open-button",
+      "name": "The bar's Compare button opens the side-by-side view",
+      "path": "/?demo=1&pick=demo-1,demo-2&tap-compare=1",
+      "expectSelector": "[data-compare-view]",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "views.apply-activates",
       "name": "Applying a view marks its chip active",
       "path": "/?demo=1&seed-views=My%20apps&apply-view=My%20apps",
@@ -377,6 +410,38 @@
       "impact": ["public/index.html", "dapp.json"]
     },
     {
+      "id": "compare.deep-link",
+      "name": "Compare view renders both picked proposals",
+      "path": "/?demo=1&compare=demo-1,demo-4",
+      "expectSelector": "[data-compare-col='demo-4']",
+      "expectText": "dark mode toggle",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.counts",
+      "name": "Compare columns show each proposal's vote counts",
+      "path": "/?demo=1&compare=demo-1,demo-2",
+      "expectText": "Yes 3 · No 1",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.status",
+      "name": "Compare columns show proposal status",
+      "path": "/?demo=1&compare=demo-3,demo-5",
+      "expectSelector": "[data-compare-status='merging']",
+      "expectText": "Merging",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.votes-needed",
+      "name": "Compare columns show votes needed",
+      "path": "/?demo=1&compare=demo-1,demo-2",
+      "expectText": "1 vote needed",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "views.apply-resets-one-away",
       "name": "Applying a plain view clears a one-away chip left on",
       "path": "/?demo=1&one-away=1&seed-views=My%20apps&apply-view=My%20apps",
@@ -396,6 +461,30 @@
       "path": "/?demo=1&seed-views=All%20open",
       "expectSelector": "[data-view-chip][data-view-name='All open'] [data-view-count]",
       "expectText": "(6)",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.details",
+      "name": "Compare columns show the proposed date and author",
+      "path": "/?demo=1&compare=demo-1,demo-2",
+      "expectSelector": "[data-compare-proposed]",
+      "expectText": "Proposed",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.vote-buttons",
+      "name": "Compare view shows Yes and No vote buttons",
+      "path": "/?demo=1&compare=demo-4,demo-6",
+      "expectSelector": "[data-compare-view] [data-vote='yes']",
+      "expectText": "No",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.vote-yes",
+      "name": "Voting yes inside compare view marks the column",
+      "path": "/?demo=1&compare=demo-1,demo-2&cast=demo-2:yes",
+      "expectText": "You voted yes",
       "visual": true,
       "impact": ["public/index.html", "dapp.json"]
     },
@@ -429,6 +518,14 @@
       "path": "/?demo=1&seed-views=My%20apps&rename-view=My%20apps:Top%20picks",
       "expectSelector": "[data-view-chip]",
       "expectText": "Top picks",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.vote-no-confirm",
+      "name": "No vote inside compare view asks for confirmation",
+      "path": "/?demo=1&compare=demo-1,demo-2&tap-no-compare=demo-1",
+      "expectText": "No, reject",
       "visual": true,
       "impact": ["public/index.html", "dapp.json"]
     },
@@ -471,6 +568,36 @@
       "impact": ["public/index.html", "dapp.json"]
     },
     {
+      "id": "compare.vote-no-cast",
+      "name": "Confirming No inside compare view records the vote",
+      "path": "/?demo=1&compare=demo-1,demo-2&tap-no-compare=demo-1&confirm-no=1",
+      "expectText": "You voted no",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.max-two",
+      "name": "A third pick is refused while two are held",
+      "path": "/?demo=1&pick=demo-1,demo-2,demo-3",
+      "expectSelector": "[data-compare-bar]",
+      "expectText": "2 selected",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.toggle-off",
+      "name": "Tapping a selected card's Compare button removes it",
+      "path": "/?demo=1&pick=demo-1&tap-compare-add=demo-1",
+      "expectSelector": "body:not(:has([data-compare-bar])) #view [data-proposal-card][data-session-id='demo-1']",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.clear-view",
+      "name": "Clear selection in compare view returns to the list",
+      "path": "/?demo=1&compare=demo-1,demo-2&tap-clear=1",
+      "expectSelector": "body:not(:has([data-compare-view])) #view [data-proposal-card][data-session-id='demo-1']",
+      "visual": true,
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
       "id": "views.save-updates-existing",
       "name": "Saving over an existing name updates that one view",
       "path": "/?demo=1&seed-views=My%20apps&save-view=My%20apps",
@@ -483,6 +610,21 @@
       "name": "The views switcher row is hidden on the My Votes tab",
       "path": "/?tab=votes&demo=1",
       "expectSelector": "[data-views-row][data-hidden='1']",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.clear-bar",
+      "name": "Clear on the compare bar empties the selection",
+      "path": "/?demo=1&pick=demo-1&tap-clear=1",
+      "expectSelector": "body:not(:has([data-compare-bar])) #view [data-proposal-card][data-session-id='demo-2']",
+      "impact": ["public/index.html", "dapp.json"]
+    },
+    {
+      "id": "compare.unknown-id",
+      "name": "A compare link with an unknown id keeps one pick",
+      "path": "/?demo=1&compare=demo-1,zzz-unknown",
+      "expectSelector": "[data-compare-bar]",
+      "expectText": "Pick one more",
       "impact": ["public/index.html", "dapp.json"]
     }
   ]
