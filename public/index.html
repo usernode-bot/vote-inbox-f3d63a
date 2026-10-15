@@ -125,7 +125,7 @@
       <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="watchlist" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Watchlist<span class="tab-badge"></span></button>
-        <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span class="tab-badge"></span></button>
+        <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span data-tab-count></span><span class="tab-badge"></span></button>
       </div>
       <div id="views-row" data-views-row data-hidden="0" class="mt-2 flex items-center gap-2">
         <div id="views-chips" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5" role="group" aria-label="Saved views"></div>
@@ -2192,9 +2192,18 @@
         if (badge) {
           badge.className = 'tab-badge ml-1.5 hidden rounded-full px-1.5 py-0.5 text-xs font-bold '
             + (active ? BADGE_ACTIVE : BADGE_IDLE);
-          if (count != null && count > 0) {
+          if (tab !== 'votes' && count != null && count > 0) {
             badge.textContent = count;
             badge.classList.remove('hidden');
+          }
+        }
+        // The My Votes tab shows its count in the title, "My Votes (N)",
+        // instead of a pill badge, so the number appears only once.
+        if (tab === 'votes') {
+          var tabCount = btn.querySelector('[data-tab-count]');
+          if (tabCount) {
+            tabCount.textContent = count != null ? ' (' + count + ')' : '';
+            tabCount.setAttribute('data-tab-count', count != null ? String(count) : '');
           }
         }
       }
