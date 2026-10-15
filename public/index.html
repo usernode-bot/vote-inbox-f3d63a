@@ -191,6 +191,16 @@
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
   </main>
 
+  <!-- Keyboard triage progress pill. Lives outside #view so re-rendering
+       the list never rebuilds it; applyTriage() updates it in place.
+       role="status" so the "Card N of M" / "All caught up" line is
+       announced politely as it changes. The bottom inset follows the
+       platform's forwarded safe-area values inside the frame, with the
+       plain env() fallback when the app is opened standalone. -->
+  <div id="triage-pill" hidden role="status" aria-live="polite"
+       style="bottom: calc(1rem + var(--un-safe-inset-bottom, env(safe-area-inset-bottom, 0px)))"
+       class="fixed inset-x-4 z-40 mx-auto flex max-w-md items-center justify-center gap-2 whitespace-nowrap rounded-full border border-violet-500/40 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 shadow-lg dark:border-violet-500/50 dark:bg-zinc-900 dark:text-zinc-100"></div>
+
   <script>
   (function () {
     'use strict';
@@ -275,6 +285,18 @@
     var TAP_CLEAR = DEMO && params.get('tap-clear') === '1';
     var TAP_COMPARE_ADD = DEMO ? (params.get('tap-compare-add') || '') : '';
     var TAP_NO_COMPARE = DEMO ? (params.get('tap-no-compare') || '') : '';
+    // Keyboard triage check hooks, all demo only. ?triage=1 enters the mode
+    // once the inbox has rendered; ?press=<keys> replays keys through the
+    // page's real keydown handler one every 150 ms ('e' plays Escape);
+    // ?focus-search=1 focuses the title search field, so a check can prove
+    // keys do nothing while a field owns focus; ?confirm-cancel=1 presses
+    // "Cancel" in the confirm-before-No dialog the n key opens. Production
+    // never honours any of these; the keyboard itself works everywhere.
+    var TRIAGE_ENTER = DEMO && params.get('triage') === '1';
+    var TRIAGE_PRESS = DEMO ? (params.get('press') || '') : '';
+    var TRIAGE_FOCUS_SEARCH = DEMO && params.get('focus-search') === '1';
+    var TRIAGE_CONFIRM_CANCEL = DEMO && params.get('confirm-cancel') === '1';
+    var CLEAR_VOTES = DEMO && params.get('clearvotes') === '1';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes'
@@ -342,6 +364,20 @@
       // a ?compare= / ?pick= fixture re-seeds it.
       compare: [],
       compareView: false,
+      // Keyboard triage over the inbox cards (j next, k back, y yes,
+      // n opens the no-confirm, esc exits). triageIndex is the cursor's
+      // position in the rendered card list and triageCursor its session
+      // id; keeping both lets a vote that removes the card (Hide voted on)
+      // hand the cursor to whichever card now holds the same position.
+      // triageCaughtUp is the end-of-list state: j pressed on the last
+      // card keeps the cursor there and flips the pill to "All caught up"
+      // until k comes back. noConfirmOpen is true while that dialog is
+      // up, so triage keys stay out of it.
+      triageActive: false,
+      triageIndex: 0,
+      triageCursor: '',
+      triageCaughtUp: false,
+      noConfirmOpen: false,
     };
 
     // ------------------------------------------------------------------
@@ -2468,6 +2504,11 @@
       }
       document.getElementById('view').innerHTML = viewHtml;
       enhanceTitles();
+      // Triage chrome: put the cursor's ring back (a re-render rebuilt the
+      // cards) and update the progress pill. Both are no-ops while the
+      // mode is off.
+      resolveTriageCursor();
+      applyTriage();
     }
 
     // ------------------------------------------------------------------
@@ -2853,6 +2894,7 @@
       render();
       var query = [];
       if (DEMO) query.push('demo=1');
+      if (CLEAR_VOTES) query.push('clearvotes=1');
       if (ALL_VOTED) query.push('allvoted=1');
       if (ALL_MERGED) query.push('allmerged=1');
       // Check-fixture variant on the hook's reload; see TURNOUT_REFRESH.
@@ -2887,6 +2929,7 @@
           // holds the proposal, the detail view can load its thread.
           if (state.detail && findProposal(state.detail)) loadDetailComments();
           maybeCompareHooks();
+          maybeTriageHooks();
           if (state.queuedInbox) {
             state.queuedInbox = false;
             loadInbox(true);
@@ -3235,12 +3278,15 @@
     function openNoConfirm(sessionId) {
       var p = findProposal(sessionId);
       if (!p) return;
+      // While the dialog is up, triage keys stand down (see triageKeydown).
+      state.noConfirmOpen = true;
       var title = 'Reject this proposal?';
       var message = 'Your No vote on "' + p.title + '" will be recorded right away.';
       var confirmed = false;
       var confirmNo = function () {
         if (confirmed) return;
         confirmed = true;
+        state.noConfirmOpen = false;
         castVote(sessionId, 'no');
       };
       if (window.unNative && unNative.alert) {
@@ -3255,10 +3301,14 @@
           });
           if (answered && typeof answered.then === 'function') {
             answered.then(function (res) {
+              state.noConfirmOpen = false;
               var label = res && res.button;
               if (label && typeof label === 'object') label = label.label;
               if (label === 'No, reject') confirmNo();
-            }).catch(function () { /* dismissed; nothing to cast */ });
+            }).catch(function () {
+              // Dismissed; nothing to cast.
+              state.noConfirmOpen = false;
+            });
           }
           return;
         } catch (e) { /* fall through to the plain dialog */ }
@@ -3283,6 +3333,7 @@
         + '<button data-no-confirm-cancel class="min-h-9 rounded-xl bg-zinc-100 py-2 text-sm font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200">Cancel</button>'
         + '</div></div>';
       var close = function () {
+        state.noConfirmOpen = false;
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       };
       overlay.addEventListener('click', function (event) {
@@ -3564,6 +3615,264 @@
     }
 
     // ------------------------------------------------------------------
+    // Keyboard triage: j/k walk the visible inbox cards, y votes yes on
+    // the highlighted one, n opens the confirm-before-No dialog, esc
+    // exits. The first j/k/y/n enters the mode (y and n enter AND act on
+    // the first card), so there is nothing extra to learn. Tap buttons
+    // stay untouched: the violet ring and the progress pill are the only
+    // triage chrome. What the keys walk is exactly what is on screen:
+    // the rendered cards in document order, so whatever sort, filter,
+    // search or app filter is active is what j/k move through.
+    // ------------------------------------------------------------------
+
+    // Ring classes as whole literals (the precompiled Tailwind stylesheet
+    // extracts literals from source, so runtime-assembled names never
+    // style). Painted onto the cursor's card in the DOM only; a re-render
+    // rebuilds the cards and applyTriage() puts the ring back.
+    var TRIAGE_RING = ['ring-2', 'ring-violet-500/70', 'ring-offset-2',
+      'ring-offset-white', 'dark:ring-offset-zinc-900'];
+    var TRIAGE_LEGEND = 'j next · k back · y yes · n no · esc exit';
+
+    function triageCards() {
+      return document.querySelectorAll('#view [data-proposal-card]');
+    }
+
+    function triageSessionAt(index) {
+      var cards = triageCards();
+      return cards[index]
+        ? cards[index].getAttribute('data-session-id') : '';
+    }
+
+    // After a render (a vote re-renders the list), put the cursor back on
+    // the card it held. A card that left the list (voted away under Hide
+    // voted, or filtered out) hands the cursor to whichever card now sits
+    // at the same position, so voting through the list never repeats or
+    // skips one.
+    function resolveTriageCursor() {
+      if (!state.triageActive) return;
+      var cards = triageCards();
+      for (var i = 0; i < cards.length; i++) {
+        if (cards[i].getAttribute('data-session-id') === state.triageCursor) {
+          state.triageIndex = i;
+          return;
+        }
+      }
+      if (!cards.length) { state.triageCursor = ''; return; }
+      var next = Math.max(0, Math.min(state.triageIndex, cards.length - 1));
+      state.triageIndex = next;
+      state.triageCursor = cards[next].getAttribute('data-session-id');
+    }
+
+    // Paint the ring and update the pill. Runs after every render and
+    // after every cursor move. scroll: only cursor moves scroll the
+    // highlighted card into view; renders keep the page where it is.
+    function applyTriage(scroll) {
+      var pill = document.getElementById('triage-pill');
+      var cards = triageCards();
+      for (var i = 0; i < cards.length; i++) {
+        var el = cards[i];
+        for (var r = 0; r < TRIAGE_RING.length; r++) {
+          if (el.classList.contains(TRIAGE_RING[r])) {
+            el.classList.remove(TRIAGE_RING[r]);
+          }
+        }
+      }
+      if (state.triageActive && state.triageCursor) {
+        for (i = 0; i < cards.length; i++) {
+          if (cards[i].getAttribute('data-session-id') === state.triageCursor) {
+            for (r = 0; r < TRIAGE_RING.length; r++) {
+              cards[i].classList.add(TRIAGE_RING[r]);
+            }
+            if (scroll && cards[i].scrollIntoView) {
+              cards[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+            break;
+          }
+        }
+      }
+      if (!pill) return;
+      // The pill is triage chrome for the inbox list only: hidden on the
+      // other tabs, the detail view, the compare view and an empty list.
+      if (!state.triageActive || state.tab !== 'inbox' || state.compareView
+          || (state.detail && findProposal(state.detail)) || !cards.length) {
+        pill.hidden = true;
+        return;
+      }
+      pill.hidden = false;
+      var legend = '<span class="font-normal text-zinc-500 dark:text-zinc-400">'
+        + TRIAGE_LEGEND + '</span>';
+      var dot = '<span class="text-zinc-300 dark:text-zinc-600">·</span>';
+      if (state.triageCaughtUp) {
+        pill.innerHTML = '<span data-triage-caught-up class="flex items-center gap-1.5">'
+          + '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>'
+          + 'All caught up</span>'
+          + dot + legend;
+      } else {
+        var pos = Math.max(0, Math.min(state.triageIndex, cards.length - 1));
+        pill.innerHTML = '<span data-triage-progress>Card ' + (pos + 1)
+          + ' of ' + cards.length + '</span>'
+          + dot + legend;
+      }
+    }
+
+    function moveTriage(direction) {
+      var cards = triageCards();
+      if (!cards.length) return;
+      var idx = Math.max(0, Math.min(state.triageIndex, cards.length - 1));
+      if (direction === 'next') {
+        if (idx >= cards.length - 1) {
+          // j on the last card: the cursor stays put and the pill flips
+          // to the caught-up line. k comes back to the card's progress.
+          state.triageCaughtUp = true;
+        } else {
+          state.triageIndex = idx + 1;
+          state.triageCursor = triageSessionAt(state.triageIndex);
+          state.triageCaughtUp = false;
+        }
+      } else {
+        if (state.triageCaughtUp) {
+          // k from "All caught up" lands back on the last card's own
+          // progress line; a second k walks on from there.
+          state.triageCaughtUp = false;
+        } else {
+          if (idx > 0) {
+            state.triageIndex = idx - 1;
+            state.triageCursor = triageSessionAt(state.triageIndex);
+          }
+        }
+      }
+      applyTriage(true);
+    }
+
+    function actTriage(choice) {
+      var sessionId = state.triageCursor;
+      var p = sessionId ? findProposal(sessionId) : null;
+      // A card already voted (or with a vote in flight) is left alone: y
+      // and n never double-cast. Yes stays one key; No opens the same
+      // confirm the card's own No button opens.
+      if (!p || p.myVote || state.pending[sessionId]) return;
+      if (choice === 'no') openNoConfirm(sessionId);
+      else castVote(sessionId, 'yes');
+    }
+
+    function exitTriage() {
+      state.triageActive = false;
+      state.triageCaughtUp = false;
+      state.triageIndex = 0;
+      state.triageCursor = '';
+      applyTriage();
+    }
+
+    // One keydown, one step. Entering on j/k just lands the cursor on the
+    // first card; entering on y/n also acts on it right away.
+    function handleTriageKey(step) {
+      if (step === 'exit') { exitTriage(); return; }
+      if (!state.triageActive) {
+        state.triageActive = true;
+        state.triageCaughtUp = false;
+        state.triageIndex = 0;
+        state.triageCursor = triageSessionAt(0);
+        if (step === 'next' || step === 'back') { applyTriage(true); return; }
+      }
+      if (step === 'next' || step === 'back') moveTriage(step);
+      else actTriage(step);
+    }
+
+    // The guard chain: keys never act while a field, the app filter
+    // dropdown, a dialog, another tab, the detail view or the compare view
+    // owns the screen, or when there are no cards to walk. Esc only ever
+    // means something while triage is on.
+    function triageKeydown(event) {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.repeat) return;
+      var step = event.key === 'Escape' ? 'exit'
+        : ({ j: 'next', k: 'back', y: 'yes', n: 'no' })[event.key] || '';
+      if (!step) return;
+      if (step === 'exit' && !state.triageActive) return;
+      // A check replay dispatches on document, which has no .closest, so
+      // fall back to the live focus for the field guard.
+      var target = event.target && event.target.closest ? event.target : document.activeElement;
+      if (target && target.closest
+          && target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) {
+        return;
+      }
+      if (openFilter || state.noConfirmOpen
+          || document.querySelector('[data-no-confirm]')) {
+        return;
+      }
+      if (state.tab !== 'inbox' || state.compareView) return;
+      if (state.detail && findProposal(state.detail)) return;
+      if (!triageCards().length) return;
+      event.preventDefault();
+      handleTriageKey(step);
+    }
+
+    // Staging demo hooks for the triage checks (see the TRIAGE_* params).
+    // All demo only, one-shot each. The press replay dispatches real
+    // KeyboardEvents through the page's own keydown listener and holds a
+    // press while any vote is still in flight, so a move never races the
+    // optimistic re-render the previous key triggered.
+    var triageHookDone = { enter: false, press: false, focus: false, cancel: false, confirm: false };
+    function maybeTriageHooks() {
+      if (!DEMO || state.errorInbox || !state.inbox) return;
+      if (TRIAGE_FOCUS_SEARCH && !triageHookDone.focus) {
+        triageHookDone.focus = true;
+        var search = document.getElementById('inbox-search');
+        if (search) search.focus();
+      }
+      if (TRIAGE_ENTER && !triageHookDone.enter && triageCards().length) {
+        triageHookDone.enter = true;
+        state.triageActive = true;
+        state.triageCaughtUp = false;
+        state.triageIndex = 0;
+        state.triageCursor = triageSessionAt(0);
+        applyTriage();
+      }
+      if (TRIAGE_PRESS && !triageHookDone.press && !state.loadingInbox) {
+        triageHookDone.press = true;
+        var keys = TRIAGE_PRESS.toLowerCase().replace(/[^jkyne]/g, '');
+        var i = 0;
+        var timer = setInterval(function () {
+          for (var s in state.pending) { if (state.pending[s]) return; }
+          if (i >= keys.length) { clearInterval(timer); return; }
+          var key = keys[i++];
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: key === 'e' ? 'Escape' : key, bubbles: true,
+          }));
+        }, 150);
+      }
+      if (TRIAGE_CONFIRM_CANCEL && !triageHookDone.cancel) {
+        triageHookDone.cancel = true;
+        var tries = 0;
+        var cancelTimer = setInterval(function () {
+          var cancelBtn = findButtonByText('Cancel');
+          if (cancelBtn) {
+            clearInterval(cancelTimer);
+            cancelBtn.click();
+          } else if (++tries > 40) {
+            clearInterval(cancelTimer);
+          }
+        }, 100);
+      }
+      // ?confirm-no=1 with a triage-opened dialog (no ?tap-no=1, whose own
+      // hook already presses the button): press "No, reject" once the n
+      // key's dialog is up, casting the vote for real. Demo only.
+      if (CONFIRM_NO && !TAP_NO && !triageHookDone.confirm) {
+        triageHookDone.confirm = true;
+        var confirmTries = 0;
+        var confirmTimer = setInterval(function () {
+          var confirmBtn = findButtonByText('No, reject');
+          if (confirmBtn) {
+            clearInterval(confirmTimer);
+            confirmBtn.click();
+          } else if (++confirmTries > 40) {
+            clearInterval(confirmTimer);
+          }
+        }, 100);
+      }
+    }
+
+    // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------
 
@@ -3676,6 +3985,10 @@
     filterTrigger.addEventListener('click', function () {
       if (openFilter) closeFilter(); else openAppFilter();
     });
+
+    // Keyboard triage over the inbox cards; the guard chain lives with the
+    // triage functions above.
+    document.addEventListener('keydown', triageKeydown);
 
     // Saved views: tap a chip to switch, tap its "⋯" to rename or delete.
     var viewsChips = document.getElementById('views-chips');
