@@ -372,6 +372,24 @@ async function migrate() {
     -- The starter template's demo table; the real app does not use it.
     DROP TABLE IF EXISTS presses;
   `);
+  // Discussion threads on proposals: comments are in-app content every
+  // member sees on a proposal's detail screen, so the table stays public
+  // (no staging:private marker). It carries no foreign key to a private
+  // table; its only relation is to itself (a reply's parent comment).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS proposal_comments (
+      id SERIAL PRIMARY KEY,
+      app_slug VARCHAR(255) NOT NULL,
+      session_id VARCHAR(128) NOT NULL,
+      parent_id INTEGER REFERENCES proposal_comments(id),
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      body TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS proposal_comments_thread_idx
+      ON proposal_comments (app_slug, session_id, id);
+  `);
   await pool.query(
     'ALTER TABLE my_votes ADD COLUMN IF NOT EXISTS merged_at TIMESTAMPTZ');
   // Proposals the user composed in the app's New proposal screen. The
@@ -390,6 +408,25 @@ async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     COMMENT ON TABLE my_proposals IS 'staging:private';
+  `);
+  // The user's starred proposals and the status each row was last seen in.
+  // Like my_votes this is one person's own data (what they watch), so it is
+  // staging:private. No foreign keys; proposal content stays on the platform.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS watchlist (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      last_seen_status VARCHAR(16),
+      starred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE watchlist IS 'staging:private';
   `);
 }
 
@@ -442,6 +479,85 @@ async function withMyVotes(proposals, userId) {
   const mine = await myVotesMap(userId);
   for (const p of proposals) p.myVote = mine.get(p.sessionId) || p.myVote || null;
   return proposals;
+}
+
+// ---------------------------------------------------------------------------
+// Watchlist: proposals the user starred, with the status each row was last
+// seen in. Rows are per user (staging:private — it is one person's tracking
+// data). The proposal content itself stays on the platform; the row keeps
+// just enough to render the tab and to re-find the proposal's app.
+// ---------------------------------------------------------------------------
+
+// The session ids this user has starred, for stamping the inbox cards.
+async function watchSetFor(userId) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT session_id FROM watchlist WHERE user_id = $1', [userId]);
+    return new Set(rows.map((r) => r.session_id));
+  } catch {
+    return new Set();
+  }
+}
+
+// Stamp each proposal with the caller's own star. Real rows always win;
+// ?preset-star=<sessionId,...> (demo checks) marks extra ones starred for
+// that one load without touching storage.
+async function withMyStars(proposals, userId, req) {
+  const mine = await watchSetFor(userId);
+  const preset = req && req.query['preset-star']
+    ? String(req.query['preset-star']).split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  for (const p of proposals) {
+    p.myStar = mine.has(p.sessionId) || preset.includes(p.sessionId) || p.myStar === true;
+  }
+  return proposals;
+}
+
+// Status a row is on now, for the "since last look" badge. Current status
+// comes from the app's promoted list when the platform answers for it:
+// still listed means open ('voting', or the platform's own merging state),
+// dropped from the list means the vote ended ('closed'). When the app's
+// list cannot be loaded the last-seen status stands, so a platform outage
+// never fabricates a change badge.
+async function withCurrentStatuses(rows, userToken) {
+  const byApp = new Map();
+  for (const r of rows) {
+    if (!byApp.has(r.app_slug)) byApp.set(r.app_slug, []);
+    byApp.get(r.app_slug).push(r);
+  }
+  for (const [slug, list] of byApp) {
+    let items = null;
+    try { items = await loadPromoted(slug, userToken); } catch { items = null; }
+    const bySession = items ? new Map(items.map((i) => [i.sessionId, i])) : null;
+    for (const r of list) {
+      if (bySession) {
+        const item = bySession.get(r.session_id);
+        r.current_status = item
+          ? (item.status === 'merging' || item.status === 'merged' ? item.status : 'voting')
+          : 'closed';
+      } else {
+        r.current_status = r.last_seen_status || 'voting';
+      }
+    }
+  }
+}
+
+function watchRowPayload(r) {
+  const changed = !!r.current_status
+    && r.last_seen_status != null
+    && r.current_status !== r.last_seen_status;
+  return {
+    sessionId: r.session_id,
+    appSlug: r.app_slug,
+    appName: r.app_name || r.app_slug,
+    icon: r.icon || null,
+    proposalId: r.proposal_id || null,
+    title: r.title,
+    starredAt: r.starred_at || null,
+    seenStatus: r.last_seen_status,
+    status: r.current_status || r.last_seen_status || 'voting',
+    changed,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -557,6 +673,22 @@ function demoInboxPayload(req) {
   if (req.query.allmerged === '1') {
     for (const p of demo.proposals) p.status = 'merged';
   }
+  // ?splits=<sessionId>:<yes>-<no>,… (demo only) overrides named proposals'
+  // vote counts, so the controversy-sort checks can pin tie behaviour — two
+  // proposals with the same gap — without changing the default fixture's
+  // numbers. Values stay in the fixture's fake-identity style: counts only.
+  const splits = String(req.query.splits || '');
+  if (splits) {
+    const bySession = new Map(demo.proposals.map((p) => [p.sessionId, p]));
+    for (const part of splits.split(',')) {
+      const m = /^([A-Za-z0-9_-]+):(\d+)-(\d+)$/.exec(part.trim());
+      const p = m && bySession.get(m[1]);
+      if (!p) continue;
+      p.yes = Number(m[2]);
+      p.no = Number(m[3]);
+      p.needed = p.required != null ? Math.max(0, p.required - p.yes) : null;
+    }
+  }
   return demo;
 }
 
@@ -591,6 +723,108 @@ function demoVoteRows() {
 }
 
 // ---------------------------------------------------------------------------
+// Watchlist demo data (?demo=1). Fixed fixture rows keyed to the demo inbox
+// proposals, so the Watchlist tab and its "since last look" badges are
+// deterministic in previews and checks. demo-5 (merged) and demo-3 (now
+// merging) carry a last-seen status of 'voting', so both show a change
+// badge; demo-1 is unchanged. Request-time injection, staging only.
+// ---------------------------------------------------------------------------
+
+function demoWatchRows() {
+  const byId = new Map(demoInbox().proposals.map((p) => [p.sessionId, p]));
+  const daysAgo = (d) => new Date(Date.now() - d * 24 * 3600 * 1000).toISOString();
+  const mk = (sessionId, seenStatus, starredDays) => {
+    const p = byId.get(sessionId);
+    if (!p) return null;
+    const status = p.status === 'proposed' ? 'voting' : (p.status || 'voting');
+    return {
+      sessionId,
+      appSlug: p.appSlug,
+      appName: p.appName,
+      icon: p.icon || null,
+      proposalId: p.proposalId,
+      title: p.title,
+      starredAt: daysAgo(starredDays),
+      seenStatus,
+      status,
+      changed: seenStatus != null && status !== seenStatus,
+    };
+  };
+  return [mk('demo-5', 'voting', 6), mk('demo-3', 'voting', 3), mk('demo-1', 'voting', 2)]
+    .filter(Boolean);
+}
+
+// ?watch-seen=1 marks every fixture row as seen right now (no badges);
+// ?watch-empty=1 serves no rows (the empty state). Both demo-only knobs so
+// the declared checks can reach those states deterministically.
+function demoWatchlistPayload(req) {
+  const rows = demoWatchRows();
+  if (req.query['watch-seen'] === '1') {
+    for (const r of rows) {
+      r.seenStatus = r.status;
+      r.changed = false;
+    }
+  }
+  if (req.query['watch-empty'] === '1') return { demo: true, rows: [] };
+  return { demo: true, rows };
+}
+
+// ---------------------------------------------------------------------------
+// Staging demo threads (?demo=1)
+//
+// A proposal detail's discussion reads real rows in production. Staging
+// previews get obviously-fake fixture comments (fake identities, "Staging
+// demo" wording, request-time injection behind IS_STAGING) plus anything
+// posted during the preview itself — those live in server memory only,
+// never the database, so a restart resets them and production never sees
+// them. Fixture ids are negative so they can never collide with the
+// database's SERIAL ids when a posted reply points at a fixture parent.
+// ---------------------------------------------------------------------------
+
+const demoCommentStore = new Map(); // '<appSlug>|<sessionId>' -> [rows]
+let demoCommentSeq = -1000;
+
+function demoCommentFixtures() {
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  return [
+    { appSlug: 'staging-demo-notes', sessionId: 'demo-4', id: -100, parentId: null,
+      username: 'staging-demo-maya',
+      body: 'Staging demo comment: do the new shortcuts replace the current ones?',
+      createdAt: hoursAgo(4) },
+    { appSlug: 'staging-demo-notes', sessionId: 'demo-4', id: -101, parentId: null,
+      username: 'staging-demo-omar',
+      body: 'Staging demo comment: how does this affect existing shortcuts?',
+      createdAt: hoursAgo(2) },
+    { appSlug: 'staging-demo-notes', sessionId: 'demo-4', id: -102, parentId: -101,
+      username: 'staging-demo-priya',
+      body: 'Staging demo reply: only the new panel keys change.',
+      createdAt: hoursAgo(1) },
+  ];
+}
+
+// One thread, oldest first: fixtures for the session plus anything posted
+// here during the preview, merged and ordered by time (then id) so the
+// newest comment is always last.
+function demoThreadRows(appSlug, sessionId) {
+  const fixtures = demoCommentFixtures()
+    .filter((c) => c.appSlug === appSlug && c.sessionId === sessionId);
+  const stored = demoCommentStore.get(appSlug + '|' + sessionId) || [];
+  return fixtures.concat(stored).sort((a, b) => {
+    const ta = Date.parse(a.createdAt) || 0;
+    const tb = Date.parse(b.createdAt) || 0;
+    if (ta !== tb) return ta - tb;
+    return a.id - b.id;
+  });
+}
+
+function findDemoComment(appSlug, sessionId, id) {
+  for (const c of demoThreadRows(appSlug, sessionId)) {
+    if (c.id === id) return c;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
 
@@ -602,6 +836,7 @@ app.get('/api/inbox', async (req, res) => {
     if (req.query.demo === '1' && IS_STAGING) {
       const demo = demoInboxPayload(req);
       await withMyVotes(demo.proposals, req.user.id);
+      await withMyStars(demo.proposals, req.user.id, req);
       return res.json(demo);
     }
     if (!PLATFORM_ORIGIN) {
@@ -610,6 +845,7 @@ app.get('/api/inbox', async (req, res) => {
       if (IS_STAGING) {
         const demo = demoInboxPayload(req);
         await withMyVotes(demo.proposals, req.user.id);
+        await withMyStars(demo.proposals, req.user.id, req);
         return res.json(demo);
       }
       return res.status(500).json({ error: 'Platform origin is not configured' });
@@ -638,6 +874,7 @@ app.get('/api/inbox', async (req, res) => {
     });
 
     await withMyVotes(proposals, req.user.id);
+    await withMyStars(proposals, req.user.id, req);
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
     proposals.sort(neededFirst);
@@ -846,6 +1083,60 @@ app.get('/api/proposals', async (req, res) => {
   }
 });
 
+// Watchlist: proposals the signed-in user starred, each with its current
+// status and the status it was last seen in, so the tab can badge what
+// changed since the last look.
+app.get('/api/watchlist', async (req, res) => {
+  const userToken = userTokenFrom(req);
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      const demo = demoWatchlistPayload(req);
+      // ?watch-mine=1 (demo checks) adds the caller's own real rows, recorded
+      // through the ?set-star= hook, so one URL observes star → reload →
+      // still starred from actual storage. Without it the demo payload stays
+      // the pure fixture, keeping the other watchlist checks deterministic.
+      if (req.query['watch-mine'] === '1') {
+        const { rows } = await pool.query(
+          `SELECT app_slug, app_name, session_id, proposal_id, title,
+                  last_seen_status, starred_at
+           FROM watchlist WHERE user_id = $1 ORDER BY starred_at DESC`,
+          [req.user.id]);
+        const present = new Set(demo.rows.map((r) => r.sessionId));
+        const fixtureById = new Map(demoWatchRows().map((r) => [r.sessionId, r]));
+        for (const r of rows) {
+          if (present.has(r.session_id)) continue;
+          const fixture = fixtureById.get(r.session_id);
+          const status = fixture ? fixture.status
+            : (r.last_seen_status || 'voting');
+          demo.rows.unshift({
+            sessionId: r.session_id,
+            appSlug: r.app_slug,
+            appName: r.app_name || r.app_slug,
+            icon: fixture ? fixture.icon : null,
+            proposalId: r.proposal_id,
+            title: r.title,
+            starredAt: r.starred_at,
+            seenStatus: r.last_seen_status,
+            status,
+            changed: r.last_seen_status != null && status !== r.last_seen_status,
+          });
+        }
+      }
+      return res.json(demo);
+    }
+
+    const { rows } = await pool.query(
+      `SELECT app_slug, app_name, session_id, proposal_id, title,
+              last_seen_status, starred_at
+       FROM watchlist WHERE user_id = $1 ORDER BY starred_at DESC`,
+      [req.user.id]);
+    await withCurrentStatuses(rows, userToken);
+    res.json({ demo: false, rows: rows.map(watchRowPayload) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Send a composed proposal: validate the edited title and description
 // (the prefill is fully editable, so what arrives is whatever the user
 // left in the fields), record it, and hand the row back so the
@@ -872,6 +1163,187 @@ app.post('/api/proposals', async (req, res) => {
     res.status(201).json({ ok: true, proposal: rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Discussion threads
+//
+// One thread per proposal, keyed by the proposal's app slug + session id
+// (the same pair the inbox uses). Comments are authenticated: they are
+// stored as the signed-in member who wrote them. Replies are one level
+// deep, enforced here at write time — a reply to a reply is filed under
+// that reply's top-level parent instead.
+// ---------------------------------------------------------------------------
+
+const MAX_COMMENT_LEN = 2000;
+
+function normalizeComment(row) {
+  return {
+    id: row.id,
+    parentId: row.parent_id == null ? null : row.parent_id,
+    username: row.username,
+    body: row.body,
+    createdAt: row.created_at,
+  };
+}
+
+app.get('/api/comments', async (req, res) => {
+  const appSlug = typeof req.query.appSlug === 'string' ? req.query.appSlug.slice(0, 255) : '';
+  const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.slice(0, 128) : '';
+  if (!appSlug || !sessionId) {
+    return res.status(400).json({ error: 'appSlug and sessionId are required' });
+  }
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      return res.json({ demo: true, comments: demoThreadRows(appSlug, sessionId) });
+    }
+    const { rows } = await pool.query(
+      `SELECT id, parent_id, username, body, created_at
+       FROM proposal_comments
+       WHERE app_slug = $1 AND session_id = $2
+       ORDER BY created_at ASC, id ASC`,
+      [appSlug, sessionId]);
+    res.json({ demo: false, comments: rows.map(normalizeComment) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Star a proposal. Demo bodies (staging only) carry just the session id and
+// take their metadata from the demo fixture, so a check URL can star a
+// known proposal; real stars carry what the card showed. Starred again with
+// the row already there is a no-op.
+app.post('/api/watchlist/star', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    let meta = body;
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo starring is staging-only' });
+      const p = demoInbox().proposals.find((x) => x.sessionId === sessionId);
+      if (!p) return res.status(400).json({ error: 'Unknown demo proposal' });
+      meta = {
+        appSlug: p.appSlug,
+        appName: p.appName,
+        proposalId: p.proposalId,
+        title: p.title,
+        status: p.status === 'proposed' ? 'voting' : (p.status || 'voting'),
+      };
+    }
+    await pool.query(`
+      INSERT INTO watchlist
+        (user_id, username, app_slug, app_name, session_id, proposal_id, title, last_seen_status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (user_id, session_id) DO NOTHING
+    `, [req.user.id, req.user.username, meta.appSlug || '', meta.appName || '',
+        sessionId, meta.proposalId || null, meta.title || 'Untitled proposal',
+        meta.status || 'voting']);
+    res.json({ ok: true, demo: body.demo === true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Unstar: remove this user's row for one session.
+app.post('/api/watchlist/unstar', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM watchlist WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, removed: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark watched: record the status each row showed at this view, so the next
+// visit only badges what changed since. The frontend posts it after the tab
+// renders. Rows that were unstarred meanwhile simply update nothing.
+app.post('/api/watchlist/seen', async (req, res) => {
+  const body = req.body || {};
+  const statuses = Array.isArray(body.statuses) ? body.statuses.slice(0, 200) : [];
+  try {
+    for (const s of statuses) {
+      if (!s || s.sessionId == null || typeof s.status !== 'string' || !s.status) continue;
+      await pool.query(
+        'UPDATE watchlist SET last_seen_status = $3 WHERE user_id = $1 AND session_id = $2',
+        [req.user.id, String(s.sessionId), s.status]);
+    }
+    res.json({ ok: true, marked: statuses.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/comments', async (req, res) => {
+  const body = req.body || {};
+  const appSlug = typeof body.appSlug === 'string' ? body.appSlug.trim().slice(0, 255) : '';
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim().slice(0, 128) : '';
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
+  if (!appSlug || !sessionId) {
+    return res.status(400).json({ error: 'appSlug and sessionId are required' });
+  }
+  if (!text) return res.status(400).json({ error: 'Write a comment first' });
+  if (text.length > MAX_COMMENT_LEN) {
+    return res.status(400).json({ error: 'Comments are capped at 2000 characters' });
+  }
+  let parentId = null;
+  if (body.parentId != null) {
+    parentId = Number(body.parentId);
+    if (!Number.isInteger(parentId)) {
+      return res.status(400).json({ error: 'parentId must be a comment id' });
+    }
+  }
+  // Demo mode is staging-only, like the demo vote path: the comment is
+  // recorded in server memory so the posting flow is testable without
+  // writing preview rows into the database.
+  const demo = body.demo === true && IS_STAGING;
+  try {
+    if (parentId != null) {
+      const parent = demo
+        ? findDemoComment(appSlug, sessionId, parentId)
+        : (await pool.query(
+            'SELECT id, parent_id FROM proposal_comments WHERE id = $1 AND app_slug = $2 AND session_id = $3',
+            [parentId, appSlug, sessionId])).rows[0] || null;
+      if (!parent) {
+        return res.status(404).json({ error: 'The comment you replied to no longer exists' });
+      }
+      // One level only: a reply to a reply is filed under that reply's own
+      // top-level parent, so replies never nest deeper than one level.
+      const parentParent = demo ? parent.parentId : parent.parent_id;
+      if (parentParent != null) parentId = parentParent;
+    }
+    if (demo) {
+      const row = {
+        id: demoCommentSeq--,
+        parentId,
+        username: req.user.username,
+        body: text,
+        createdAt: new Date().toISOString(),
+      };
+      const key = appSlug + '|' + sessionId;
+      const list = demoCommentStore.get(key) || [];
+      list.push(row);
+      demoCommentStore.set(key, list);
+      return res.status(201).json({ ok: true, demo: true, comment: row });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO proposal_comments (app_slug, session_id, parent_id, user_id, username, body)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, parent_id, username, body, created_at`,
+      [appSlug, sessionId, parentId, req.user.id, req.user.username, text]);
+    return res.status(201).json({ ok: true, comment: normalizeComment(rows[0]) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 
