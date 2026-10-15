@@ -99,11 +99,14 @@ user's vote history.
 
 ## App-specific conventions
 
-- Three local tables: `my_votes` (one person's vote history) and
-  `watchlist` (one person's starred proposals, plus the status each row
-  was last seen in) are both marked `staging:private` (per-person data).
-  Proposal data stays on the platform — with one exception: the
-  discussion thread.
+- Local tables: `my_votes` (one person's vote history), `watchlist` (one
+  person's starred proposals, plus the status each row was last seen in)
+  and `my_proposals` (proposals composed in the app's New proposal screen
+  — the platform's app-facing API is read-only, so a sent proposal is
+  recorded here and the Sent list renders from it; nothing is submitted
+  to any approval pipeline from this app) are all marked `staging:private`
+  (per-person data). Proposal data stays on the platform — with one
+  exception: the discussion thread.
 - `proposal_comments` holds the discussion thread. It is PUBLIC (on
   purpose): comments are in-app content visible to every signed-in
   member, so a stranger seeing every row is fine. Nesting is one level
@@ -133,6 +136,14 @@ user's vote history.
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- Compose check fixtures (demo only, one-shot, replayed through the real
+  controls after the compose screen renders): `?compose=1` itself is a
+  real deep link (all environments, not demo-gated); `&template=<id>`,
+  `&switch-template=<id>`, `&set-title=<text>`, `&set-body=<text>` and
+  `&send=1` walk one user path, and `&back=1` taps the compose screen's
+  back chevron at the end of the chain. Check paths must URL-encode
+  spaces (`%20`): the platform's test reader rejects paths with literal
+  whitespace.
 - `?splits=<sessionId>:<yes>-<no>,…` (demo only) overrides named fixture
   proposals' vote counts so the controversy sort's tie behaviour is
   reachable by checks without changing the default fixture's numbers.
