@@ -372,6 +372,24 @@ async function migrate() {
     -- The starter template's demo table; the real app does not use it.
     DROP TABLE IF EXISTS presses;
   `);
+  // Discussion threads on proposals: comments are in-app content every
+  // member sees on a proposal's detail screen, so the table stays public
+  // (no staging:private marker). It carries no foreign key to a private
+  // table; its only relation is to itself (a reply's parent comment).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS proposal_comments (
+      id SERIAL PRIMARY KEY,
+      app_slug VARCHAR(255) NOT NULL,
+      session_id VARCHAR(128) NOT NULL,
+      parent_id INTEGER REFERENCES proposal_comments(id),
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      body TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS proposal_comments_thread_idx
+      ON proposal_comments (app_slug, session_id, id);
+  `);
   await pool.query(
     'ALTER TABLE my_votes ADD COLUMN IF NOT EXISTS merged_at TIMESTAMPTZ');
 }
@@ -587,6 +605,61 @@ function demoVoteRows() {
     row('demo-v3', 'staging-demo-notes', 'Staging Demo Notes',
         'Staging demo proposal: pinned notes', 'yes', 'closed', 4, 2, 5, daysAgo(9)),
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Staging demo threads (?demo=1)
+//
+// A proposal detail's discussion reads real rows in production. Staging
+// previews get obviously-fake fixture comments (fake identities, "Staging
+// demo" wording, request-time injection behind IS_STAGING) plus anything
+// posted during the preview itself — those live in server memory only,
+// never the database, so a restart resets them and production never sees
+// them. Fixture ids are negative so they can never collide with the
+// database's SERIAL ids when a posted reply points at a fixture parent.
+// ---------------------------------------------------------------------------
+
+const demoCommentStore = new Map(); // '<appSlug>|<sessionId>' -> [rows]
+let demoCommentSeq = -1000;
+
+function demoCommentFixtures() {
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  return [
+    { appSlug: 'staging-demo-notes', sessionId: 'demo-4', id: -100, parentId: null,
+      username: 'staging-demo-maya',
+      body: 'Staging demo comment: do the new shortcuts replace the current ones?',
+      createdAt: hoursAgo(4) },
+    { appSlug: 'staging-demo-notes', sessionId: 'demo-4', id: -101, parentId: null,
+      username: 'staging-demo-omar',
+      body: 'Staging demo comment: how does this affect existing shortcuts?',
+      createdAt: hoursAgo(2) },
+    { appSlug: 'staging-demo-notes', sessionId: 'demo-4', id: -102, parentId: -101,
+      username: 'staging-demo-priya',
+      body: 'Staging demo reply: only the new panel keys change.',
+      createdAt: hoursAgo(1) },
+  ];
+}
+
+// One thread, oldest first: fixtures for the session plus anything posted
+// here during the preview, merged and ordered by time (then id) so the
+// newest comment is always last.
+function demoThreadRows(appSlug, sessionId) {
+  const fixtures = demoCommentFixtures()
+    .filter((c) => c.appSlug === appSlug && c.sessionId === sessionId);
+  const stored = demoCommentStore.get(appSlug + '|' + sessionId) || [];
+  return fixtures.concat(stored).sort((a, b) => {
+    const ta = Date.parse(a.createdAt) || 0;
+    const tb = Date.parse(b.createdAt) || 0;
+    if (ta !== tb) return ta - tb;
+    return a.id - b.id;
+  });
+}
+
+function findDemoComment(appSlug, sessionId, id) {
+  for (const c of demoThreadRows(appSlug, sessionId)) {
+    if (c.id === id) return c;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -812,6 +885,113 @@ app.get('/api/my-votes', async (req, res) => {
     res.json({ demo: false, votes: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Discussion threads
+//
+// One thread per proposal, keyed by the proposal's app slug + session id
+// (the same pair the inbox uses). Comments are authenticated: they are
+// stored as the signed-in member who wrote them. Replies are one level
+// deep, enforced here at write time — a reply to a reply is filed under
+// that reply's top-level parent instead.
+// ---------------------------------------------------------------------------
+
+const MAX_COMMENT_LEN = 2000;
+
+function normalizeComment(row) {
+  return {
+    id: row.id,
+    parentId: row.parent_id == null ? null : row.parent_id,
+    username: row.username,
+    body: row.body,
+    createdAt: row.created_at,
+  };
+}
+
+app.get('/api/comments', async (req, res) => {
+  const appSlug = typeof req.query.appSlug === 'string' ? req.query.appSlug.slice(0, 255) : '';
+  const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.slice(0, 128) : '';
+  if (!appSlug || !sessionId) {
+    return res.status(400).json({ error: 'appSlug and sessionId are required' });
+  }
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      return res.json({ demo: true, comments: demoThreadRows(appSlug, sessionId) });
+    }
+    const { rows } = await pool.query(
+      `SELECT id, parent_id, username, body, created_at
+       FROM proposal_comments
+       WHERE app_slug = $1 AND session_id = $2
+       ORDER BY created_at ASC, id ASC`,
+      [appSlug, sessionId]);
+    res.json({ demo: false, comments: rows.map(normalizeComment) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/comments', async (req, res) => {
+  const body = req.body || {};
+  const appSlug = typeof body.appSlug === 'string' ? body.appSlug.trim().slice(0, 255) : '';
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim().slice(0, 128) : '';
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
+  if (!appSlug || !sessionId) {
+    return res.status(400).json({ error: 'appSlug and sessionId are required' });
+  }
+  if (!text) return res.status(400).json({ error: 'Write a comment first' });
+  if (text.length > MAX_COMMENT_LEN) {
+    return res.status(400).json({ error: 'Comments are capped at 2000 characters' });
+  }
+  let parentId = null;
+  if (body.parentId != null) {
+    parentId = Number(body.parentId);
+    if (!Number.isInteger(parentId)) {
+      return res.status(400).json({ error: 'parentId must be a comment id' });
+    }
+  }
+  // Demo mode is staging-only, like the demo vote path: the comment is
+  // recorded in server memory so the posting flow is testable without
+  // writing preview rows into the database.
+  const demo = body.demo === true && IS_STAGING;
+  try {
+    if (parentId != null) {
+      const parent = demo
+        ? findDemoComment(appSlug, sessionId, parentId)
+        : (await pool.query(
+            'SELECT id, parent_id FROM proposal_comments WHERE id = $1 AND app_slug = $2 AND session_id = $3',
+            [parentId, appSlug, sessionId])).rows[0] || null;
+      if (!parent) {
+        return res.status(404).json({ error: 'The comment you replied to no longer exists' });
+      }
+      // One level only: a reply to a reply is filed under that reply's own
+      // top-level parent, so replies never nest deeper than one level.
+      const parentParent = demo ? parent.parentId : parent.parent_id;
+      if (parentParent != null) parentId = parentParent;
+    }
+    if (demo) {
+      const row = {
+        id: demoCommentSeq--,
+        parentId,
+        username: req.user.username,
+        body: text,
+        createdAt: new Date().toISOString(),
+      };
+      const key = appSlug + '|' + sessionId;
+      const list = demoCommentStore.get(key) || [];
+      list.push(row);
+      demoCommentStore.set(key, list);
+      return res.status(201).json({ ok: true, demo: true, comment: row });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO proposal_comments (app_slug, session_id, parent_id, user_id, username, body)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, parent_id, username, body, created_at`,
+      [appSlug, sessionId, parentId, req.user.id, req.user.username, text]);
+    return res.status(201).json({ ok: true, comment: normalizeComment(rows[0]) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 
