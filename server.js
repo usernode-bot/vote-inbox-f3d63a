@@ -1089,6 +1089,15 @@ function demoInbox() {
 // only genuinely queued proposals carrying a position.
 function demoInboxPayload(req) {
   const demo = demoInbox();
+  // ?empty=1 (staging demo only): the fixture with every proposal removed
+  // (the app list kept, so the empty state's Browse apps action opens a
+  // populated filter), giving checks a stable URL for the genuinely empty
+  // inbox: its copy, its Browse apps action and the header's zero counts.
+  // Applied before every other variant; no declared check combines them.
+  if (req.query.empty === '1') {
+    demo.proposals = [];
+    return demo;
+  }
   if (req.query.queue === '1') applyQueueScenario(demo.proposals, req);
   // Same ordering the production inbox uses, so the demo list's default
   // order mirrors the real one (and the sort checks are meaningful: the
@@ -1670,6 +1679,13 @@ app.get('/api/my-votes', async (req, res) => {
     FROM my_votes WHERE user_id = $1 ORDER BY created_at DESC`;
   try {
     if (req.query.demo === '1' && IS_STAGING) {
+      // ?votes-empty=1 (staging demo only): an empty history, so the My
+      // Votes tab's empty state ("No votes yet", with the line about votes
+      // showing up here) and its "0 voted, 0 merged" summary are reachable
+      // by checks. Never combined with the fixture rows.
+      if (req.query['votes-empty'] === '1') {
+        return res.json({ demo: true, votes: [] });
+      }
       // Demo mode is a fixed fixture: exactly the three demo rows, so the
       // summary line and the declared checks ("3 voted, 1 merged") are
       // deterministic run to run. The caller's real history, including rows

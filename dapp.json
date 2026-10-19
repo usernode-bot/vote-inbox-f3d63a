@@ -2978,6 +2978,19 @@
       ]
     },
     {
+      "id": "tour.first-visit",
+      "name": "A first visit shows the tour at step 1",
+      "path": "/?demo=1&tour-reset=1",
+      "expectSelector": "[data-tour]",
+      "expectText": "What a proposal is",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "my-votes.shareimg-button",
       "name": "My Votes offers Share as image",
       "path": "/?tab=votes&demo=1",
@@ -3044,6 +3057,19 @@
       "name": "Card tap opens the detail view",
       "path": "/?demo=1&tap-card=1",
       "expectSelector": "[data-proposal-detail][data-session-id='demo-2']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.next-advances",
+      "name": "The tour advances with the Next button",
+      "path": "/?demo=1&tour=1&tap-tour-next=1",
+      "expectSelector": "[data-tour]",
+      "expectText": "How to vote",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -3142,6 +3168,122 @@
       "expectSelector": "[data-lb-row][data-lb-me] [data-lb-you]",
       "expectText": "You",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.skip-any-step",
+      "name": "The tour can be skipped from step 2",
+      "path": "/?demo=1&tour=1&tap-tour-next=1&tap-tour-skip=1",
+      "expectSelector": "main:not(:has([data-tour]))",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.finish-never-again",
+      "name": "The tour is not shown again after finishing",
+      "path": "/?demo=1&tour-reset=1&finish-tour=1",
+      "expectSelector": "main:not(:has([data-tour]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.skip-never-again",
+      "name": "The tour is not shown again after skipping",
+      "path": "/?demo=1&tour-reset=1&skip-tour=1",
+      "expectSelector": "main:not(:has([data-tour]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.vote-not-blocked",
+      "name": "The tour does not block voting on the first card",
+      "path": "/?demo=1&tour-reset=1&cast=demo-4:yes",
+      "expectSelector": "[data-tour]",
+      "expectText": "You voted yes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.reopen-menu",
+      "name": "The tour reopens from the header menu",
+      "path": "/?demo=1&tap-tour-open=1",
+      "expectSelector": "[data-tour]",
+      "expectText": "What a proposal is",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.inbox-browse-apps",
+      "name": "Empty inbox shows the Browse apps empty state",
+      "path": "/?demo=1&empty=1",
+      "expectSelector": "[data-action='browse-apps']",
+      "expectText": "Nothing to vote on yet",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.votes",
+      "name": "Empty My Votes explains votes show up here",
+      "path": "/?demo=1&tab=votes&votes-empty=1",
+      "expectText": "No votes yet",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.search",
+      "name": "Empty search results say nothing matches",
+      "path": "/?demo=1&q=zzznothing",
+      "expectText": "No proposals match",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.one-away",
+      "name": "No one-vote-away proposals shows the matching empty state",
+      "path": "/?demo=1&one-away=1&splits=demo-1:2-1,demo-6:1-0",
+      "expectText": "Nothing is one vote away",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.zero-counts",
+      "name": "Empty inbox keeps the header counts at zero",
+      "path": "/?demo=1&empty=1",
+      "expectSelector": "#inbox-summary",
+      "expectText": "0 open, 0 votes needed",
       "impact": [
         "public/index.html",
         "server.js",
