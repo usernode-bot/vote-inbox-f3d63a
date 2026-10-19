@@ -164,6 +164,28 @@ user's vote history.
 - `?splits=<sessionId>:<yes>-<no>,…` (demo only) overrides named fixture
   proposals' vote counts so the controversy sort's tie behaviour is
   reachable by checks without changing the default fixture's numbers.
+- Theme (Light / Dark / System): the header sun button opens a theme menu
+  driven by the pre-paint head script (`window.VITheme`, localStorage key
+  `vote-inbox:theme`; saved choice wins, `system` follows
+  `usernode.theme`, then the OS preference, and is the default when
+  nothing is stored). Choosing re-themes in place, so no list re-render
+  and no scroll loss. Demo hooks (staging + `?demo=1` only):
+  `?set-theme=<light|dark|system>` drives the real setter;
+  `?open-theme=1` opens the menu through the real button;
+  `?tap-theme=<choice>` taps that option row (the real click path);
+  `?theme-clear=1` forgets the stored choice for that load;
+  `?theme-os=light|dark` pins what "System" points at; `?theme-reload=1`
+  reloads a clean URL after `?set-theme=` so persistence is observable in
+  one check URL; `?theme-scroll=<px>` scrolls before `?tap-theme=` and
+  stamps `data-scroll-kept` on `<html>`; `?theme-audit=1` measures real
+  computed contrast of the rendered inbox (text and chips at 4.5:1 in
+  both looks; progress fills at 3:1 and card surface at 1.1:1 in dark;
+  the vote toast at 4.5:1 when `?cast=` put one up) and stamps the
+  verdicts (`data-contrast-audit`, `data-chips-audit`,
+  `data-progress-readable`, `data-surface-audit`, `data-toast-audit`,
+  worst ratio in `data-audit-worst`) on `<html>` for the `theme.*`
+  checks. Production never honours any of these.
+
 - The Controversy sort (closest yes/no split first; unanimous or one-sided
   proposals sink; equal gaps break by title) ranks the whole loaded inbox,
   so it renders one flat list — the age-group headers only apply to the

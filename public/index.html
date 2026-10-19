@@ -77,21 +77,73 @@
        ANSWERS the shell, and how the shell learns this document's ground
        colour so the platform bar above the app takes the app's tone. -->
   <script src="/usernode-bridge/v1/bridge.js"></script>
-  <!-- The platform's light/dark choice, applied before first paint.
-       usernode.theme is set synchronously when the bridge loads; the OS
-       preference is the fallback when the app is opened standalone. -->
+  <!-- The app's own Light / Dark / System choice, applied before first
+       paint. The saved choice (localStorage) wins; System — the default
+       when nothing is saved — follows the platform's light/dark setting
+       (usernode.theme, set synchronously when the bridge loads above), or
+       the OS preference when the app is opened standalone. Demo hooks
+       (?demo=1 only): ?theme-clear=1 forgets the saved choice for one
+       load, and ?theme-os=light|dark substitutes what "System" points at,
+       so checks can pin the System branch either way. -->
   <script>
   (function () {
-    var media = window.matchMedia('(prefers-color-scheme: dark)');
-    function applyTheme() {
-      var theme = (window.usernode && window.usernode.theme)
-        || (media.matches ? 'dark' : 'light');
+    var KEY = 'vote-inbox:theme';
+    var params = new URLSearchParams(location.search);
+    var DEMO = params.get('demo') === '1';
+    if (DEMO && params.get('theme-clear') === '1') {
+      try { localStorage.removeItem(KEY); } catch (e) { /* not persistable */ }
+    }
+    function readStored() {
+      try {
+        var v = localStorage.getItem(KEY);
+        return (v === 'light' || v === 'dark' || v === 'system') ? v : null;
+      } catch (e) { return null; }
+    }
+    // What "System" points at: the demo override first (so a check can pin
+    // either branch), then the platform's own setting, then the OS one.
+    function systemSource() {
+      var osParam = DEMO ? params.get('theme-os') : null;
+      if (osParam === 'light' || osParam === 'dark') return osParam;
+      var platform = window.usernode && window.usernode.theme;
+      if (platform === 'light' || platform === 'dark') return platform;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function resolve(stored) {
+      if (stored === 'light' || stored === 'dark') return stored;
+      return systemSource();
+    }
+    function applyTheme(stored) {
+      var theme = resolve(stored);
       document.documentElement.classList.toggle('dark', theme === 'dark');
       document.documentElement.style.colorScheme = theme;
+      document.documentElement.setAttribute('data-theme-resolved', theme);
+      document.documentElement.setAttribute('data-theme-stored', stored || 'none');
+      return theme;
     }
-    applyTheme();
-    window.addEventListener('usernode:theme-changed', applyTheme);
-    if (media.addEventListener) media.addEventListener('change', applyTheme);
+    var media = window.matchMedia('(prefers-color-scheme: dark)');
+    function onChange() { applyTheme(readStored()); }
+    window.addEventListener('usernode:theme-changed', onChange);
+    if (media.addEventListener) media.addEventListener('change', onChange);
+    applyTheme(readStored());
+    // This script runs synchronously in <head>, before the first paint;
+    // that stamp is what the no-light-flash check asserts.
+    document.documentElement.setAttribute('data-theme-applied', 'pre-paint');
+    // The header's theme menu reads and drives the choice through this
+    // small API; set() persists the choice and re-themes in place.
+    window.VITheme = {
+      stored: readStored,
+      resolved: function () {
+        return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      },
+      source: systemSource,
+      apply: function () { return applyTheme(this.stored()); },
+      set: function (choice) {
+        if (choice !== 'light' && choice !== 'dark' && choice !== 'system') return false;
+        try { localStorage.setItem(KEY, choice); } catch (e) { /* not persistable */ }
+        applyTheme(choice);
+        return true;
+      }
+    };
   })();
   </script>
   <!-- The native UI kit: pressed states, pull-to-refresh and toasts for the
@@ -111,6 +163,14 @@
           <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">Open proposals across Homeroom</p>
         </div>
       </div>
+      <div class="relative shrink-0">
+        <button id="theme-menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Theme"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        </button>
+        <div id="theme-menu-panel" data-theme-menu="closed" hidden
+          class="absolute right-0 top-full z-30 mt-2 w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"></div>
+      </div>
       <button id="refresh-btn" aria-label="Refresh" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
         <svg id="refresh-icon" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
       </button>
@@ -119,7 +179,7 @@
     <p id="inbox-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="votes-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="watchlist-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
-    <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
+    <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300">Staging demo data, not real proposals</div>
 
     <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
       <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
@@ -273,6 +333,24 @@
     // only; the tap is one-shot. Unknown ids do nothing.
     var EXPAND_SUMMARY = DEMO ? (params.get('expand-summary') || '') : '';
     var TAP_SUMMARY = DEMO ? (params.get('tap-summary') || '') : '';
+    // Theme hooks (demo only), for the Light / Dark / System control in the
+    // header menu. ?set-theme=<light|dark|system> drives the real setter
+    // (the same code a tap on the menu option runs); ?open-theme=1 opens
+    // the menu through the real button; ?tap-theme=<choice> taps that
+    // option row in the menu, the real click path; ?theme-reload=1 reloads
+    // a clean URL after ?set-theme=, so one check URL observes set then
+    // reload then still themed from storage; ?theme-scroll=<px> scrolls the
+    // page before ?tap-theme= and stamps on <html> whether the offset
+    // survived the switch; ?theme-audit=1 measures real computed contrast
+    // of the rendered inbox (text, chips, progress fills and surfaces, plus
+    // the vote toast when ?cast= put one up) and stamps the verdicts on
+    // <html>. Production never honours any of these.
+    var SET_THEME = DEMO ? (params.get('set-theme') || '') : '';
+    var TAP_THEME = DEMO ? (params.get('tap-theme') || '') : '';
+    var OPEN_THEME_MENU = DEMO && params.get('open-theme') === '1';
+    var THEME_RELOAD = DEMO && params.get('theme-reload') === '1';
+    var THEME_SCROLL = DEMO ? (params.get('theme-scroll') || '') : '';
+    var THEME_AUDIT = DEMO && params.get('theme-audit') === '1';
     // Bulk-triage hooks (demo only), one URL per check behaviour:
     // ?selectmode=1 turns select mode on with nothing selected;
     // ?select=<ids> / ?deselect=<ids> tick and untick cards through the same
@@ -1156,7 +1234,7 @@
     // ------------------------------------------------------------------
 
     var TAB_ACTIVE = 'bg-violet-600 text-white shadow-sm';
-    var TAB_IDLE = 'text-zinc-500 dark:text-zinc-400';
+    var TAB_IDLE = 'text-zinc-600 dark:text-zinc-400';
     var BADGE_ACTIVE = 'bg-white/25 text-white';
     var BADGE_IDLE = 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300';
 
@@ -1295,13 +1373,13 @@
         cls = 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
         text = 'Count met';
       } else if (p.needed <= 2) {
-        cls = 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
+        cls = 'bg-amber-500/15 text-amber-800 dark:text-amber-300';
         text = p.needed + (p.needed === 1 ? ' vote needed' : ' votes needed');
       } else {
         cls = 'bg-red-500/15 text-red-700 dark:text-red-300';
         text = p.needed + ' votes needed';
       }
-      return '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + cls + '">'
+      return '<span data-needed-pill class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + cls + '">'
         + esc(text) + '</span>';
     }
 
@@ -1336,7 +1414,7 @@
         + ' aria-label="' + countsText + '">'
         + segments
         + '</div>'
-        + '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">' + counts
+        + '<span data-vote-counts class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">' + counts
         + (hasThreshold
           ? ' · <span data-vote-threshold="' + p.yes + ' of ' + p.required + '">' + p.yes + ' of ' + p.required + '</span>'
           : '')
@@ -1394,15 +1472,18 @@
         + ' aria-label="Status: ' + style[0] + '">'
         + '<div class="h-full rounded-full ' + fillCls + ' transition-all" style="width:' + pct + '%"></div>'
         + '</div>'
-        + '<span class="whitespace-nowrap text-xs font-semibold ' + labelCls + '">' + style[0] + '</span>'
+        + '<span data-status-label class="whitespace-nowrap text-xs font-semibold ' + labelCls + '">' + style[0] + '</span>'
         + queueBadge(p)
         + '</div>';
     }
 
-    var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
+    // Cards sit opaque on the dark page background (zinc-900 on zinc-950) so
+    // the card surface stays distinguishable from the page behind it; the
+    // voter-avatar rings below match this exact colour.
+    var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900';
     // Selected card in select mode: the same card with the violet border the
     // active filter trigger and chip use, so a ticked card reads at a glance.
-    var CARD_SELECTED_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-violet-500/70 bg-white p-4 shadow-sm dark:border-violet-500/70 dark:bg-zinc-900/70';
+    var CARD_SELECTED_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-violet-500/70 bg-white p-4 shadow-sm dark:border-violet-500/70 dark:bg-zinc-900';
 
     // Select-mode checkbox: an empty circle when unticked, a filled violet
     // circle with a check when ticked (same 24-grid check the filter rows
@@ -1444,7 +1525,7 @@
     var STAR_ACTIVE_CLASS = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-amber-600 transition-colors hover:text-amber-500 dark:text-amber-300 dark:hover:text-amber-200';
     // "Since last look" change badges on Watchlist rows, one label per
     // status key the rows can carry.
-    var WATCH_CHANGE_CLASS = 'whitespace-nowrap rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300';
+    var WATCH_CHANGE_CLASS = 'whitespace-nowrap rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-300';
     var WATCH_CHANGE_LABEL = {
       voting: 'New: Voting',
       merging: 'New: Merging',
@@ -1861,7 +1942,7 @@
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + selectBtn
         + appAvatar(p)
-        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + '<span data-card-meta class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
         + ageSpan(p)
         + '</span>'
         + neededPill(p)
@@ -2328,7 +2409,7 @@
     function renderDemoBanner() {
       var demo = (state.inbox && state.inbox.demo) || (state.votes && state.votes.demo);
       document.getElementById('demo-banner').className = demo
-        ? 'mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300'
+        ? 'mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300'
         : 'hidden';
     }
 
@@ -3119,6 +3200,7 @@
           maybeApplyBulkHooks();
           maybeTapStar();
           maybeTapSummary();
+          maybeApplyThemeHooks();
           maybeAutoComment();
           maybeAutoReply();
           // A ?proposal= deep link lands on the inbox first; once the list
@@ -3844,6 +3926,246 @@
       setTimeout(function () { waitFor(selector, fn, n + 1); }, 100);
     }
 
+    // ------------------------------------------------------------------
+    // Theme demo hooks (see SET_THEME etc. for the parameters). Applied
+    // once the demo inbox has rendered, so the header menu and the cards
+    // the audit measures are real. Nothing here runs without ?demo=1.
+    // ------------------------------------------------------------------
+
+    var themeHookDone = { audit: false, reload: false };
+    var themeScrollTarget = null;
+
+    function stampThemeScroll() {
+      var target = themeScrollTarget;
+      setTimeout(function () {
+        var actual = Math.round(window.scrollY || 0);
+        var root = document.documentElement;
+        root.setAttribute('data-scroll-y', String(actual));
+        root.setAttribute('data-scroll-kept',
+          Math.abs(actual - target) <= 2 ? '1' : '0');
+      }, 150);
+    }
+
+    function reloadAfterThemeSet() {
+      if (themeHookDone.reload) return;
+      themeHookDone.reload = true;
+      setTimeout(function () {
+        var remaining = new URLSearchParams(params);
+        remaining.delete('set-theme');
+        remaining.delete('theme-reload');
+        var q = remaining.toString();
+        location.replace(location.pathname + (q ? '?' + q : '') + location.hash);
+      }, 150);
+    }
+
+    function maybeApplyThemeHooks() {
+      if (!DEMO) return;
+      if (SET_THEME && window.VITheme) window.VITheme.set(SET_THEME);
+      if (THEME_SCROLL) {
+        var y = parseInt(THEME_SCROLL, 10);
+        if (!isNaN(y) && y >= 0) {
+          window.scrollTo(0, y);
+          themeScrollTarget = y;
+        }
+      }
+      if (OPEN_THEME_MENU && themeMenuBtn) themeMenuBtn.click();
+      if (TAP_THEME) {
+        if (themeMenuPanel && themeMenuPanel.hidden && themeMenuBtn) themeMenuBtn.click();
+        var row = document.querySelector('[data-theme-option="' + TAP_THEME + '"]');
+        if (row) {
+          row.click();
+          if (themeScrollTarget != null) stampThemeScroll();
+        }
+      }
+      if (THEME_AUDIT) runThemeAudit();
+      if (THEME_RELOAD && SET_THEME) reloadAfterThemeSet();
+    }
+
+    // ------------------------------------------------------------------
+    // Real-computed-style contrast audit for the themed inbox (demo only,
+    // ?theme-audit=1). Measures WCAG contrast of the text, chips, progress
+    // fills and card surfaces actually rendered, compositing translucent
+    // backgrounds (the dark card used to be 70% opaque) over what is behind
+    // them, and stamps the verdicts on <html> for the dapp.json checks:
+    //   data-contrast-audit     body text at 4.5:1 (both looks)
+    //   data-chips-audit        pill/badge text at 4.5:1 (both looks)
+    //   data-progress-readable  progress fills vs their track at 3:1 (dark;
+    //                           a light track under a mid-luminance fill
+    //                           cannot reach 3:1, and the requirement is
+    //                           about dark readability)
+    //   data-surface-audit      card surface vs page background at 1.1:1 (dark)
+    //   data-toast-audit        vote-toast text at 4.5:1 (when ?cast= put one up)
+    // The weakest measured ratio rides along in data-audit-worst so a
+    // failure names itself.
+    // ------------------------------------------------------------------
+
+    function auditParseRgb(value) {
+      var m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)/.exec(String(value || ''));
+      return m ? {
+        c: [Number(m[1]), Number(m[2]), Number(m[3])],
+        a: m[4] === undefined ? 1 : parseFloat(m[4]),
+      } : null;
+    }
+
+    function auditLinear(channel) {
+      var c = channel / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+
+    function auditLum(rgb) {
+      return 0.2126 * auditLinear(rgb[0])
+        + 0.7152 * auditLinear(rgb[1])
+        + 0.0722 * auditLinear(rgb[2]);
+    }
+
+    function auditRatio(la, lb) {
+      var hi = Math.max(la, lb), lo = Math.min(la, lb);
+      return (hi + 0.05) / (lo + 0.05);
+    }
+
+    // The colour actually behind an element: walk up from it compositing
+    // every background layer over the page colour until something opaque
+    // lands, so a translucent card or pill is measured against what really
+    // shows through.
+    function auditEffectiveBg(el) {
+      var dark = document.documentElement.classList.contains('dark');
+      var out = dark ? [9, 9, 11] : [250, 250, 250];
+      var layers = [];
+      var node = el;
+      while (node && node.nodeType === 1) {
+        var bg = auditParseRgb(getComputedStyle(node).backgroundColor);
+        if (bg) {
+          layers.push(bg);
+          if (bg.a >= 1) break;
+        }
+        node = node.parentElement;
+      }
+      for (var i = layers.length - 1; i >= 0; i--) {
+        var layer = layers[i];
+        out = layer.a >= 1 ? layer.c.slice() : [
+          Math.round(layer.c[0] * layer.a + out[0] * (1 - layer.a)),
+          Math.round(layer.c[1] * layer.a + out[1] * (1 - layer.a)),
+          Math.round(layer.c[2] * layer.a + out[2] * (1 - layer.a)),
+        ];
+      }
+      return out;
+    }
+
+    function auditElementRatio(el) {
+      var style = getComputedStyle(el);
+      var fg = auditParseRgb(style.color);
+      if (!fg || fg.a < 1) return null;
+      var bg = auditEffectiveBg(el);
+      return auditRatio(auditLum(fg.c), auditLum(bg));
+    }
+
+    var AUDIT_TEXT_SELECTORS = [
+      'h1[data-app-title]',
+      'header p.text-xs',
+      '.tab-btn',
+      '#sort-row [data-sort]',
+      '#inbox-summary',
+      '#demo-banner',
+      '[data-proposal-card] [data-proposal-title]',
+      '[data-proposal-card] [data-card-meta]',
+      '[data-proposal-card] [data-proposed-date]',
+      '[data-proposal-card] [data-summary-toggle]',
+      '[data-proposal-card] [data-vote-counts]',
+      '[data-proposal-card] [data-yes-voter-names]',
+    ];
+    var AUDIT_CHIP_SELECTORS = [
+      '[data-needed-pill]',
+      '[data-queue-badge]',
+      '[data-status-label]',
+    ];
+
+    function auditSelectorsWorst(selectors) {
+      var worst = Infinity;
+      for (var s = 0; s < selectors.length; s++) {
+        var nodes = document.querySelectorAll(selectors[s]);
+        for (var n = 0; n < nodes.length && n < 6; n++) {
+          var el = nodes[n];
+          if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') continue;
+          var ratio = auditElementRatio(el);
+          if (ratio != null && ratio < worst) worst = ratio;
+        }
+      }
+      return worst;
+    }
+
+    function auditProgressWorst() {
+      var worst = Infinity;
+      var bars = document.querySelectorAll('[data-vote-bar], [data-proposal-status] > div');
+      for (var i = 0; i < bars.length; i++) {
+        var track = bars[i];
+        var fill = track.firstElementChild;
+        if (!fill) continue;
+        var tb = auditParseRgb(getComputedStyle(track).backgroundColor);
+        var fb = auditParseRgb(getComputedStyle(fill).backgroundColor);
+        if (!tb || !fb) continue;
+        var ratio = auditRatio(auditLum(tb.c), auditLum(fb.c));
+        if (ratio < worst) worst = ratio;
+      }
+      return worst;
+    }
+
+    function auditToastRatio() {
+      var toastEl = document.querySelector('.un-toast');
+      if (!toastEl || !toastEl.classList.contains('un-in')) return null;
+      var msg = toastEl.querySelector('.un-toast-msg');
+      if (!msg) return null;
+      var fg = auditParseRgb(getComputedStyle(msg).color);
+      if (!fg) return 0;
+      return auditRatio(auditLum(fg.c), auditLum(auditEffectiveBg(toastEl)));
+    }
+
+    function runThemeAuditNow() {
+      var root = document.documentElement;
+      var dark = root.classList.contains('dark');
+      var worst = Infinity;
+      function stamp(attr, ratio, threshold) {
+        if (!isFinite(ratio)) return;
+        root.setAttribute(attr, ratio >= threshold ? 'pass' : 'fail');
+        if (ratio < worst) worst = ratio;
+      }
+      stamp('data-contrast-audit', auditSelectorsWorst(AUDIT_TEXT_SELECTORS), 4.5);
+      stamp('data-chips-audit', auditSelectorsWorst(AUDIT_CHIP_SELECTORS), 4.5);
+      if (dark) {
+        stamp('data-progress-readable', auditProgressWorst(), 3);
+        var card = document.querySelector('[data-proposal-card]');
+        var cardRatio = null;
+        if (card) {
+          var bodyBg = auditParseRgb(getComputedStyle(document.body).backgroundColor);
+          if (bodyBg) {
+            cardRatio = auditRatio(
+              auditLum(auditEffectiveBg(card)), auditLum(bodyBg.c));
+          }
+        }
+        stamp('data-surface-audit', cardRatio == null ? Infinity : cardRatio, 1.1);
+      }
+      if (params.get('cast')) {
+        stamp('data-toast-audit', auditToastRatio() == null ? Infinity : auditToastRatio(), 4.5);
+      }
+      root.setAttribute('data-audit-worst', isFinite(worst) ? worst.toFixed(2) : '');
+    }
+
+    function runThemeAudit() {
+      if (themeHookDone.audit) return;
+      themeHookDone.audit = true;
+      // The vote toast may still be on its way up (?cast= fires just before
+      // the hooks run): wait for it briefly, then measure whatever is up.
+      // A toast that never appears measures the rest and leaves the toast
+      // verdict unstamped, which fails its check honestly.
+      if (params.get('cast') && !document.querySelector('.un-toast')) {
+        waitFor('.un-toast', function () { runThemeAuditNow(); }, 30);
+        setTimeout(function () {
+          if (!document.documentElement.hasAttribute('data-audit-worst')) runThemeAuditNow();
+        }, 3600);
+        return;
+      }
+      runThemeAuditNow();
+    }
+
     // Staging demo hook: ?demo=1&proposal=<sessionId>&comment=<text> posts
     // a comment through the REAL detail form (fills the field, taps Post,
     // so the POST and the thread update are the code a person runs). Pairs
@@ -4157,6 +4479,79 @@
     for (var vo = 0; vo < votesOrderButtons.length; vo++) {
       votesOrderButtons[vo].addEventListener('click', function (event) {
         setVotesOrder(event.currentTarget.getAttribute('data-votes-order'));
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // Theme menu. The header's sun button opens a small menu of Light /
+    // Dark / System; the active one is checked. Choosing drives VITheme.set
+    // (the head script's module), so the whole page re-themes in place —
+    // no re-render, the list and its scroll stay put — and the choice is
+    // remembered for the next visit. "System" follows the platform's own
+    // light/dark setting (the OS preference when opened standalone).
+    // ------------------------------------------------------------------
+
+    var themeMenuBtn = document.getElementById('theme-menu-btn');
+    var themeMenuPanel = document.getElementById('theme-menu-panel');
+    var THEME_OPTIONS = [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']];
+    var THEME_ROW_ACTIVE = 'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100';
+    var THEME_ROW_IDLE = 'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300';
+    var THEME_ROW_CHECK = '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>';
+
+    function renderThemeMenu() {
+      if (!themeMenuPanel) return;
+      var current = (window.VITheme && window.VITheme.stored()) || 'system';
+      var rows = '';
+      for (var i = 0; i < THEME_OPTIONS.length; i++) {
+        var opt = THEME_OPTIONS[i];
+        var active = current === opt[0];
+        rows += '<button type="button" role="menuitemradio" data-theme-option="' + opt[0] + '"'
+          + ' aria-checked="' + (active ? 'true' : 'false') + '"'
+          + ' class="' + (active ? THEME_ROW_ACTIVE : THEME_ROW_IDLE) + '">'
+          + '<span>' + opt[1] + '</span>'
+          + (active ? THEME_ROW_CHECK : '')
+          + '</button>';
+      }
+      themeMenuPanel.innerHTML = rows;
+    }
+
+    function themeMenuOpen() { return !!themeMenuPanel && !themeMenuPanel.hidden; }
+
+    function openThemeMenu() {
+      if (!themeMenuPanel) return;
+      renderThemeMenu();
+      themeMenuPanel.hidden = false;
+      themeMenuPanel.setAttribute('data-theme-menu', 'open');
+      if (themeMenuBtn) themeMenuBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeThemeMenu() {
+      if (!themeMenuPanel) return;
+      themeMenuPanel.hidden = true;
+      themeMenuPanel.setAttribute('data-theme-menu', 'closed');
+      if (themeMenuBtn) themeMenuBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    if (themeMenuBtn) {
+      themeMenuBtn.addEventListener('click', function () {
+        if (themeMenuOpen()) closeThemeMenu(); else openThemeMenu();
+      });
+    }
+    if (themeMenuPanel) {
+      themeMenuPanel.addEventListener('click', function (event) {
+        var row = event.target.closest ? event.target.closest('[data-theme-option]') : null;
+        if (!row || !window.VITheme) return;
+        window.VITheme.set(row.getAttribute('data-theme-option'));
+        closeThemeMenu();
+      });
+      // A tap outside the menu closes it; Escape does too.
+      document.addEventListener('click', function (event) {
+        if (!themeMenuOpen()) return;
+        if (event.target.closest && (event.target.closest('#theme-menu-panel') || event.target.closest('#theme-menu-btn'))) return;
+        closeThemeMenu();
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && themeMenuOpen()) closeThemeMenu();
       });
     }
 
