@@ -205,6 +205,23 @@ user's vote history.
   answers with a variant fixture (two more proposals merged), so the app
   filter's per-app open and merged-this-week counts are observable
   updating in place.
+- Impact preview panel on the proposal detail: `normalizeProposal`
+  passes through an optional `impact` record (from
+  `impact`/`impact_preview`/`impactPreview` spellings) normalised to
+  `{ apps, appsCount, members, targetRelease, checks, summary }`, with
+  `checks` entries as `{ name, state: 'passed'|'failed'|null }`. The
+  panel renders on every detail view; anything the record lacks (or no
+  record at all) shows an "Unknown" label, and merged proposals keep
+  the panel as a read-only record. On small screens the body collapses
+  behind a "Show details" toggle. Demo impact fixtures (`DEMO_IMPACT`
+  in `server.js`, stamped through `normalizeImpact`) cover a full
+  record with mixed pass/fail checks (demo-4), a full record (demo-2),
+  the merged record (demo-5) and a partial record (demo-6, unknown
+  labels). Demo hooks (staging + `?demo=1` only):
+  `?impact-mobile=1` forces the collapsed small-screen presentation at
+  any viewport, and `?tap-impact-toggle=1` taps the open detail's
+  toggle after render (the real click path). Expansion state is per
+  proposal in frontend memory only.
 - The app filter dropdown shows each app's open count (loaded proposals
   not yet merged) plus its merged-this-week count (merged within the
   last seven calendar days), both tallied from the already-loaded inbox
