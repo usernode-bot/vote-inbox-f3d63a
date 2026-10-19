@@ -128,6 +128,50 @@ user's vote history.
   active row for a fake user on demo-3 (the per-user path); `?snooze=1`
   opts the demo inbox into overlaying the caller's persisted rows
   (mirrors the my_votes precedent — the default demo stays deterministic).
+- Merge celebrations: when a proposal the user voted on is seen merged
+  (within the last seven calendar days), a one-time card appears at the top
+  of the inbox — what merged, on which app, and "You voted yes/no" (the
+  choice recorded at detection time, so it never changes). Detection runs
+  on every `/api/inbox` load server-side (`syncMergeCelebrations`) and
+  writes one row per (user, proposal) to `merge_celebrations`
+  (`staging:private`, like the other per-person tables); cards render from
+  the payload's pending list (unseen, undismissed rows, newest first, so
+  multiple merges stack as separate cards), and the first render marks them
+  shown via `POST /api/celebrations/shown` — so each card shows once and
+  never comes back. A failed shown-mark leaves the rows pending (the card
+  returns on the next load). The card's Dismiss button removes it at once
+  (optimistic, restored on failure) and marks the row dismissed via
+  `POST /api/celebrations/dismiss`, so the proposal never celebrates again;
+  the "See what merged" link opens My Votes filtered to merged this week.
+  Only proposals the user actually voted on celebrate; the seven-day window
+  (`CELEBRATION_MERGE_WINDOW_MS`) means older merges never surface. The
+  cards' entrance animation is guarded by both `prefers-reduced-motion: reduce`
+  and a `data-motion` attribute the page computes from the device setting.
+- My Votes "merged this week" filter: a chip on the votes tab (same row as
+  the vote order pill), on when `?votes-merged=1` — a real deep link that
+  works in production (the celebration card's See-what-merged link sets
+  it). Filters the loaded vote rows to those whose proposal merged within
+  seven calendar days (recorded `merged_at`, falling back to `updated_at`,
+  the same stand-in the row's merged date uses); not persisted, and a
+  filtered-none result gets its own empty state with a Show all votes link.
+- Celebration demo hooks (staging + `?demo=1` only; the plain demo payload
+  always carries `celebrations: []` so the default stays deterministic):
+  `?celeb=1` opts the load into the celebration path (fixtures + the real
+  detection pass + the caller's pending cards); `?celebvote=<ids>` marks
+  those fixture proposals voted by the caller (unvoted ones count as yes)
+  and merged 24h ago, re-arming their rows to unseen on every such load;
+  `?celeb-clear=1` empties the caller's celebration rows first, so repeated
+  check runs start clean (checks sharing a fixture id with a concurrent
+  sibling re-arm each other's rows, which is why the shown-once check omits
+  it and uses demo-2, an id no other celebration check names);
+  `?celeb-reload=1` marks the rendered cards shown (the real POST) then
+  reloads a clean `?demo=1&celeb=1` URL, so the check observes that a shown
+  celebration does not come back;
+  `?celeb-tap-dismiss=<id>` taps that card's Dismiss button after render;
+  `?celeb-tap-see=1` taps the card's See-what-merged link after render (the
+  real click path to the votes filter); `?celeb-motion=reduced` forces the
+  reduced-motion presentation (the way `?impact-mobile=1` forces the
+  small-screen impact panel).
 - `proposal_comments` holds the discussion thread. It is PUBLIC (on
   purpose): comments are in-app content visible to every signed-in
   member, so a stranger seeing every row is fine. Nesting is one level
@@ -135,7 +179,8 @@ user's vote history.
   filed under the reply's own top-level parent).
 - Proposal detail view: the Discuss button on a card opens it, and
   `?proposal=<sessionId>` deep-links to it. Both work in production;
-  the detail reuses the card's vote buttons via shared `proposalActions`.
+  the detail reuses the card's vote buttons via shared `proposalActions`
+  (see the "Proposal detail screen" bullet below for the full screen).
 - Members directory: the header Members button toggles it over the
   current tab, and `?members=1` deep-links to it (works in production).
   Data comes from the platform `/members` API (creator first = owner
@@ -232,6 +277,26 @@ user's vote history.
   answers with a variant fixture (two more proposals merged), so the app
   filter's per-app open and merged-this-week counts are observable
   updating in place.
+- Weekly digest card on My Votes: computed entirely in the browser from
+  `state.votes.votes` (no server totals), so its numbers always match the
+  list below. Shows votes this week (calendar week, Monday start, viewer's
+  local time), how many of them merged (same `status === 'merged'` rule as
+  the summary line), a streak of consecutive weeks ending with this one
+  that had at least one vote (the tile is left out entirely when it is
+  zero), up to three top apps (count desc, ties alphabetical), an
+  "Up/Down from N last week" / "Same as last week" line, and a View
+  details toggle opening a seven-day bar chart (plain flex bars, zero
+  votes = zero-height bar). Hidden while loading/error/empty/Members view;
+  the card sits outside `#view` so existing row-position checks keep
+  passing. A successful vote updates the history in place
+  (`upsertLocalVote`/`removeLocalVote` instead of dropping
+  `state.votes`), so the card updates without a reload. Demo hooks
+  (staging + `?demo=1` only): `?digest=week|quiet` serves the digest
+  fixture rows (server `demoDigestRows`, re-stamped client-side by
+  `reanchorDigestDemo` from `demo_anchor { weeksAgo, weekday }`), 
+  `?digest-details=1` taps the View details toggle after render, and
+  `?digest-vote=<sessionId>:<yes|no>` unvotes then casts through the real
+  `castVote` with the tab staying on My Votes.
 - Impact preview panel on the proposal detail: `normalizeProposal`
   passes through an optional `impact` record (from
   `impact`/`impact_preview`/`impactPreview` spellings) normalised to
@@ -249,6 +314,29 @@ user's vote history.
   any viewport, and `?tap-impact-toggle=1` taps the open detail's
   toggle after render (the real click path). Expansion state is per
   proposal in frontend memory only.
+- Proposal detail screen: the Discuss button on a card opens it
+  (existing `?proposal=<sessionId>` deep link also lands there). It shows
+  a full untruncated description (`data-proposal-description`; empty
+  summary falls back to the title with `data-description-fallback="1"`),
+  a vote progress ring (yes/no counts, "N votes needed", and the
+  "x of y yes to merge" label when the platform supplies a required
+  count), a numbered timeline (opened, one row per yes voter with name,
+  avatar and relative date, threshold-reached when met, merged with its
+  date — voters' `votedAt` times pass through `normalizeProposal` from
+  `voted_at`/`votedAt` spellings), the author handle and app name, a
+  Related strip of other still-open proposals from the same app (hidden
+  when none), and a sticky bottom action bar (Yes/No/Share) with a voted
+  pill and disabled buttons once voted. Back restores the inbox's
+  previous scroll position. Demo hooks (staging + `?demo=1` only):
+  `?tap-card=1` clicks the demo-2 card's title after render; `?tap-back=1`
+  scrolls the inbox to y=400, opens the demo-2 detail and clicks Back
+  (the restored scroll is stamped on `body[data-inbox-scroll]`);
+  `?scroll-detail=1` verifies the action bar stays within the viewport at
+  scroll 0 and at the bottom of the detail, then stamps
+  `[data-detail-actions][data-sticky-observed="1"]` (the flag survives
+  re-renders, so the marker is re-emitted from the render function).
+  Share reuses the existing share modes (`?share=sheet` keeps
+  `data-share-mode="sheet"` on the detail's button).
 - The app filter dropdown shows each app's open count (loaded proposals
   not yet merged) plus its merged-this-week count (merged within the
   last seven calendar days), both tallied from the already-loaded inbox
