@@ -620,6 +620,23 @@ async function migrate() {
     );
     COMMENT ON TABLE snoozes IS 'staging:private';
   `);
+  // Read tracking: proposals each person has opened. Like my_votes and
+  // snoozes this is per-user data, so it is staging:private. Append-only:
+  // a row is simply the fact "this person opened this proposal", keyed on
+  // the session id alone, so a status change (voting, merging, closed) never
+  // makes it unread again. No proposal content; it stays on the platform.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS proposal_reads (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE proposal_reads IS 'staging:private';
+  `);
   // Merge celebrations: one row per (user, proposal) the app should
   // celebrate having merged. Like my_votes and snoozes this is one
   // person's own tracking data, so it is staging:private, and it carries
@@ -763,6 +780,35 @@ async function withMySnoozes(proposals, userId) {
   for (const p of proposals) {
     const wake = mine.get(p.sessionId);
     p.mySnooze = wake ? new Date(wake).toISOString() : null;
+  }
+  return proposals;
+}
+
+// ---------------------------------------------------------------------------
+// Read tracking: which proposals the user has opened. Rows are per user
+// (staging:private, same reasoning as watchlist and snoozes). Writes are
+// insert-only; nothing updates or deletes a row in normal use, so once read
+// a proposal stays read for that person forever.
+// ---------------------------------------------------------------------------
+
+// The session ids this user has opened, for stamping the inbox cards.
+async function readSetFor(userId) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT session_id FROM proposal_reads WHERE user_id = $1', [userId]);
+    return new Set(rows.map((r) => r.session_id));
+  } catch {
+    return new Set();
+  }
+}
+
+// Stamp each proposal with the caller's own read mark. A read already on
+// the proposal survives as a fallback (a demo load may carry one; production
+// responses never do, so this changes nothing there).
+async function withMyReads(proposals, userId) {
+  const mine = await readSetFor(userId);
+  for (const p of proposals) {
+    p.read = mine.has(p.sessionId) || p.read === true;
   }
   return proposals;
 }
@@ -1232,6 +1278,37 @@ async function applyDemoSnoozeFixtures(req) {
   }
 }
 
+// Read-check fixtures (staging demo only), applied to a demo inbox load
+// before the caller's own read rows are stamped on:
+//   Any of ?set-read= / ?markallread=1 / ?open-merged=1 / ?read-other=1
+//                      resets the caller's read rows on the six fixture
+//                      proposals, so every such check starts from all-unread
+//                      and never depends on what an earlier check marked.
+//   ?read-other=1      also records a read row on demo-3 for a fake member
+//                      (staging-demo-user), so the per-user rule is
+//                      observable: another member's reading never clears the
+//                      caller's dot.
+// Both write only fake or check-fixture rows and only under ?demo=1.
+async function applyDemoReadFixtures(req) {
+  const hooked = ['set-read', 'markallread', 'open-merged', 'read-other']
+    .some((k) => req.query[k]);
+  if (!hooked) return;
+  const ids = demoInbox().proposals.map((p) => p.sessionId);
+  await pool.query(
+    'DELETE FROM proposal_reads WHERE user_id = $1 AND session_id = ANY($2)',
+    [req.user.id, ids]);
+  if (req.query['read-other'] === '1') {
+    const p = demoInbox().proposals.find((x) => x.sessionId === 'demo-3');
+    if (p) {
+      await pool.query(`
+        INSERT INTO proposal_reads (user_id, username, app_slug, session_id)
+        VALUES (900002, 'staging-demo-user', $1, $2)
+        ON CONFLICT (user_id, session_id) DO NOTHING`,
+        [p.appSlug, p.sessionId]);
+    }
+  }
+}
+
 // Celebration check fixtures (staging demo only), applied to a demo inbox
 // load only when the load opts in with ?celeb=1 — the marker the celebration
 // checks' pages and their reloaded marker pages carry, mirroring ?snooze=1 —
@@ -1271,6 +1348,13 @@ async function applyDemoCelebrationFixtures(req, proposals) {
 // stays celebration-free, the same determinism rule the snooze fixtures use.
 async function finishDemoInbox(req, demo) {
   if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
+  // The caller's persisted read rows follow the same opt-in rule as the
+  // snooze overlay: they are only stamped when the load asks with ?read=1
+  // (the marker the read checks' reloaded pages carry), so one check's
+  // reads can never reach another check's plain ?demo=1 load, which stays
+  // all-unread.
+  await applyDemoReadFixtures(req);
+  if (req.query.read === '1') await withMyReads(demo.proposals, req.user.id);
   await withMyStars(demo.proposals, req.user.id, req);
   demo.celebrations = [];
   if (req.query.celeb === '1') {
@@ -1548,6 +1632,7 @@ app.get('/api/inbox', async (req, res) => {
     await withMyVotes(proposals, req.user.id);
     await withMySnoozes(proposals, req.user.id);
     await withMyStars(proposals, req.user.id, req);
+    await withMyReads(proposals, req.user.id);
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
     proposals.sort(neededFirst);
@@ -2144,6 +2229,64 @@ app.post('/api/unsnooze', async (req, res) => {
       'DELETE FROM snoozes WHERE user_id = $1 AND session_id = $2',
       [req.user.id, sessionId]);
     res.json({ ok: true, removed: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark one proposal read for the signed-in account. Append-only: a row that
+// is already there is a no-op, so repeated opens change nothing. Demo bodies
+// (staging only) carry just the session id and take their app from the demo
+// fixture, the way the demo star endpoint does.
+app.post('/api/reads', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    let appSlug = body.appSlug || '';
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo read marking is staging-only' });
+      const p = demoInbox().proposals.find((x) => x.sessionId === sessionId);
+      if (!p) return res.status(400).json({ error: 'Unknown demo proposal' });
+      appSlug = p.appSlug;
+    }
+    await pool.query(`
+      INSERT INTO proposal_reads (user_id, username, app_slug, session_id)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id, session_id) DO NOTHING
+    `, [req.user.id, req.user.username, appSlug, sessionId]);
+    res.json({ ok: true, demo: body.demo === true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark many proposals read at once (Mark all read). Ids are trimmed,
+// de-duplicated and capped so one call cannot balloon; demo bodies (staging
+// only) are filtered to the fixture ids. One insert over the whole list.
+app.post('/api/reads/all', async (req, res) => {
+  const body = req.body || {};
+  if (!Array.isArray(body.sessionIds)) {
+    return res.status(400).json({ error: 'sessionIds must be an array' });
+  }
+  let ids = [...new Set(body.sessionIds.map((s) => String(s).trim()).filter(Boolean))]
+    .slice(0, 500);
+  try {
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo read marking is staging-only' });
+      const fixtures = new Set(demoInbox().proposals.map((x) => x.sessionId));
+      ids = ids.filter((id) => fixtures.has(id));
+    }
+    if (ids.length) {
+      await pool.query(`
+        INSERT INTO proposal_reads (user_id, username, app_slug, session_id)
+        SELECT $1, $2, '', u.id FROM unnest($3::text[]) AS u(id)
+        ON CONFLICT (user_id, session_id) DO NOTHING
+      `, [req.user.id, req.user.username, ids]);
+    }
+    res.json({ ok: true, marked: ids.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
