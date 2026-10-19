@@ -122,6 +122,10 @@
     </header>
     <p id="inbox-updated" class="-mt-1.5 pb-1 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="inbox-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
+    <p id="inbox-unread" data-unread-count="0" class="-mt-1.5 flex items-center gap-2 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden>
+      <span data-unread-text></span>
+      <button data-mark-all-read type="button" class="shrink-0 rounded-full py-1.5 font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">Mark all read</button>
+    </p>
     <p id="votes-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="watchlist-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="members-summary" data-members-summary class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
@@ -175,6 +179,10 @@
           <label for="hide-merged" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
             <span>Hide merged</span>
             <input id="hide-merged" type="checkbox" class="un-switch">
+          </label>
+          <label for="hide-read" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+            <span>Hide read</span>
+            <input id="hide-read" type="checkbox" class="un-switch">
           </label>
         </div>
       </div>
@@ -406,6 +414,36 @@
     // Demo-inbox params forwarded to /api/inbox so the server can stamp the
     // caller's persisted snoozes (and the snooze check fixtures) on demand.
     var SNOOZE_PARAMS = ['snooze', 'snooze-past', 'snooze-other'];
+    // Read-tracking hooks (demo only), following the snooze hooks' pattern:
+    //   ?tap-open=<id>      clicks that card's Discuss button once the inbox
+    //                       has rendered (the real openDetail path), waits
+    //                       for the read POST, then clicks the detail's Back.
+    //                       No reload: the card re-renders with the dot gone.
+    //   ?set-read=<id>      the same open, but the page then reloads at a
+    //                       read-set marker URL (other params such as
+    //                       hide-read are kept), so what the check sees is
+    //                       the persisted state, not the optimistic one.
+    //   ?read-set=<id|all>  the marker page: its inbox fetch carries ?read=1
+    //                       so the server overlays the caller's persisted
+    //                       read rows on the demo inbox.
+    //   ?markallread=1      clicks the header's Mark all read button, waits
+    //                       for its POST, then reloads at read-set=all.
+    //   ?open-merged=1      opens the merged fixture (demo-5) exactly as a
+    //                       ?proposal= deep link does, so the deep-link path
+    //                       marks it read, then reloads at read-set=demo-5.
+    //   ?tap-hide-read=1    clicks the Hide read switch once after render;
+    //                       skipped while a set-read reload is still pending.
+    // ?read-other=1 is server-side only (see applyDemoReadFixtures).
+    var TAP_OPEN = DEMO ? (params.get('tap-open') || '') : '';
+    var SET_READ = DEMO ? (params.get('set-read') || '') : '';
+    var READ_SET = DEMO ? (params.get('read-set') || '') : '';
+    var MARK_ALL_READ = DEMO && params.get('markallread') === '1';
+    var OPEN_MERGED = DEMO && params.get('open-merged') === '1';
+    var TAP_HIDE_READ = DEMO && params.get('tap-hide-read') === '1';
+    // Demo-inbox params forwarded to /api/inbox: the read-check fixtures make
+    // the server reset the caller's rows, and ?read=1 overlays the persisted
+    // reads on demand.
+    var READ_PARAMS = ['read', 'set-read', 'markallread', 'open-merged', 'read-other'];
     // Members directory. ?members=1 is a real deep link (the way ?proposal=
     // is), not a demo hook: it opens the directory over the current tab in
     // every environment. ?member-query= presets the directory's search box
@@ -441,6 +479,9 @@
       // the reply form: a re-render or a reload closes it.
       snoozeMenu: null,
       hideMerged: false,
+      // Hide-read switch, loaded from localStorage right below (same shape
+      // as hideVoted/hideMerged). Not part of saved views or saved searches.
+      hideRead: false,
       // Inbox order: 'needed' | 'newest' | 'controversy'.
       sort: 'needed',
       // My Votes order: 'newest' | 'oldest'. Not persisted; the
@@ -493,6 +534,11 @@
       // are fetched per proposal; commentsKey remembers which thread is
       // loaded so a re-render (a vote, a reply) never refetches it.
       detail: params.get('proposal') || '',
+      // Read POSTs in flight, per session id, kept so the check hooks (and
+      // nothing else) can wait for the server to have the row before they
+      // reload. The promise always resolves (failures are swallowed in
+      // markRead), so an await on it can never hang.
+      readPosts: {},
       detailComments: [],
       commentsKey: '',
       commentsLoading: false,
@@ -659,6 +705,43 @@
       var box = document.getElementById('hide-merged');
       if (box) box.checked = on;
       render();
+    }
+
+    // ------------------------------------------------------------------
+    // Hide-read preference. Same shape as the hide-voted and hide-merged
+    // preferences: persists in localStorage, ?hide-read=1|0 overrides it
+    // for one load (used by the staging checks) without writing back.
+    // Default off. Saved views and saved searches neither capture nor
+    // clear it.
+    // ------------------------------------------------------------------
+
+    var HIDE_READ_KEY = 'vote-inbox:hide-read';
+
+    function loadHideRead() {
+      try { return localStorage.getItem(HIDE_READ_KEY) === '1'; } catch (e) { return false; }
+    }
+
+    function saveHideRead(on) {
+      try { localStorage.setItem(HIDE_READ_KEY, on ? '1' : '0'); } catch (e) { /* not persistable here */ }
+    }
+
+    var hideReadParam = params.get('hide-read');
+    state.hideRead = loadHideRead();
+    if (hideReadParam === '1') state.hideRead = true;
+    else if (hideReadParam === '0') state.hideRead = false;
+
+    function setHideRead(on) {
+      state.hideRead = on;
+      saveHideRead(on);
+      var box = document.getElementById('hide-read');
+      if (box) box.checked = on;
+      render();
+    }
+
+    // True when the caller has opened this proposal (the server stamps the
+    // caller's persisted read set onto every inbox payload).
+    function isRead(p) {
+      return p.read === true;
     }
 
     // ------------------------------------------------------------------
@@ -2435,6 +2518,7 @@
       return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '"'
         + (p.needed != null ? ' data-needed="' + p.needed + '"' : '')
         + (snoozed ? ' data-snoozed="1"' : '')
+        + (isRead(p) ? ' data-read="1"' : '')
         + (state.selectMode && !voted
           ? ' data-selected="' + (isSelected ? 'true' : 'false') + '"' : '')
         + ' data-contested="' + (contested ? 'true' : 'false') + '"'
@@ -2449,7 +2533,12 @@
         + neededPill(p)
         + '</div>'
         + proposedDateLine(p)
-        + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">' + esc(p.title) + '</h2>'
+        + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">'
+        // Unread dot: a small violet marker before the title, only on cards
+        // this account has never opened. Read cards render the title alone.
+        + (isRead(p) ? ''
+          : '<span data-unread-dot aria-label="Unread" class="mr-1.5 inline-block h-2 w-2 rounded-full bg-violet-600 align-middle dark:bg-violet-400"></span>')
+        + esc(p.title) + '</h2>'
         + tagChipsRow(p)
         + changeSummaryRow(p)
         + voteBar(p)
@@ -2921,6 +3010,7 @@
     var CLEAR_TAG_CTA = '<button data-action="clear-tag" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all tags</button>';
     var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
     var SHOW_MERGED_CTA = '<button data-action="show-merged" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show merged proposals</button>';
+    var SHOW_READ_CTA = '<button data-action="show-read" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show read proposals</button>';
     var CLEAR_SEARCH_CTA = '<button data-action="clear-search" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Clear search</button>';
     var SHOW_SNOOZED_CTA = '<button data-action="show-snoozed" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">See snoozed</button>';
     var BACK_TO_INBOX_CTA = '<button data-action="clear-snooze-view" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Back to the inbox</button>';
@@ -3114,6 +3204,12 @@
       if (state.hideMerged) {
         filtered = filtered.filter(function (p) { return p.status !== 'merged'; });
       }
+      // Hide read filters the loaded list the same way: opened proposals
+      // (this account's own read set) drop out until the switch goes back
+      // off. Runs after the other hide toggles.
+      if (state.hideRead) {
+        filtered = filtered.filter(function (p) { return !isRead(p); });
+      }
       // Title search over the loaded cards only: case-insensitive substring,
       // no refetch. Filters run after the app and hide-voted ones, so the
       // search narrows whatever is already on screen.
@@ -3183,6 +3279,12 @@
             'Merged proposals hidden',
             'Every proposal here has already merged. Show merged proposals to see them again.',
             SHOW_MERGED_CTA);
+        }
+        if (proposals.length && state.hideRead) {
+          return emptyHtml(
+            'Nothing unread',
+            'You have opened every proposal here. Show read proposals to see them again.',
+            SHOW_READ_CTA);
         }
         if (proposals.length && state.tagFilter) {
           return emptyHtml(
@@ -3432,6 +3534,36 @@
       el.hidden = false;
     }
 
+    // One-line unread summary under the open/votes-needed line, computed
+    // from the loaded inbox (no extra request): how many loaded proposals
+    // this account has not opened yet. Snoozed proposals are out of the
+    // inbox until they wake, so they are not counted. The filters (app,
+    // tag, search, the hide toggles) never change the count — it mirrors
+    // the header totals, not whatever the visible list currently shows.
+    function renderUnread() {
+      var el = document.getElementById('inbox-unread');
+      if (!el) return;
+      var proposals = state.inbox && state.inbox.proposals;
+      var open = proposals ? proposals.length : 0;
+      if (state.tab !== 'inbox' || state.membersView || state.errorInbox || !open || state.compareView) {
+        el.hidden = true;
+        return;
+      }
+      var unread = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        if (!isRead(proposals[i]) && !wakeActive(proposals[i])) unread++;
+      }
+      el.setAttribute('data-unread-count', String(unread));
+      var text = el.querySelector('[data-unread-text]');
+      if (text) {
+        text.textContent = unread === 0 ? 'No unread proposals'
+          : unread === 1 ? '1 unread' : unread + ' unread';
+      }
+      var btn = el.querySelector('[data-mark-all-read]');
+      if (btn) btn.hidden = unread === 0;
+      el.hidden = false;
+    }
+
     // One-line summary under the header on the My Votes tab, computed from
     // the loaded history (no extra request): how many votes are recorded
     // and how many of their proposals ended up merged.
@@ -3528,6 +3660,7 @@
       renderDemoBanner();
       renderRefreshButton();
       renderSummary();
+      renderUnread();
       renderUpdated();
       renderVotesSummary();
       renderWatchlistSummary();
@@ -3598,6 +3731,7 @@
       if (!findProposal(sessionId)) return;
       state.detail = sessionId;
       state.replyForm = null;
+      markRead(findProposal(sessionId));
       render();
       window.scrollTo(0, 0);
       loadDetailComments();
@@ -3608,6 +3742,67 @@
       state.replyForm = null;
       render();
       window.scrollTo(0, 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Read tracking. Opening a proposal (its Discuss button, or a deep
+    // link straight to it) marks it read for the signed-in account: the
+    // card re-renders optimistically (dot gone, data-read set) and the row
+    // is written to the per-user table so it survives reloads. Only
+    // opening marks read: scrolling past, voting and starring never do.
+    // A failed POST is silent — the card stays read for this session and
+    // shows unread again on the next load.
+    // ------------------------------------------------------------------
+
+    function markRead(p) {
+      if (!p || isRead(p)) return Promise.resolve();
+      p.read = true;
+      render();
+      var post = api('/api/reads', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({
+          sessionId: p.sessionId,
+          appSlug: p.appSlug,
+          demo: !!(state.inbox && state.inbox.demo),
+        }),
+      });
+      var settled = post.catch(function () { /* silent: see above */ });
+      state.readPosts[p.sessionId] = settled;
+      return settled;
+    }
+
+    // Mark every loaded inbox proposal read at once — snoozed ones too,
+    // since they sit in the loaded payload even though the unread count
+    // leaves them out. Optimistic like markRead; a failed POST reverts
+    // exactly the batch this call set, so the dots come back and the toast
+    // explains what happened.
+    function markAllRead() {
+      var proposals = state.inbox && state.inbox.proposals;
+      if (!proposals) return Promise.resolve();
+      var targets = [];
+      for (var i = 0; i < proposals.length; i++) {
+        if (!isRead(proposals[i])) targets.push(proposals[i]);
+      }
+      if (!targets.length) return Promise.resolve();
+      for (var j = 0; j < targets.length; j++) targets[j].read = true;
+      render();
+      var sessionIds = targets.map(function (p) { return p.sessionId; });
+      var post = api('/api/reads/all', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({
+          sessionIds: sessionIds,
+          demo: !!(state.inbox && state.inbox.demo),
+        }),
+      });
+      var settled = post.catch(function () {
+        for (var k = 0; k < targets.length; k++) targets[k].read = false;
+        render();
+        toast('Could not mark all read. Try again.');
+      });
+      state.readAllPost = settled;
+      return settled;
     }
 
     // Post a comment (parentId null) or a reply (parentId = the top-level
@@ -4182,6 +4377,13 @@
           if (sv) query.push(SNOOZE_PARAMS[si] + '=' + encodeURIComponent(sv));
         }
         if (SNOOZE_SET) query.push('snooze=1');
+        // Read fixture knobs, plus the read-set marker page: that one
+        // forwards ?read=1 so the reload reads the persisted rows back.
+        for (var ri = 0; ri < READ_PARAMS.length; ri++) {
+          var rv = params.get(READ_PARAMS[ri]);
+          if (rv) query.push(READ_PARAMS[ri] + '=' + encodeURIComponent(rv));
+        }
+        if (READ_SET) query.push('read=1');
       }
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
@@ -4214,6 +4416,11 @@
           maybeTapSnooze();
           maybeSetSnooze();
           maybeTapUnsnooze();
+          maybeTapOpen();
+          maybeSetRead();
+          maybeMarkAllRead();
+          maybeOpenMerged();
+          maybeTapHideRead();
           maybeTapSummary();
           maybeTapSearch();
           maybeTapImpactToggle();
@@ -4221,7 +4428,13 @@
           maybeAutoReply();
           // A ?proposal= deep link lands on the inbox first; once the list
           // holds the proposal, the detail view can load its thread.
-          if (state.detail && findProposal(state.detail)) loadDetailComments();
+          // A ?proposal= deep link lands on the inbox first; once the list holds the
+          // proposal, the detail view can load its thread — and opening it
+          // that way marks the proposal read, same as the Discuss button.
+          if (state.detail && findProposal(state.detail)) {
+            markRead(findProposal(state.detail));
+            loadDetailComments();
+          }
           maybeCompareHooks();
           if (state.queuedInbox) {
             state.queuedInbox = false;
@@ -5265,6 +5478,97 @@
       });
     }
 
+    // ---------------------------------------------------------------------
+    // Read-tracking check hooks (demo only), one-shot each and driven
+    // through the REAL controls (the Discuss button, the Mark all read
+    // button, the Hide read switch), the way the snooze hooks work.
+    // ---------------------------------------------------------------------
+
+    var tapOpenDone = false;
+    function maybeTapOpen() {
+      if (!DEMO || !TAP_OPEN || tapOpenDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      waitFor(
+        '[data-proposal-card][data-session-id="' + TAP_OPEN + '"] [data-open-detail]',
+        function (btn) {
+          tapOpenDone = true;
+          btn.click();
+          // The detail replaces the list; once the read POST has settled,
+          // click Back so the check sees the re-rendered card.
+          (state.readPosts[TAP_OPEN] || Promise.resolve()).then(function () {
+            waitFor('[data-action="close-detail"]', function (back) {
+              back.click();
+            });
+          });
+        });
+    }
+
+    var setReadDone = false;
+    function maybeSetRead() {
+      if (!DEMO || !SET_READ || setReadDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      setReadDone = true;
+      waitFor(
+        '[data-proposal-card][data-session-id="' + SET_READ + '"] [data-open-detail]',
+        function (btn) {
+          btn.click();
+          // Wait for the markRead POST, then land on the marker URL whose
+          // fetch carries ?read=1 — the persisted state, not the optimistic
+          // one. Other params (such as hide-read) stay in place.
+          (state.readPosts[SET_READ] || Promise.resolve()).then(function () {
+            var marker = new URL(location.href);
+            marker.searchParams.delete('set-read');
+            marker.searchParams.set('read-set', SET_READ);
+            location.replace(marker.toString());
+          });
+        });
+    }
+
+    var markAllReadDone = false;
+    function maybeMarkAllRead() {
+      if (!DEMO || !MARK_ALL_READ || markAllReadDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      markAllReadDone = true;
+      waitFor('[data-mark-all-read]', function (btn) {
+        btn.click();
+        (state.readAllPost || Promise.resolve()).then(function () {
+          var marker = new URL(location.href);
+          marker.searchParams.delete('markallread');
+          marker.searchParams.set('read-set', 'all');
+          location.replace(marker.toString());
+        });
+      });
+    }
+
+    var openMergedDone = false;
+    function maybeOpenMerged() {
+      if (!DEMO || !OPEN_MERGED || openMergedDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      openMergedDone = true;
+      // Exactly what a ?proposal=demo-5 deep link does once the list holds
+      // the proposal: the detail opens and the deep-link branch marks it
+      // read — merged or not, an opened proposal stays read.
+      state.detail = 'demo-5';
+      render();
+      markRead(findProposal('demo-5'));
+      loadDetailComments();
+      (state.readPosts['demo-5'] || Promise.resolve()).then(function () {
+        var marker = new URL(location.href);
+        marker.searchParams.delete('open-merged');
+        marker.searchParams.set('read-set', 'demo-5');
+        location.replace(marker.toString());
+      });
+    }
+
+    function maybeTapHideRead() {
+      // Skipped while a set-read reload is still pending, so the tap lands
+      // on the marker page (the same guard tap-unsnooze uses).
+      if (!DEMO || !TAP_HIDE_READ || params.get('set-read')) return;
+      waitFor('#hide-read', function (box) {
+        box.click();
+      });
+    }
+
     // Staging demo hooks for the compare flow, all demo-only, one-shot and
     // driven through the REAL controls (the delegated click handler), the
     // way ?tap-no=1 and ?tap-share= work:
@@ -5362,6 +5666,8 @@
           setHideVoted(false);
         } else if (action === 'show-merged') {
           setHideMerged(false);
+        } else if (action === 'show-read') {
+          setHideRead(false);
         } else if (action === 'show-snoozed') {
           state.snoozeView = true;
           render();
@@ -5594,6 +5900,19 @@
       setHideMerged(event.target.checked);
     });
 
+    document.getElementById('hide-read').addEventListener('change', function (event) {
+      setHideRead(event.target.checked);
+    });
+
+    // Mark all read sits in the header line (outside #view), so it carries
+    // its own listener rather than riding the delegated one.
+    var markAllReadBtn = document.querySelector('[data-mark-all-read]');
+    if (markAllReadBtn) {
+      markAllReadBtn.addEventListener('click', function () {
+        markAllRead();
+      });
+    }
+
     // Title search filters the loaded cards live; the input sits outside
     // #view so re-rendering the list never steals its focus.
     document.getElementById('inbox-search').addEventListener('input', function (event) {
@@ -5688,6 +6007,8 @@
     if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
     var hideMergedBox = document.getElementById('hide-merged');
     if (hideMergedBox) hideMergedBox.checked = state.hideMerged;
+    var hideReadBox = document.getElementById('hide-read');
+    if (hideReadBox) hideReadBox.checked = state.hideRead;
     var searchBox = document.getElementById('inbox-search');
     if (searchBox && state.search) searchBox.value = state.search;
     var membersBox = document.getElementById('members-search');

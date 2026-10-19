@@ -2830,6 +2830,130 @@
         "server.js",
         "dapp.json"
       ]
+    },
+    {
+      "id": "read.unread-dot",
+      "name": "Unread proposals show a dot on the card",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-unread-dot]",
+      "visual": true,
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.open-marks-read",
+      "name": "Opening a proposal marks it read",
+      "path": "/?demo=1&tap-open=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'][data-read='1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.dot-clears",
+      "name": "The unread dot disappears once read",
+      "path": "/?demo=1&tap-open=demo-2",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-unread-dot])) [data-proposal-card][data-session-id='demo-1'] [data-unread-dot]",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.header-count",
+      "name": "The header shows an unread count",
+      "path": "/?demo=1",
+      "expectSelector": "#inbox-unread[data-unread-count='6']",
+      "expectText": "6 unread",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.hide-read",
+      "name": "Hide read removes read proposals from the list",
+      "path": "/?demo=1&set-read=demo-2&hide-read=1",
+      "visual": true,
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'])) [data-proposal-card][data-session-id='demo-1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.hide-read-off",
+      "name": "Turning Hide read off brings read proposals back",
+      "path": "/?demo=1&set-read=demo-2&hide-read=1&tap-hide-read=1",
+      "expectSelector": "body:has(#hide-read:not(:checked)) [data-proposal-card][data-session-id='demo-2'][data-read='1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.mark-all",
+      "name": "Mark all read clears every unread dot",
+      "path": "/?demo=1&markallread=1",
+      "expectSelector": "body:has(#inbox-unread[data-unread-count='0']):not(:has([data-unread-dot])) [data-proposal-card][data-session-id='demo-1']",
+      "expectText": "No unread proposals",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.survives-reload",
+      "name": "Read state survives a reload",
+      "path": "/?demo=1&set-read=demo-2",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-unread-dot])) [data-proposal-card][data-session-id='demo-2'][data-read='1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.per-user",
+      "name": "Read state is per user and does not leak between accounts",
+      "path": "/?demo=1&read-other=1&read=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-unread-dot]",
+      "expectText": "export to CSV",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.count-matches-dots",
+      "name": "The unread count matches the number of dots",
+      "path": "/?demo=1&set-read=demo-2",
+      "expectSelector": "body:has(#inbox-unread[data-unread-count='5']):has([data-proposal-card][data-session-id='demo-1'] [data-unread-dot]):has([data-proposal-card][data-session-id='demo-3'] [data-unread-dot]):has([data-proposal-card][data-session-id='demo-4'] [data-unread-dot]):has([data-proposal-card][data-session-id='demo-5'] [data-unread-dot]):has([data-proposal-card][data-session-id='demo-6'] [data-unread-dot]):not(:has([data-proposal-card][data-session-id='demo-2'] [data-unread-dot])) [data-proposal-card][data-session-id='demo-1']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.merged-stays-read",
+      "name": "A merged proposal opened once is not counted as unread again",
+      "path": "/?demo=1&open-merged=1",
+      "expectSelector": "body:has(#inbox-unread[data-unread-count='5']):not(:has([data-proposal-card][data-session-id='demo-5'] [data-unread-dot])) [data-proposal-card][data-session-id='demo-5'][data-read='1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
     }
   ]
 }
