@@ -263,6 +263,26 @@ user's vote history.
   answers with a variant fixture (two more proposals merged), so the app
   filter's per-app open and merged-this-week counts are observable
   updating in place.
+- Weekly digest card on My Votes: computed entirely in the browser from
+  `state.votes.votes` (no server totals), so its numbers always match the
+  list below. Shows votes this week (calendar week, Monday start, viewer's
+  local time), how many of them merged (same `status === 'merged'` rule as
+  the summary line), a streak of consecutive weeks ending with this one
+  that had at least one vote (the tile is left out entirely when it is
+  zero), up to three top apps (count desc, ties alphabetical), an
+  "Up/Down from N last week" / "Same as last week" line, and a View
+  details toggle opening a seven-day bar chart (plain flex bars, zero
+  votes = zero-height bar). Hidden while loading/error/empty/Members view;
+  the card sits outside `#view` so existing row-position checks keep
+  passing. A successful vote updates the history in place
+  (`upsertLocalVote`/`removeLocalVote` instead of dropping
+  `state.votes`), so the card updates without a reload. Demo hooks
+  (staging + `?demo=1` only): `?digest=week|quiet` serves the digest
+  fixture rows (server `demoDigestRows`, re-stamped client-side by
+  `reanchorDigestDemo` from `demo_anchor { weeksAgo, weekday }`), 
+  `?digest-details=1` taps the View details toggle after render, and
+  `?digest-vote=<sessionId>:<yes|no>` unvotes then casts through the real
+  `castVote` with the tab staying on My Votes.
 - Impact preview panel on the proposal detail: `normalizeProposal`
   passes through an optional `impact` record (from
   `impact`/`impact_preview`/`impactPreview` spellings) normalised to
