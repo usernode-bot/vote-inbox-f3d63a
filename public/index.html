@@ -126,7 +126,7 @@
     </header>
     <div id="menu-panel" hidden class="fixed z-40 min-w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"></div>
     <p id="inbox-updated" class="-mt-1.5 pb-1 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
-    <p id="inbox-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
+    <div id="inbox-summary" data-inbox-stats class="-mt-1.5 pb-2.5" hidden></div>
     <p id="inbox-unread" data-unread-count="0" class="-mt-1.5 flex items-center gap-2 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden>
       <span data-unread-text></span>
       <button data-mark-all-read type="button" class="shrink-0 rounded-full py-1.5 font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">Mark all read</button>
@@ -603,6 +603,9 @@
     // scroll position (the way ?impact-mobile=1 forces the collapsed impact
     // panel). All three check knobs are demo only.
     var LB_RANGE = params.get('lb-range') === 'all' ? 'all' : 'week';
+    // ?stats-fail=1 (demo only) makes the inbox stat cards' fetch fail, so
+    // their unavailable state is reachable by checks.
+    var STATS_FAIL = DEMO && params.get('stats-fail') === '1';
     var LB_OVERLAY = DEMO ? params.get('lb') === '1' : false;
     var LB_CLEAR = DEMO ? params.get('lb-clear') === '1' : false;
     var LB_PIN_FORCE = DEMO ? params.get('lb-pin') === '1' : false;
@@ -838,6 +841,13 @@
       errorLeaderboard: null,
       queuedLeaderboard: false,
       lbRange: LB_RANGE,
+      // Inbox stat cards: the caller's vote history and the ranked board,
+      // fetched beside the inbox through the same /api/my-votes and
+      // /api/leaderboard routes the My Votes and Leaderboard tabs use, but
+      // kept apart from state.votes / state.leaderboard so those tabs' own
+      // load and hook flow is untouched. null until the first answer.
+      inboxStats: null,
+      loadingInboxStats: false,
     };
 
     // ------------------------------------------------------------------
@@ -4782,9 +4792,10 @@
     // Rank the loaded rows for the current range: most votes first, ties
     // broken by merged votes, then by handle so equal pairs stay put.
     // Members with no votes in the range are left off the board.
-    function lbRanked(rows) {
-      var key = state.lbRange === 'all' ? 'allVotes' : 'weekVotes';
-      var mergedKey = state.lbRange === 'all' ? 'allMerged' : 'weekMerged';
+    function lbRanked(rows, range) {
+      range = range || state.lbRange;
+      var key = range === 'all' ? 'allVotes' : 'weekVotes';
+      var mergedKey = range === 'all' ? 'allMerged' : 'weekMerged';
       var withVotes = [];
       for (var i = 0; i < rows.length; i++) {
         if (rows[i][key] > 0) withVotes.push(rows[i]);
@@ -4922,19 +4933,102 @@
       return html;
     }
 
-    // One-line summary under the header, computed from the loaded inbox
-    // list (no extra request): how many proposals are open and how many
-    // yes votes they still need in total. Proposals without a known
-    // threshold contribute nothing to the needed count.
+    // Stat cards under the header on the Inbox tab: a compact row of four
+    // tiles and one motivational line. Open and votes needed come from the
+    // loaded inbox list (proposals without a known threshold contribute
+    // nothing to the needed count); votes this week and the day streak come
+    // from the caller's vote history; the rank is their place on the
+    // Leaderboard's This week board (the same lbRanked order the tab uses).
+    // "This week" is the rolling seven days the Leaderboard counts.
+    // ------------------------------------------------------------------
+
+    var STAT_TILE = 'min-w-0 rounded-xl bg-zinc-100 px-2 py-2 dark:bg-zinc-800/60';
+    var STAT_LABEL = 'truncate text-xs text-zinc-500 dark:text-zinc-400';
+    var STAT_NUM = 'truncate text-lg font-bold leading-tight text-zinc-900 dark:text-zinc-100';
+    var STAT_PENDING = '<span aria-hidden="true" class="inline-block h-4 w-6 animate-pulse rounded bg-zinc-200 align-middle dark:bg-zinc-700"></span>';
+    var DAY_MS = 24 * 3600 * 1000;
+
+    function localDayKey(t) {
+      var d = new Date(t);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    }
+
+    // Votes in the last seven days, and the run of consecutive local days
+    // with at least one vote. The run ends today, or yesterday when nothing
+    // was cast yet today (a streak stays alive until a whole day is missed;
+    // votedToday says which).
+    function voteStreakStats(rows, nowMs) {
+      var days = {};
+      var week = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var t = Date.parse(rows[i] && rows[i].created_at);
+        if (isNaN(t) || t > nowMs) continue;
+        if (t >= nowMs - 7 * DAY_MS) week++;
+        days[localDayKey(t)] = true;
+      }
+      var today = localDayKey(nowMs);
+      var votedToday = !!days[today];
+      var day = votedToday ? today : localDayKey(today - DAY_MS / 2);
+      var streak = 0;
+      // Step back one calendar day at a time; going through noon keeps
+      // daylight-saving days (23 or 25 hours) from skipping a date.
+      while (days[day]) {
+        streak++;
+        day = localDayKey(day - DAY_MS / 2);
+      }
+      return { week: week, streak: streak, votedToday: votedToday };
+    }
+
+    // The caller's place on the This week board, or why there is none.
+    function inboxRankStats(lb) {
+      if (!lb) return { state: 'unavailable' };
+      if (lb.notMember) return { state: 'members' };
+      var ranked = lbRanked(lb.rows || [], 'week');
+      for (var i = 0; i < ranked.length; i++) {
+        if (ranked[i].you) return { state: 'ranked', rank: i + 1, of: ranked.length };
+      }
+      return { state: 'unranked', of: ranked.length };
+    }
+
+    function statTile(key, label, value, sub, attrs) {
+      return '<div data-stat="' + key + '"' + (attrs || '') + ' class="' + STAT_TILE + '">'
+        + '<p class="' + STAT_LABEL + '">' + label + '</p>'
+        + '<p data-stat-value class="' + STAT_NUM + '">' + value + '</p>'
+        + '<p data-stat-sub class="' + STAT_LABEL + '">' + sub + '</p>'
+        + '</div>';
+    }
+
+    function inboxMotivation(open, votes, rank) {
+      if (votes.streak >= 2 && !votes.votedToday) {
+        return 'Vote today to keep your ' + votes.streak + '-day streak going.';
+      }
+      if (rank.state === 'ranked' && rank.rank === 1) {
+        return 'You lead the Leaderboard this week. Nice work!';
+      }
+      if (votes.week === 0) {
+        return open > 0
+          ? 'No votes yet this week. ' + open + (open === 1 ? ' proposal is' : ' proposals are') + ' waiting for you.'
+          : 'No votes yet this week. New proposals will show up here.';
+      }
+      if (votes.streak >= 2) {
+        return votes.streak + ' days in a row. Keep it up!';
+      }
+      if (rank.state === 'ranked') {
+        return 'You voted ' + votes.week + (votes.week === 1 ? ' time' : ' times')
+          + ' this week and sit at #' + rank.rank + '.';
+      }
+      return 'You voted ' + votes.week + (votes.week === 1 ? ' time' : ' times') + ' this week.';
+    }
+
     function renderSummary() {
       var el = document.getElementById('inbox-summary');
       if (!el) return;
       var proposals = state.inbox && state.inbox.proposals;
       var open = proposals ? proposals.length : 0;
-      // The line shows as soon as the inbox has loaded, including at zero:
+      // The cards show as soon as the inbox has loaded, including at zero:
       // an empty inbox is a real state (see the empty-inbox empty state),
-      // and "0 open, 0 votes needed" is the header keeping count of it
-      // rather than pretending the line does not apply.
+      // and "0 open" is the header keeping count of it rather than
+      // pretending the cards do not apply.
       if (state.tab !== 'inbox' || state.membersView || state.errorInbox
         || !state.inbox || state.compareView) {
         el.hidden = true;
@@ -4945,8 +5039,43 @@
         var n = proposals[i].needed;
         if (n != null && n > 0) needed += n;
       }
-      el.textContent = open + ' open, ' + needed
-        + (needed === 1 ? ' vote needed' : ' votes needed');
+      var openLabel = open + ' open, ' + needed + (needed === 1 ? ' vote needed' : ' votes needed');
+      var html = statTile('open', 'Open', String(open), needed + ' needed',
+        ' role="group" aria-label="' + openLabel + '" title="' + openLabel + '"');
+
+      var st = state.inboxStats;
+      var votes = st && st.votes ? voteStreakStats(st.votes, Date.now()) : null;
+      var rank = st ? inboxRankStats(st.lb) : null;
+      var pending = !st;
+      var line = '';
+      if (pending) {
+        html += statTile('week', 'This week', STAT_PENDING, 'votes', ' data-stat-loading="1"')
+          + statTile('streak', 'Streak', STAT_PENDING, 'days', ' data-stat-loading="1"')
+          + statTile('rank', 'Rank', STAT_PENDING, 'this week', ' data-stat-loading="1"');
+      } else {
+        html += votes
+          ? statTile('week', 'This week', String(votes.week), votes.week === 1 ? 'vote' : 'votes',
+            ' data-week="' + votes.week + '"')
+          : statTile('week', 'This week', '—', 'no data', ' data-stat-error="1"');
+        html += votes
+          ? statTile('streak', 'Streak', String(votes.streak), votes.streak === 1 ? 'day' : 'days',
+            ' data-streak="' + votes.streak + '"')
+          : statTile('streak', 'Streak', '—', 'no data', ' data-stat-error="1"');
+        if (rank.state === 'ranked') {
+          html += statTile('rank', 'Rank', '#' + rank.rank, 'of ' + rank.of,
+            ' data-rank="' + rank.rank + '" data-rank-of="' + rank.of + '"');
+        } else if (rank.state === 'unranked') {
+          html += statTile('rank', 'Rank', '—', 'no rank', ' data-rank="none"');
+        } else if (rank.state === 'members') {
+          html += statTile('rank', 'Rank', '—', 'members', ' data-rank="members"');
+        } else {
+          html += statTile('rank', 'Rank', '—', 'no data', ' data-stat-error="1"');
+        }
+        line = votes ? inboxMotivation(open, votes, rank)
+          : 'Your vote stats could not load. Refresh to try again.';
+      }
+      el.innerHTML = '<div class="grid grid-cols-4 gap-2">' + html + '</div>'
+        + (line ? '<p data-stat-line class="mt-2 text-xs text-zinc-600 dark:text-zinc-300">' + esc(line) + '</p>' : '');
       el.hidden = false;
     }
 
@@ -6385,6 +6514,50 @@
       });
     }
 
+    // Inbox stat cards' data: the caller's vote history and the ranked
+    // board, fetched together beside every inbox load. The cards keep their
+    // last numbers while a refetch runs (no flash back to the loading
+    // tiles), and a newer fetch always wins over an older one still in
+    // flight. Either half failing leaves that half null; the cards say so.
+    var inboxStatsSeq = 0;
+
+    function loadInboxStats() {
+      var seq = ++inboxStatsSeq;
+      state.loadingInboxStats = true;
+      var votesQuery = '';
+      var lbQuery = '';
+      if (DEMO) {
+        // Demo: the fixed My Votes fixture, and the demo board with the
+        // caller ranked by that same fixture (?lb-me=1), so the two agree.
+        // The empty-history knobs ride along to both.
+        var extra = (NO_VOTES ? '&no-votes=1' : '')
+          + (params.get('votes-empty') === '1' ? '&votes-empty=1' : '');
+        votesQuery = '?demo=1' + extra;
+        lbQuery = '?demo=1&lb-me=1' + extra;
+      }
+      var fail = function () { return null; };
+      var votesReq = STATS_FAIL ? Promise.resolve(null)
+        : api('/api/my-votes' + votesQuery).then(function (d) { return d.votes || []; }, fail);
+      var lbReq = STATS_FAIL ? Promise.resolve(null)
+        : api('/api/leaderboard' + lbQuery).then(function (d) { return d; }, fail);
+      return Promise.all([votesReq, lbReq]).then(function (r) {
+        if (seq !== inboxStatsSeq) return;
+        state.inboxStats = { votes: r[0], lb: r[1] };
+        state.loadingInboxStats = false;
+        renderSummary();
+      });
+    }
+
+    // A recorded or undone vote moves the week count, the streak and the
+    // rank: refetch the stat cards once things settle (a bulk approve casts
+    // several votes in a row, so the refetch is debounced).
+    var inboxStatsTimer = null;
+    function refreshInboxStatsSoon() {
+      if (!state.inboxStats) return;
+      clearTimeout(inboxStatsTimer);
+      inboxStatsTimer = setTimeout(loadInboxStats, 800);
+    }
+
     function loadInbox(force) {
       if (state.loadingInbox) {
         // A pull or Refresh tap while a load is still in flight must still
@@ -6396,6 +6569,7 @@
       state.errorInbox = null;
       if (force) state.inbox = null;
       render();
+      loadInboxStats();
       var query = [];
       if (DEMO) query.push('demo=1');
       if (ALL_VOTED) query.push('allvoted=1');
@@ -6940,6 +7114,7 @@
       // error either way), so the bulk pass can await it cast by cast.
       return request.then(function () {
         upsertLocalVote(payload); // history updates in place; refetched next tab open
+        refreshInboxStatsSoon();
         // The leaderboard ranks by votes cast, so a fresh vote moves it;
         // refetch now when the board is up, or drop the cache so the next
         // visit to the tab reloads it.
@@ -6989,6 +7164,7 @@
       }).then(function () {
         delete state.retryQueue[sessionId];
         upsertLocalVote(entry.payload); // history updates in place; refetched next tab open
+        refreshInboxStatsSoon();
         state.leaderboard = null; // same as castVote: the board re-ranks
         if (state.tab === 'leaderboard') loadLeaderboard(true);
         toast('Vote recorded', {
@@ -7045,6 +7221,7 @@
           p.no = snapshot.no;
         }
         removeLocalVote(sessionId); // history updates in place; refetched next tab open
+        refreshInboxStatsSoon();
         state.leaderboard = null; // the undone vote leaves the board too
         if (state.tab === 'leaderboard') loadLeaderboard(true);
         toast('Vote undone');

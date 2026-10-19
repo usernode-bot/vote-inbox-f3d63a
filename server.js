@@ -2957,6 +2957,27 @@ async function demoLeaderboardPayload(req) {
       totalMembers += 1;
       voters += 1;
     }
+  } else if (req.query['lb-me'] === '1') {
+    // ?lb-me=1 (the inbox stat cards' demo fetch) ranks the caller by the
+    // same fixed vote rows the demo My Votes route serves, so the inbox's
+    // "this week" count and its rank agree in a preview. ?votes-empty=1 and
+    // ?no-votes=1 empty that history here too: no votes, no row.
+    const history = req.query['votes-empty'] === '1' || req.query['no-votes'] === '1'
+      ? [] : demoVoteRows();
+    if (history.length) {
+      const cutoff = req.now.getTime() - MEMBER_ACTIVE_WINDOW_MS;
+      const week = history.filter((v) => Date.parse(v.created_at) >= cutoff);
+      rows.push({
+        username: req.user.username,
+        weekVotes: week.length,
+        weekMerged: week.filter((v) => v.status === 'merged').length,
+        allVotes: history.length,
+        allMerged: history.filter((v) => v.status === 'merged').length,
+        you: true,
+      });
+      totalMembers += 1;
+      voters += 1;
+    }
   }
   return { demo: true, rows, totalMembers, voters };
 }
