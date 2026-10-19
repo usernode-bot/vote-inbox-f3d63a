@@ -2266,6 +2266,95 @@
         "dapp.json"
       ],
       "expectText": "12 files changed"
+    },
+    {
+      "id": "impact.panel",
+      "name": "Proposal detail shows an impact panel",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-impact-panel]",
+      "expectText": "Impact",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "impact.members",
+      "name": "Impact panel shows the member count",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectText": "5 members"
+    },
+    {
+      "id": "impact.apps",
+      "name": "Impact panel lists the apps touched",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectText": "Staging Demo Archive"
+    },
+    {
+      "id": "impact.release",
+      "name": "Impact panel shows the target release",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectText": "Staging demo build 2.4"
+    },
+    {
+      "id": "impact.checks-listed",
+      "name": "Impact panel lists the automated checks",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-impact-checks]",
+      "expectText": "Staging demo check: thread replies"
+    },
+    {
+      "id": "impact.summary",
+      "name": "Impact panel shows a plain-language summary",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-impact-summary]",
+      "expectText": "keyboard shortcuts land on every list screen"
+    },
+    {
+      "id": "impact.merged-readonly",
+      "name": "Merged proposal keeps the impact panel",
+      "path": "/?demo=1&proposal=demo-5",
+      "expectSelector": "[data-impact-panel]",
+      "expectText": "Staging demo build 2.3"
+    },
+    {
+      "id": "impact.unknown-label",
+      "name": "Missing impact data shows an Unknown label",
+      "path": "/?demo=1&proposal=demo-6",
+      "expectSelector": "[data-impact-panel]",
+      "expectText": "Unknown"
+    },
+    {
+      "id": "impact.check-passed-tick",
+      "name": "Passed automated checks are ticked",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-check-passed]"
+    },
+    {
+      "id": "impact.check-failed-mark",
+      "name": "Failed automated checks carry no tick",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-check-failed]"
+    },
+    {
+      "id": "impact.collapse-toggle",
+      "name": "Small screens collapse the panel behind Show details",
+      "path": "/?demo=1&proposal=demo-4&impact-mobile=1",
+      "expectSelector": "[data-impact-toggle]",
+      "expectText": "Show details",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "impact.collapse-expand",
+      "name": "Show details expands the collapsed panel",
+      "path": "/?demo=1&proposal=demo-4&impact-mobile=1&tap-impact-toggle=1",
+      "expectText": "Hide details"
     }
   ]
 }
