@@ -368,17 +368,21 @@ function normalizeProposal(raw, appItem) {
   // The proposal's yes voters, when the platform response names them: an
   // optional field under any of the usual spellings, entries either plain
   // username strings or objects carrying a username. Normalised to
-  // { username, name } for the cards' avatar row; null when the response
-  // carries no usable list (the row simply does not render then). Capped to
-  // keep a pathological payload from bloating the inbox response.
+  // { username, name, votedAt } for the cards' avatar row and the detail
+  // screen's timeline (votedAt is the optional per-vote timestamp, '' when
+  // the response carries none); null when the response carries no usable
+  // list (the row simply does not render then). Capped to keep a
+  // pathological payload from bloating the inbox response.
   const rawVoters = [raw.yes_voters, raw.yesVoters, raw.voters_for, raw.votersFor]
     .find(Array.isArray) || null;
   const yesVoters = rawVoters === null ? null : rawVoters
     .map((v) => {
-      if (typeof v === 'string') return { username: v.trim(), name: '' };
+      if (typeof v === 'string') return { username: v.trim(), name: '', votedAt: '' };
       if (v && typeof v === 'object' && typeof v.username === 'string') {
         const name = typeof v.name === 'string' ? v.name.trim() : '';
-        return { username: v.username.trim(), name };
+        const votedAt = [v.voted_at, v.votedAt]
+          .find((t) => typeof t === 'string' && t) || '';
+        return { username: v.username.trim(), name, votedAt };
       }
       return null;
     })
@@ -890,11 +894,19 @@ function demoInbox() {
     // landing on it sees the "Show all apps" empty state of a real filter.
     { slug: 'staging-demo-archive', name: 'Staging Demo Archive', icon: '🗄️' },
   ];
-  // Fake yes-voter identities for the cards' avatar row; "(demo)" in the
-  // display name keeps them obviously made up, matching the seed rules.
-  const voter = (u) => ({
+  // Fake yes-voter identities for the cards' avatar row and the detail
+  // screen's timeline; "(demo)" in the display name keeps them obviously
+  // made up, matching the seed rules. `agoMs` optionally stamps when the
+  // vote was cast (ms ago), for the timeline's relative "2h ago" label;
+  // ages are chosen mid-bucket (2.5h, 1.5d) so relTime's output never
+  // changes across an hourly or daily bucket boundary, and are NOT
+  // midnight-capped: a vote row's age crossing into yesterday only moves
+  // "2h ago" to "3h ago" for a few hours, never breaks a check (checks read
+  // demo-4's rows, whose ages stay inside today at any hour).
+  const voter = (u, agoMs) => ({
     username: 'staging-demo-' + u.toLowerCase(),
     name: u + ' (demo)',
+    votedAt: agoMs != null ? new Date(Date.now() - agoMs).toISOString() : '',
   });
   // `anchor` is a demo hint the frontend uses to re-place the fixture on the
   // viewer's own calendar (see reanchorDemo in public/index.html): days back
@@ -945,9 +957,10 @@ function demoInbox() {
   // Two of the six are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
   // null (an open proposal, Voting), 'merging' and 'merged'. demo-5 is the
-  // one merged proposal, and it merged 2 days ago (within the week) so the
-  // app filter's merged-this-week count is nonzero for its app while the
-  // other app reads 0. demo-4 carries
+  // one merged proposal, and it merged 2.5 days ago (within the week, and
+  // mid-bucket so the detail timeline's "2d ago" merged label never shifts)
+  // so the app filter's merged-this-week count is nonzero for its app while
+  // the other app reads 0. demo-4 carries
   // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
   // avatar row shows its max-5-then-"+N" case in previews and checks, and a
   // deliberately long title (3+ rendered lines) so the expandable-title
@@ -960,13 +973,13 @@ function demoInbox() {
   // demo-4/demo-2/demo-1/demo-6. demo-1 and demo-6 each sit exactly one yes
   // vote from their threshold so the One vote away chip has something to show.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya', 2.5 * H)], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, Math.min(8 * H, todayCap()), null,
-      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }, null),
-    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }, null),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }, null),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }, 2 * D),
+      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map((u, i) => voter(u, (7.5 - i) * H)), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar', 1.75 * D), voter('Priya', 1.5 * D), voter('Quinn', 1.25 * D)], { days: 2 }, null),
+    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya', 0.9 * D), voter('Omar', 0.8 * D)], { days: 1 }, null),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya', 4.5 * D), voter('Priya', 3.5 * D), voter('Raul', 2.5 * D), voter('Sara', 1.5 * D)], { days: 5 }, null),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn', 7.5 * D), voter('Raul', 6.5 * D)], { days: 9 }, 2.5 * D),
   ];
   // Change summaries for the cards' one-line summary row (demo only). Keyed
   // by sessionId; every fixture not covered gets an explicit null pair so
@@ -1299,6 +1312,79 @@ function demoVoteRows() {
 }
 
 // ---------------------------------------------------------------------------
+// Weekly-digest fixtures (?demo=1&digest=week|quiet), staging only. Rows
+// carry a demo_anchor { weeksAgo, weekday } the frontend re-stamps to local
+// noon of that weekday (see reanchorDigestDemo), so the digest's week
+// buckets are deterministic relative to whenever the check runs. `week`
+// gives 6 votes this week (2 of them merged), 4 last week (1 merged), 1
+// two weeks ago and 1 four weeks ago: streak 3, "Up from 4 last week", and
+// top apps App, Notes, Archive (Extras loses the alphabetical tie at the
+// third slot). `quiet` gives nothing this week: streak 0 (the tile is left
+// out), "Down from 2 last week", every bar zero, "None merged yet". Without
+// ?digest= the default three demoVoteRows() are served, unchanged.
+// ---------------------------------------------------------------------------
+
+function demoDigestRows(kind) {
+  const row = (id, sessionId, appSlug, appName, title, choice, status,
+               yes, no, required, weeksAgo, weekday, merged) => ({
+    id,
+    app_slug: appSlug,
+    app_name: appName,
+    session_id: sessionId,
+    title,
+    choice,
+    status,
+    votes_for: yes,
+    votes_against: no,
+    votes_required: required,
+    created_at: new Date(0).toISOString(), // re-stamped client-side
+    updated_at: new Date(0).toISOString(),
+    merged_at: merged ? new Date(0).toISOString() : null,
+    demo_anchor: { weeksAgo, weekday },
+  });
+  if (kind === 'quiet') {
+    return [
+      row('dq-1', 'demo-q1', 'staging-demo-app', 'Staging Demo App',
+          'Staging demo proposal: digest quiet export', 'no', 'closed', 2, 3, 5, 1, 1),
+      row('dq-2', 'demo-q2', 'staging-demo-notes', 'Staging Demo Notes',
+          'Staging demo proposal: digest quiet themes', 'yes', 'voting', 4, 1, 5, 1, 3),
+      row('dq-3', 'demo-q3', 'staging-demo-archive', 'Staging Demo Archive',
+          'Staging demo proposal: digest quiet search', 'yes', 'closed', 5, 0, 5, 3, 2),
+    ];
+  }
+  return [
+    // This week: 6 votes, 2 merged (one in App, one in Notes).
+    row('dg-1', 'demo-w1', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest weekly recap', 'yes', 'voting', 3, 1, 5, 0, 0),
+    row('dg-2', 'demo-w2', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest custom themes', 'yes', 'merged', 6, 0, 5, 0, 1, true),
+    row('dg-3', 'demo-w3', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest pinned notes', 'yes', 'voting', 4, 2, 5, 0, 1),
+    row('dg-4', 'demo-w4', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest export button', 'yes', 'merged', 6, 0, 5, 0, 2, true),
+    row('dg-5', 'demo-w5', 'staging-demo-archive', 'Staging Demo Archive',
+        'Staging demo proposal: digest archive search', 'no', 'voting', 2, 3, 5, 0, 2),
+    row('dg-6', 'demo-w6', 'staging-demo-extras', 'Staging Demo Extras',
+        'Staging demo proposal: digest quiet hours', 'yes', 'voting', 4, 1, 5, 0, 3),
+    // Last week: 4 votes, 1 merged.
+    row('dg-7', 'demo-w7', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest rate limits', 'yes', 'voting', 3, 2, 5, 1, 1),
+    row('dg-8', 'demo-w8', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest inline comments', 'yes', 'merged', 6, 1, 5, 1, 2, true),
+    row('dg-9', 'demo-w9', 'staging-demo-archive', 'Staging Demo Archive',
+        'Staging demo proposal: digest bulk move', 'no', 'closed', 2, 4, 5, 1, 3),
+    row('dg-10', 'demo-w10', 'staging-demo-extras', 'Staging Demo Extras',
+        'Staging demo proposal: digest dark mode', 'yes', 'voting', 5, 1, 5, 1, 4),
+    // Two weeks ago: 1 vote. Three weeks ago: none, so the streak stops at 3.
+    row('dg-11', 'demo-w11', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest keyboard nav', 'yes', 'closed', 5, 0, 5, 2, 2),
+    // Four weeks ago: 1 vote.
+    row('dg-12', 'demo-w12', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest mobile layout', 'no', 'closed', 1, 4, 5, 4, 3),
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Watchlist demo data (?demo=1). Fixed fixture rows keyed to the demo inbox
 // proposals, so the Watchlist tab and its "since last look" badges are
 // deterministic in previews and checks. demo-5 (merged) and demo-3 (now
@@ -1605,6 +1691,12 @@ app.get('/api/my-votes', async (req, res) => {
       // deterministic run to run. The caller's real history, including rows
       // the ?cast= demo hook persists for the vote → Undo check, is served
       // by the plain route below, not mixed in here.
+      const digestKind = req.query.digest;
+      if (digestKind === 'week' || digestKind === 'quiet') {
+        // Weekly-digest fixture variant (see demoDigestRows): rows spread
+        // across known weeks so the digest card's numbers are checkable.
+        return res.json({ demo: true, votes: demoDigestRows(digestKind) });
+      }
       return res.json({ demo: true, votes: demoVoteRows() });
     }
 

@@ -217,6 +217,10 @@
       </div>
     </div>
 
+    <!-- Weekly digest: rendered above the My Votes sort row. Lives outside
+         #view so the existing row-position checks keep passing. -->
+    <section id="votes-digest" hidden></section>
+
     <div id="votes-order-row" class="hidden flex items-center gap-2 pt-1">
       <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Sort</span>
       <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-800 dark:bg-zinc-900" role="radiogroup" aria-label="Vote order">
@@ -330,6 +334,23 @@
     // Demo only; the tap is one-shot.
     var IMPACT_MOBILE = DEMO && params.get('impact-mobile') === '1';
     var TAP_IMPACT_TOGGLE = DEMO ? (params.get('tap-impact-toggle') || '') : '';
+    // Proposal-detail hooks (demo only), all driven through the real
+    // controls: ?tap-card=1 taps the demo-2 card's body (its title, which is
+    // not one of the card's controls) so the tap-card-opens-detail path is
+    // reachable by a check; ?tap-back=1 scrolls the inbox down, opens
+    // demo-2's detail through its real Discuss button and then taps the
+    // detail's real Back button, so Back's scroll restoration runs end to
+    // end; ?scroll-detail=1 checks the detail's sticky action bar stays on
+    // screen from the top of the page to the bottom. Demo only; each tap is
+    // one-shot.
+    var TAP_CARD = DEMO && params.get('tap-card') === '1';
+    var TAP_BACK = DEMO && params.get('tap-back') === '1';
+    var SCROLL_DETAIL = DEMO && params.get('scroll-detail') === '1';
+    // Set by the ?scroll-detail=1 hook once the sticky action bar proved it
+    // follows the scroll; the bar re-emits its marker on every re-render so
+    // the async loads that follow the hook cannot drop the attribute. Demo
+    // only; production never sets it.
+    var detailStickyObserved = false;
     // Bulk-triage hooks (demo only), one URL per check behaviour:
     // ?selectmode=1 turns select mode on with nothing selected;
     // ?select=<ids> / ?deselect=<ids> tick and untick cards through the same
@@ -379,6 +400,18 @@
     // row as already seen, so the no-badge state is reachable too.
     var WATCH_EMPTY = DEMO && params.get('watch-empty') === '1';
     var WATCH_SEEN = DEMO && params.get('watch-seen') === '1';
+    // Weekly-digest hooks, all demo only. ?digest=week|quiet asks the demo
+    // my-votes route for the digest fixture rows (see demoDigestRows in
+    // server.js) instead of the default three; the frontend re-stamps their
+    // demo_anchor weeks so the digest's buckets are deterministic.
+    // ?digest-details=1 clicks the card's View details toggle once My Votes
+    // has rendered, and ?digest-vote=<sessionId>:<yes|no> casts a real vote
+    // through castVote (after an unvote, the way ?cast= does) while the tab
+    // stays on My Votes, so the card's in-place update is observable without
+    // a reload. Production never honours any of these.
+    var DIGEST = DEMO ? (params.get('digest') || '') : '';
+    var DIGEST_DETAILS = DEMO && params.get('digest-details') === '1';
+    var DIGEST_VOTE = DEMO ? (params.get('digest-vote') || '') : '';
     // Compare-flow fixtures, all demo only. ?compare=<id>,<id> seeds a
     // two-proposal selection AND opens the compare view (the deep link the
     // checks use for the side-by-side state); ?pick=<ids> seeds the
@@ -572,6 +605,9 @@
       // remembered like expandedSummaries: a re-render keeps them open, a
       // reload starts collapsed again. Not persisted.
       impactOpen: {},
+      // Whether the My Votes weekly digest's chart is open. In-memory only:
+      // a reload starts closed again.
+      digestOpen: false,
       // Bulk triage: select mode (checkbox on each votable card) and the
       // selected session ids. Selection is in-memory only and keyed by
       // session id, so it survives filter, search and sort changes —
@@ -585,6 +621,10 @@
       // are fetched per proposal; commentsKey remembers which thread is
       // loaded so a re-render (a vote, a reply) never refetches it.
       detail: params.get('proposal') || '',
+      // Where the inbox was scrolled when the detail opened, so Back can
+      // restore it instead of dropping the reader at the top. Not persisted:
+      // a reload starts at the top like any fresh visit.
+      detailScroll: 0,
       detailComments: [],
       commentsKey: '',
       commentsLoading: false,
@@ -2515,8 +2555,8 @@
         + '</div>';
     }
 
-    // The voting block, shared by the card and the proposal detail screen
-    // so both always offer the same vote buttons.
+    // The voting block on the inbox card (the detail screen has its own sticky
+    // action bar in detailActionBar, with the same button classes).
     function proposalActions(p) {
       return voteActions(p, false);
     }
@@ -2961,37 +3001,237 @@
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
+    // The proposal's full description on the detail screen, untruncated (the
+    // card clamps the same text to one line; the detail never does). Falls
+    // back to the proposal's title when the platform sent no description,
+    // marked with data-description-fallback so that state is observable.
+    function detailDescription(p) {
+      var text = typeof p.summary === 'string' && p.summary.trim() ? p.summary : '';
+      if (text) {
+        return '<div data-proposal-description'
+          + ' class="whitespace-pre-line break-words text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">'
+          + esc(text) + '</div>';
+      }
+      return '<div data-proposal-description data-description-fallback="1"'
+        + ' class="whitespace-pre-line break-words text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">'
+        + esc(p.title) + '</div>';
+    }
+
+    // Vote progress ring for the detail screen: a circular gauge of the yes
+    // count against the merge threshold, with the yes/no/needed counts and
+    // the "x of y yes to merge" label beside it. Without a known threshold
+    // the gauge fills by the yes share, and the label and needed count are
+    // left out (optional fields are never invented); a merged proposal
+    // fills the ring completely. Whole literals for the Tailwind compiler.
+    var RING_CIRC = 2 * Math.PI * 19;
+    function voteRing(p) {
+      var merged = p.status === 'merged';
+      var hasRequired = p.required != null && p.required > 0;
+      var pct = merged ? 100
+        : hasRequired ? Math.min(100, Math.round((p.yes * 100) / p.required))
+        : (p.yes + p.no > 0 ? Math.round((p.yes * 100) / (p.yes + p.no)) : 0);
+      var met = merged || (hasRequired && p.yes >= p.required);
+      var fillCls = met ? 'stroke-emerald-500 dark:stroke-emerald-400'
+        : 'stroke-violet-500 dark:stroke-violet-400';
+      var label = hasRequired ? p.yes + ' of ' + p.required + ' yes to merge' : '';
+      return '<div data-vote-ring class="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/70">'
+        + '<svg viewBox="0 0 44 44" class="h-16 w-16 shrink-0 -rotate-90" role="img"'
+        + ' aria-label="' + esc(label || ('Yes ' + p.yes + ', No ' + p.no)) + '">'
+        + '<circle cx="22" cy="22" r="19" fill="none" stroke-width="4" class="stroke-zinc-200 dark:stroke-zinc-700"></circle>'
+        + '<circle data-ring-fill cx="22" cy="22" r="19" fill="none" stroke-width="4"'
+        + ' stroke-linecap="round" class="' + fillCls + '"'
+        + ' stroke-dasharray="' + ((pct / 100) * RING_CIRC).toFixed(1) + ' ' + RING_CIRC.toFixed(1) + '"></circle>'
+        + '</svg>'
+        + '<div class="flex min-w-0 flex-col gap-0.5">'
+        + '<span data-ring-yes class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Yes ' + p.yes + '</span>'
+        + '<span data-ring-no class="text-sm text-zinc-600 dark:text-zinc-300">No ' + p.no + '</span>'
+        + (p.needed != null
+          ? '<span data-ring-needed class="text-xs text-zinc-500 dark:text-zinc-400">'
+            + (p.needed === 0 ? 'Threshold met' : p.needed + (p.needed === 1 ? ' vote needed' : ' votes needed'))
+            + '</span>'
+          : '')
+        + (label ? '<p data-ring-label class="text-xs font-medium text-zinc-600 dark:text-zinc-300">' + esc(label) + '</p>' : '')
+        + '</div>'
+        + '</div>';
+    }
+
+    // Numbered timeline of the proposal's life so far: Opened first, then
+    // one row per yes vote (display name, avatar chip and, when the
+    // platform response carries per-vote timestamps, when the vote was
+    // cast), then Threshold reached once the yes count meets the
+    // requirement, then Merged with its date. Rows the data cannot support
+    // (no proposedAt, no named voters, no mergedAt) simply do not render —
+    // optional fields are never invented. The section itself renders empty
+    // only when nothing at all can be placed on it.
+    function timelineSection(p) {
+      var items = [];
+      var index = 0;
+      function rowHtml(attrs, inner, timeHtml, ariaTitle) {
+        index += 1;
+        return '<li ' + attrs + ' data-timeline-index="' + index + '"'
+          + ' class="flex items-start gap-2.5">'
+          + '<span aria-hidden="true" class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs font-bold text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200">' + index + '</span>'
+          + '<div class="flex min-w-0 flex-col gap-0.5">'
+          + '<span class="text-xs font-semibold text-zinc-800 dark:text-zinc-100">' + inner + '</span>'
+          + (timeHtml
+            ? '<span data-timeline-time class="text-xs text-zinc-500 dark:text-zinc-400"'
+              + (ariaTitle ? ' title="' + esc(ariaTitle) + '"' : '')
+              + '>' + timeHtml + '</span>'
+            : '')
+          + '</div>'
+          + '</li>';
+      }
+      if (p.proposedAt && isFinite(new Date(p.proposedAt).getTime())) {
+        items.push(rowHtml(
+          'data-timeline-event="opened"',
+          'Opened',
+          esc(relTime(p.proposedAt)),
+          'Opened ' + new Date(p.proposedAt).toLocaleString()));
+      }
+      var voters = Array.isArray(p.yesVoters) ? p.yesVoters : [];
+      var voteRows = 0;
+      var lastVoteAt = null;
+      for (var i = 0; i < voters.length; i++) {
+        var voter = voters[i];
+        var username = voter && typeof voter.username === 'string' ? voter.username : '';
+        if (!username) continue;
+        var label = (voter.name && typeof voter.name === 'string' && voter.name) || username;
+        var initial = (label.trim().charAt(0) || '?').toUpperCase() || '?';
+        var chip = '<span aria-hidden="true" class="' + VOTER_AVATAR_CLASS + avatarClass(username) + '">' + esc(initial) + '</span>';
+        var time = typeof voter.votedAt === 'string' && voter.votedAt ? esc(relTime(voter.votedAt)) : '';
+        items.push(rowHtml(
+          'data-timeline-event="vote" data-timeline-voter="' + esc(username) + '"',
+          '<span class="flex items-center gap-1.5">' + chip
+            + '<span data-timeline-voter-name class="truncate">' + esc(label) + '</span></span>',
+          time,
+          username + ' voted yes'));
+        voteRows += 1;
+        var t = typeof voter.votedAt === 'string' ? Date.parse(voter.votedAt) : NaN;
+        if (!isNaN(t) && (lastVoteAt === null || t > lastVoteAt)) lastVoteAt = t;
+      }
+      if (p.required != null && p.required > 0 && p.yes >= p.required) {
+        items.push(rowHtml(
+          'data-timeline-event="threshold"',
+          'Threshold reached',
+          lastVoteAt ? esc(relTime(new Date(lastVoteAt).toISOString())) : '',
+          'Yes count reached the threshold'));
+      }
+      if (p.status === 'merged' && p.mergedAt && isFinite(new Date(p.mergedAt).getTime())) {
+        var mergedLabel = wakeDateLabel(p.mergedAt);
+        var mergedAge = relTime(p.mergedAt);
+        items.push(rowHtml(
+          'data-timeline-event="merged" data-timeline-merged="' + esc(mergedLabel) + '"',
+          'Merged',
+          esc(mergedAge ? mergedLabel + ' · ' + mergedAge : mergedLabel),
+          'Merged ' + new Date(p.mergedAt).toLocaleString()));
+      }
+      if (!items.length) return '';
+      return '<section data-timeline data-timeline-votes="' + voteRows + '" class="' + CARD_CLASS + '">'
+        + '<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Timeline</h3>'
+        + '<ol class="flex flex-col gap-2.5">' + items.join('') + '</ol>'
+        + '</section>';
+    }
+
+    // Related proposals: other loaded proposals from the same app that are
+    // still open (not merged or closed, and not this one), so a reader can
+    // jump to the rest of the app's business. Hidden entirely when there
+    // are none. Each row opens that proposal's detail through the same
+    // openDetail the cards' Discuss button uses, so a related tap is a
+    // normal detail navigation.
+    function relatedSection(p) {
+      var list = (state.inbox && state.inbox.proposals) || [];
+      var related = [];
+      for (var i = 0; i < list.length; i++) {
+        var q = list[i];
+        if (q.sessionId === p.sessionId) continue;
+        if (q.appSlug !== p.appSlug) continue;
+        if (q.status === 'merged' || q.status === 'closed') continue;
+        related.push(q);
+      }
+      if (!related.length) return '';
+      var rows = '';
+      for (var j = 0; j < related.length; j++) {
+        var q2 = related[j];
+        rows += '<li>'
+          + '<button type="button" data-open-detail data-session="' + esc(q2.sessionId) + '"'
+          + ' class="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-left transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/70 dark:hover:bg-zinc-800/60">'
+          + '<span class="min-w-0 truncate text-xs font-medium text-zinc-700 dark:text-zinc-200">' + esc(q2.title) + '</span>'
+          + neededPill(q2)
+          + '</button></li>';
+      }
+      return '<section data-related-proposals data-related-count="' + related.length + '" class="' + CARD_CLASS + '">'
+        + '<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">More from ' + esc(p.appName) + '</h3>'
+        + '<ul class="flex flex-col gap-1.5">' + rows + '</ul>'
+        + '</section>';
+    }
+
+    // Sticky action bar for the detail screen: Yes, No and Share stay
+    // reachable while the proposal scrolls (the bar pins to the bottom of
+    // the screen and content slides under it). Yes and No disable once
+    // voted — a pill names the way — and while a vote is in flight or the
+    // proposal has merged or closed; an offline-queued vote keeps its Retry
+    // pill here. Share runs the same native-sheet-or-copy decision as the
+    // cards' share button. Whole literals for the Tailwind compiler.
+    var DETAIL_BAR_CLASS = 'sticky bottom-0 z-10 -mx-4 mt-1 flex flex-col gap-2 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95';
+    var DETAIL_SHARE_CLASS = 'inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-zinc-300 bg-white px-3.5 text-sm font-semibold text-zinc-700 transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200';
+
+    function detailActionBar(p) {
+      var voted = p.myVote === 'yes' || p.myVote === 'no';
+      var settled = p.status === 'merged' || p.status === 'closed';
+      var disabled = voted || settled || !!state.pending[p.sessionId];
+      var copy = resolveShareMode() === 'copy';
+      return '<div data-detail-actions'
+        + (detailStickyObserved ? ' data-sticky-observed="1"' : '')
+        + ' class="' + DETAIL_BAR_CLASS + '">'
+        + (voted
+          ? '<p data-voted-pill class="text-xs font-semibold text-violet-700 dark:text-violet-300">You voted ' + esc(p.myVote) + '</p>'
+          : '')
+        + '<div class="flex items-center gap-2">'
+        + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
+        + ' class="' + VOTE_YES_ROW + '"' + (disabled ? ' disabled' : '') + '>Yes</button>'
+        + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
+        + ' class="' + VOTE_NO_ROW + '"' + (disabled ? ' disabled' : '') + '>No</button>'
+        + (p.url
+          ? '<button data-share-link data-url="' + esc(p.url) + '"'
+            + (copy ? ' data-share-mode="copy"' : ' data-share-mode="sheet"')
+            + (copy ? ' aria-label="Copy link to this proposal" title="Copy link"' : ' aria-label="Share this proposal" title="Share"')
+            + ' class="' + DETAIL_SHARE_CLASS + '">' + (copy ? COPY_IDLE_HTML : SHARE_IDLE_HTML) + '</button>'
+          : '')
+        + '</div>'
+        + retryRow(p.sessionId)
+        + '</div>';
+    }
+
     function renderDetail() {
       var p = findProposal(state.detail);
       if (!p) return '';
       return '<div data-proposal-detail data-session-id="' + esc(p.sessionId) + '" class="flex flex-col gap-3">'
         + '<button data-action="close-detail"'
+        + ' aria-label="Back to the inbox" title="Back"'
         + ' class="self-start inline-flex items-center gap-1 rounded-full text-sm font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">'
         + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back</button>'
         + '<article class="' + CARD_CLASS + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
-        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + '<span data-detail-app="' + esc(p.appName) + '" class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
         + ageSpan(p)
         + '</span>'
         + neededPill(p)
         + '</div>'
         + proposedDateLine(p)
         + '<h2 data-proposal-title class="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
-        + voteBar(p)
-        + voterAvatarRow(p)
-        + voterNamesRow(p)
-        + '<div class="flex items-center justify-between gap-2">'
-        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
-        + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
-        + (p.url ? shareLinkButton(p) : '')
-        + '</div>'
+        + detailDescription(p)
+        + voteRing(p)
         + statusProgress(p)
-        + proposalActions(p)
+        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
+        + (p.author ? '<span data-detail-author>by @' + esc(p.author) + '</span>' : '') + '</p>'
         + '</article>'
+        + timelineSection(p)
+        + relatedSection(p)
         + impactPanel(p)
         + '<section data-thread class="flex flex-col gap-2">' + renderThread() + '</section>'
+        + detailActionBar(p)
         + '</div>';
     }
 
@@ -3021,6 +3261,9 @@
       }
       return '<article data-vote-row data-session-id="' + esc(v.session_id) + '"'
         + ' data-vote-status="' + esc(knownStatus ? v.status : 'closed') + '"'
+        // The weekly digest's "matches the list" check reads this: rows
+        // inside the current calendar week are marked.
+        + (isThisWeek(v.created_at) ? ' data-this-week' : '')
         + ' class="' + CARD_CLASS + '">'
         + '<div class="flex items-start justify-between gap-2">'
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(v.title) + '</h2>'
@@ -4015,6 +4258,174 @@
       el.hidden = false;
     }
 
+    // ------------------------------------------------------------------
+    // Weekly digest. Worked out in the browser from the same loaded vote
+    // history the list below shows (state.votes.votes), so the numbers can
+    // never disagree with the list and follow the viewer's own time zone.
+    // A week is the calendar week starting Monday; last week is the one
+    // before. The streak counts consecutive weeks with at least one vote
+    // ending with this one, so it is zero (and left out of the card) until
+    // you vote this week.
+    // ------------------------------------------------------------------
+
+    var DIGEST_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    var DIGEST_TILE = 'rounded-xl bg-zinc-100 px-2.5 py-2 text-xs text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300';
+    var DIGEST_NUM = 'text-lg font-bold leading-none text-zinc-900 dark:text-zinc-100';
+
+    // Local midnight of the Monday of the week the date falls in.
+    function weekStart(d) {
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7)).getTime();
+    }
+
+    function isThisWeek(iso, now) {
+      if (!iso) return false;
+      var t = Date.parse(iso);
+      if (isNaN(t)) return false;
+      return weekStart(new Date(t)) === weekStart(now || new Date());
+    }
+
+    // One pass over the history rows: this week's votes, how many of them
+    // are on proposals that have since merged (the same status rule the
+    // summary line uses), last week's count, the streak, the per-day counts
+    // for the chart and the top apps. Rows without a usable timestamp are
+    // ignored — the digest never invents a week for them.
+    function weeklyDigest(rows, now) {
+      var WEEK = 7 * 24 * 3600 * 1000;
+      var ws = weekStart(now);
+      var week = [];
+      var lastWeek = 0;
+      var weeks = {};
+      var byDay = [0, 0, 0, 0, 0, 0, 0];
+      var byApp = {};
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (!r || !r.created_at) continue;
+        var t = Date.parse(r.created_at);
+        if (isNaN(t)) continue;
+        var d = new Date(t);
+        var k = weekStart(d);
+        weeks[k] = true;
+        if (k === ws) {
+          week.push(r);
+          byDay[(d.getDay() + 6) % 7]++;
+          var slug = r.app_slug || '';
+          if (slug) {
+            if (!byApp[slug]) byApp[slug] = { slug: slug, name: r.app_name || slug, count: 0 };
+            byApp[slug].count++;
+          }
+        } else if (k === ws - WEEK) {
+          lastWeek++;
+        }
+      }
+      var merged = 0;
+      for (i = 0; i < week.length; i++) {
+        if (week[i].status === 'merged') merged++;
+      }
+      var streak = 0;
+      if (week.length) {
+        streak = 1;
+        var k2 = ws - WEEK;
+        while (weeks[k2]) { streak++; k2 -= WEEK; }
+      }
+      var apps = [];
+      for (var s in byApp) {
+        if (Object.prototype.hasOwnProperty.call(byApp, s)) apps.push(byApp[s]);
+      }
+      apps.sort(function (a, b) {
+        return b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+      });
+      return {
+        week: week.length,
+        merged: merged,
+        lastWeek: lastWeek,
+        streak: streak,
+        apps: apps.slice(0, 3),
+        days: byDay,
+      };
+    }
+
+    function renderDigest() {
+      var el = document.getElementById('votes-digest');
+      if (!el) return;
+      var votes = state.votes && state.votes.votes;
+      var show = state.tab === 'votes' && !state.membersView && !state.errorVotes
+        && votes && votes.length;
+      if (!show) {
+        el.hidden = true;
+        el.innerHTML = '';
+        return;
+      }
+      var d = weeklyDigest(votes, new Date());
+      var compare = d.week > d.lastWeek ? 'Up from ' + d.lastWeek + ' last week'
+        : d.week < d.lastWeek ? 'Down from ' + d.lastWeek + ' last week'
+        : 'Same as last week';
+      var html = '<section data-weekly-digest class="' + CARD_CLASS + '">'
+        + '<div class="flex items-baseline justify-between gap-2">'
+        + '<h2 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Weekly digest</h2>'
+        + '<span class="text-xs text-zinc-500 dark:text-zinc-400">This week</span>'
+        + '</div>'
+        + '<div class="grid grid-cols-3 gap-2">'
+        + '<div data-digest-week-count="' + d.week + '" class="' + DIGEST_TILE + '">'
+        + '<span class="' + DIGEST_NUM + '">' + d.week + '</span> '
+        + (d.week === 1 ? 'vote this week' : 'votes this week') + '</div>'
+        + '<div data-digest-merged="' + d.merged + '" class="' + DIGEST_TILE + '">'
+        + (d.merged
+           ? '<span class="' + DIGEST_NUM + '">' + d.merged + '</span> merged'
+           : 'None merged yet') + '</div>';
+      // A zero streak is left out entirely: there is no streak to show.
+      if (d.streak) {
+        html += '<div data-digest-streak="' + d.streak + '" class="' + DIGEST_TILE + '">'
+          + '<span class="' + DIGEST_NUM + '">' + d.streak + '</span>-week streak</div>';
+      }
+      html += '</div>';
+      if (d.apps.length) {
+        html += '<div class="flex flex-wrap items-center gap-1.5">'
+          + '<span class="text-xs text-zinc-500 dark:text-zinc-400">Top apps</span>'
+          + '<div data-digest-apps class="flex flex-wrap items-center gap-1.5">';
+        for (var i = 0; i < d.apps.length; i++) {
+          var a = d.apps[i];
+          html += '<span data-digest-app="' + esc(a.slug) + '" class="' + TAG_CHIP + '">'
+            + esc(a.name)
+            + ' <span class="' + TAG_CHIP_COUNT + '" data-digest-app-count="' + a.count + '">(' + a.count + ')</span>'
+            + '</span>';
+        }
+        html += '</div></div>';
+      } else {
+        html += '<p data-digest-apps-empty class="text-xs text-zinc-500 dark:text-zinc-400">No votes yet this week.</p>';
+      }
+      html += '<p data-digest-compare class="text-xs text-zinc-600 dark:text-zinc-300">' + esc(compare) + '</p>';
+      html += '<button type="button" data-digest-toggle aria-expanded="'
+        + (state.digestOpen ? 'true' : 'false') + '" class="' + IMPACT_TOGGLE_CLASS + ' self-start">'
+        + (state.digestOpen ? 'Hide details' : 'View details') + '</button>';
+      if (state.digestOpen) {
+        var max = 0;
+        for (i = 0; i < d.days.length; i++) {
+          if (d.days[i] > max) max = d.days[i];
+        }
+        var todayIdx = (new Date().getDay() + 6) % 7;
+        html += '<div data-digest-chart class="grid grid-cols-7 items-end gap-1.5 border-t border-zinc-200 pt-2 dark:border-zinc-800">';
+        for (i = 0; i < 7; i++) {
+          var n = d.days[i];
+          var h = n > 0 && max > 0 ? Math.max(4, Math.round(64 * n / max)) : 0;
+          var label = DIGEST_DAY_LABELS[i] + ': ' + n + (n === 1 ? ' vote' : ' votes');
+          html += '<div data-digest-day="' + i + '"' + (i === todayIdx ? ' data-today' : '')
+            + ' aria-label="' + esc(label) + '"'
+            + ' class="flex flex-col items-center justify-end gap-1">'
+            + '<div data-digest-bar data-count="' + n + '"'
+            + ' class="w-full max-w-6 rounded-t bg-violet-600 dark:bg-violet-500"'
+            + ' style="height:' + (n ? h : 0) + 'px"></div>'
+            + '<div class="w-full max-w-6 border-b border-zinc-300 dark:border-zinc-600"></div>'
+            + '<span class="text-xs text-zinc-500 dark:text-zinc-400">' + DIGEST_DAY_LABELS[i] + '</span>'
+            + '</div>';
+        }
+        html += '</div>';
+      }
+      html += '</section>';
+      el.className = 'pt-3';
+      el.hidden = false;
+      el.innerHTML = html;
+    }
+
     // One-line summary under the header on the Watchlist tab, computed from
     // the loaded rows (no extra request): how many are starred and how many
     // show a change badge since the last look.
@@ -4095,6 +4506,7 @@
       renderSummary();
       renderUpdated();
       renderVotesSummary();
+      renderDigest();
       renderWatchlistSummary();
       renderMembersSummary();
       var viewHtml;
@@ -4180,6 +4592,9 @@
 
     function openDetail(sessionId) {
       if (!findProposal(sessionId)) return;
+      // Remember where the inbox was scrolled, so Back can return to the
+      // same place instead of dropping the reader at the top.
+      state.detailScroll = window.scrollY || 0;
       state.detail = sessionId;
       state.replyForm = null;
       render();
@@ -4191,7 +4606,12 @@
       state.detail = '';
       state.replyForm = null;
       render();
-      window.scrollTo(0, 0);
+      // Back returns to the inbox where the reader left it, not the top.
+      var restored = state.detailScroll || 0;
+      window.scrollTo(0, restored);
+      // Carry the offset Back actually restored on <body> so checks (and
+      // debugging) can read it.
+      document.body.setAttribute('data-inbox-scroll', String(Math.round(window.scrollY || 0)));
     }
 
     // Post a comment (parentId null) or a reply (parentId = the top-level
@@ -4735,6 +5155,44 @@
       });
     }
 
+    // Digest demo rows carry demo_anchor { weeksAgo, weekday }; re-stamp
+    // created_at to local noon of that weekday that many weeks back, so the
+    // digest's week buckets hold no matter when the check runs (the same
+    // idea as reanchorDemo above). weeksAgo 0 clamps the weekday to today's
+    // and today's stamp to no later than now minus one minute (never before
+    // 00:01), so nothing lands in the future. Merged rows get merged_at
+    // equal to their new created_at, then rows are re-sorted created_at
+    // desc, the order /api/my-votes serves.
+    function reanchorDigestDemo(data) {
+      if (!data || !data.demo) return;
+      var now = new Date();
+      var todayIdx = (now.getDay() + 6) % 7;
+      var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      var rows = data.votes || [];
+      rows.forEach(function (r) {
+        var a = r && r.demo_anchor;
+        if (!a) return;
+        var t;
+        if (a.weeksAgo === 0) {
+          var day = Math.min(Math.max(a.weekday, 0), todayIdx);
+          t = midnight + day * 24 * 3600 * 1000 + 12 * 3600000;
+          var max = now.getTime() - 60000;
+          var min = midnight + 60000;
+          if (t > max) t = max;
+          if (t < min) t = min;
+        } else {
+          t = midnight - a.weeksAgo * 7 * 24 * 3600 * 1000
+            + Math.min(Math.max(a.weekday, 0), 6) * 24 * 3600 * 1000 + 12 * 3600000;
+        }
+        r.created_at = new Date(t).toISOString();
+        r.updated_at = r.created_at;
+        if (r.status === 'merged') r.merged_at = r.created_at;
+      });
+      rows.sort(function (a, b) {
+        return Date.parse(b.created_at) - Date.parse(a.created_at);
+      });
+    }
+
     function loadInbox(force) {
       if (state.loadingInbox) {
         // A pull or Refresh tap while a load is still in flight must still
@@ -4792,6 +5250,7 @@
           reapplyRetryQueue();
           pruneSelection();
           maybeAutoCast();
+          maybeDigestVote();
           maybeAutoExpand();
           maybePresetSummary();
         })
@@ -4822,6 +5281,9 @@
           maybeTapSummary();
           maybeTapSearch();
           maybeTapImpactToggle();
+          maybeTapCard();
+          maybeTapBack();
+          maybeScrollDetail();
           maybeAutoComment();
           maybeAutoReply();
           // A ?proposal= deep link lands on the inbox first; once the list
@@ -4850,15 +5312,20 @@
       // history, so the tab's empty state and its zero summary are
       // reachable by checks. Never sent without demo data.
       return api('/api/my-votes' + (DEMO
-        ? '?demo=1' + (params.get('votes-empty') === '1' ? '&votes-empty=1' : '')
+        ? '?demo=1' + (DIGEST ? '&digest=' + encodeURIComponent(DIGEST) : '') + (params.get('votes-empty') === '1' ? '&votes-empty=1' : '')
         : ''))
-        .then(function (data) { state.votes = data; })
+        .then(function (data) {
+          state.votes = data;
+          if (data.demo) reanchorDigestDemo(data);
+        })
         .catch(function (err) {
           state.errorVotes = err.message || 'Could not load your votes.';
         })
         .then(function () {
           state.loadingVotes = false;
           render();
+          maybeTapDigestDetails();
+          maybeDigestVote();
           if (state.queuedVotes) {
             state.queuedVotes = false;
             loadVotes(true);
@@ -5095,6 +5562,43 @@
       };
     }
 
+    // Keep the in-memory history in step after a successful vote so the My
+    // Votes list, its summary line, the tab count and the weekly digest all
+    // update together without a refetch. The next tab switch still refetches
+    // (server truth replaces the local row), and when the history was never
+    // loaded there is nothing to update: the next load fetches it as today.
+    function upsertLocalVote(payload) {
+      if (!state.votes || !state.votes.votes) return;
+      var now = new Date().toISOString();
+      var votes = state.votes.votes.filter(function (v) {
+        return v.session_id !== payload.sessionId;
+      });
+      votes.unshift({
+        id: 'local-' + payload.sessionId,
+        app_slug: payload.appSlug,
+        app_name: payload.appName,
+        session_id: payload.sessionId,
+        proposal_id: payload.proposalId,
+        title: payload.title,
+        choice: payload.choice,
+        status: 'voting',
+        votes_for: payload.yes,
+        votes_against: payload.no,
+        votes_required: payload.required,
+        created_at: now,
+        updated_at: now,
+        merged_at: null,
+      });
+      state.votes.votes = votes;
+    }
+
+    function removeLocalVote(sessionId) {
+      if (!state.votes || !state.votes.votes) return;
+      state.votes.votes = state.votes.votes.filter(function (v) {
+        return v.session_id !== sessionId;
+      });
+    }
+
     function castVote(sessionId, choice) {
       var p = findProposal(sessionId);
       if (!p || state.pending[sessionId]) return;
@@ -5121,7 +5625,7 @@
       // the server or went to the retry queue (the catch below swallows the
       // error either way), so the bulk pass can await it cast by cast.
       return request.then(function () {
-        state.votes = null; // history refetches next time the tab opens
+        upsertLocalVote(payload); // history updates in place; refetched next tab open
         toast('Vote recorded', {
           duration: 5000,
           action: {
@@ -5165,7 +5669,7 @@
         body: JSON.stringify(entry.payload),
       }).then(function () {
         delete state.retryQueue[sessionId];
-        state.votes = null; // history refetches next time the tab opens
+        upsertLocalVote(entry.payload); // history updates in place; refetched next tab open
         toast('Vote recorded', {
           duration: 5000,
           action: {
@@ -5219,7 +5723,7 @@
           p.yes = snapshot.yes;
           p.no = snapshot.no;
         }
-        state.votes = null; // history refetches next time the tab opens
+        removeLocalVote(sessionId); // history updates in place; refetched next tab open
         toast('Vote undone');
       }).catch(function (err) {
         toast('Undo failed: ' + (err.message || 'try again'));
@@ -5520,6 +6024,64 @@
       btn.click();
     }
 
+    // Staging demo hook: ?demo=1&tap-card=1 taps the demo-2 card's body —
+    // its title, which is not one of the card's controls — so the
+    // tap-card-to-open-detail path runs through the real delegated click
+    // handler. Demo only; one-shot.
+    var tapCardDone = false;
+    function maybeTapCard() {
+      if (!DEMO || !TAP_CARD || tapCardDone) return;
+      var card = document.querySelector('[data-proposal-card][data-session-id="demo-2"]');
+      var title = card ? card.querySelector('[data-proposal-title]') : null;
+      if (!title) return;
+      tapCardDone = true;
+      title.click();
+    }
+
+    // Staging demo hook: ?demo=1&tap-back=1 scrolls the demo inbox down,
+    // opens demo-2's detail through its real Discuss button, then taps the
+    // detail's real Back button, so Back's scroll restoration runs end to
+    // end; closeDetail stamps the offset it restored on <body> for the
+    // check to read. The scroll target clamps to the page's real max so a
+    // short page cannot over-scroll. Demo only; one-shot.
+    var tapBackDone = false;
+    function maybeTapBack() {
+      if (!DEMO || !TAP_BACK || tapBackDone) return;
+      var card = document.querySelector('[data-proposal-card][data-session-id="demo-2"]');
+      if (!card || !card.querySelector('[data-open-detail]')) return;
+      tapBackDone = true;
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      window.scrollTo(0, Math.min(400, Math.max(0, max)));
+      card.querySelector('[data-open-detail]').click();
+      var back = document.querySelector('[data-proposal-detail] [data-action="close-detail"]');
+      if (back) back.click();
+    }
+
+    // Staging demo hook: ?demo=1&proposal=<id>&scroll-detail=1 verifies the
+    // detail's sticky action bar the way a reader experiences it: the bar
+    // must be on screen when the detail opens (pinned above the fold) and
+    // still on screen at the bottom of the page. Only when both hold does
+    // the observation flip the flag whose marker the bar re-emits on every
+    // re-render, so a check that reads the marker fails if the bar stops
+    // following the scroll, and the async loads that run after this hook
+    // cannot wipe it. Demo only; one-shot.
+    var scrollDetailDone = false;
+    function maybeScrollDetail() {
+      if (!DEMO || !SCROLL_DETAIL || scrollDetailDone) return;
+      var bar = document.querySelector('[data-detail-actions]');
+      if (!bar) return;
+      scrollDetailDone = true;
+      var top = bar.getBoundingClientRect().bottom <= window.innerHeight + 1;
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      window.scrollTo(0, Math.max(0, max));
+      var bottom = bar.getBoundingClientRect().bottom <= window.innerHeight + 1
+        && bar.getBoundingClientRect().top < window.innerHeight;
+      if (top && bottom) {
+        detailStickyObserved = true;
+        render();
+      }
+    }
+
     // Staging demo hook: ?demo=1&tap-no=1 clicks the demo-4 card's "No"
     // button once the demo inbox has rendered — the real button, through the
     // real delegated click handler — so the confirm-before-No dialog is
@@ -5573,6 +6135,46 @@
       if (!m) return;
       var p = findProposal(m[1]);
       if (!p) return;
+      api('/api/unvote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ sessionId: m[1] }),
+      }).catch(function () {})
+        .then(function () {
+          p.myVote = null;
+          castVote(m[1], m[2]);
+        });
+    }
+
+    // Weekly-digest demo hooks (see DIGEST above). ?digest-details=1 clicks
+    // the card's View details toggle once My Votes has rendered, through the
+    // real click handler. ?digest-vote=<sessionId>:<yes|no> unvotes that
+    // proposal first (the way ?cast= does) and then casts through the real
+    // castVote, while the tab stays on My Votes, so the digest card's
+    // in-place update is observable without a reload. The votes tab never
+    // loads the inbox on its own, so the hook fetches it once when the vote
+    // target is not on screen and runs again from the inbox load's
+    // callbacks. Demo only; one-shot each.
+    var digestDetailsDone = false;
+    function maybeTapDigestDetails() {
+      if (!DEMO || !DIGEST_DETAILS || digestDetailsDone) return;
+      if (!state.votes || !state.votes.votes || state.errorVotes) return;
+      digestDetailsDone = true;
+      waitFor('[data-digest-toggle]', function (btn) { btn.click(); });
+    }
+
+    var digestVoteDone = false;
+    function maybeDigestVote() {
+      if (!DEMO || !DIGEST_VOTE || digestVoteDone) return;
+      if (!state.votes || !state.votes.votes || state.errorVotes) return;
+      var m = DIGEST_VOTE.match(/^(.+):(yes|no)$/);
+      if (!m) { digestVoteDone = true; return; }
+      var p = findProposal(m[1]);
+      if (!p) {
+        if (!state.inbox && !state.loadingInbox) loadInbox();
+        return;
+      }
+      digestVoteDone = true;
       api('/api/unvote', {
         method: 'POST',
         headers: headers({ 'content-type': 'application/json' }),
@@ -6121,16 +6723,45 @@
         // "No" asks first; "Yes" stays one-tap.
         if (voteChoice === 'no') openNoConfirm(voteSession);
         else castVote(voteSession, voteChoice);
+        return;
       }
       var retryBtn = target.closest ? target.closest('[data-retry-vote]') : null;
-      if (retryBtn) retryVote(retryBtn.getAttribute('data-session'));
+      if (retryBtn) {
+        retryVote(retryBtn.getAttribute('data-session'));
+        return;
+      }
       var copyBtn = target.closest ? target.closest('[data-share-link]') : null;
-      if (copyBtn) shareProposalLink(copyBtn);
+      if (copyBtn) {
+        shareProposalLink(copyBtn);
+        return;
+      }
+      // Tapping a proposal card anywhere that is not one of its controls
+      // opens the proposal's detail screen, like tapping a list row. Every
+      // control above returns before this, so it only catches the card
+      // body itself.
+      var cardEl = target.closest ? target.closest('[data-proposal-card]') : null;
+      if (cardEl) {
+        openDetail(cardEl.getAttribute('data-session-id') || '');
+      }
     });
 
     filterTrigger.addEventListener('click', function () {
       if (openFilter) closeFilter(); else openAppFilter();
     });
+
+    // Weekly digest: the View details toggle lives outside #view, so it
+    // gets its own delegated listener. Flipping the flag and re-rendering
+    // keeps the card and its chart in one place.
+    var votesDigestEl = document.getElementById('votes-digest');
+    if (votesDigestEl) {
+      votesDigestEl.addEventListener('click', function (event) {
+        var toggle = event.target.closest ? event.target.closest('[data-digest-toggle]') : null;
+        if (toggle) {
+          state.digestOpen = !state.digestOpen;
+          render();
+        }
+      });
+    }
 
     // Saved views: tap a chip to switch, tap its "⋯" to rename or delete.
     var viewsChips = document.getElementById('views-chips');
