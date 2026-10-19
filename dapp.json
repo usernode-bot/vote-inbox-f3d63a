@@ -3815,6 +3815,18 @@
       ]
     },
     {
+      "id": "density.menu-control",
+      "name": "The header menu has a Density control",
+      "path": "/?demo=1&tap-menu=1",
+      "expectSelector": "[data-density-menu]",
+      "expectText": "Density",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "app-filter.stats-merged-week",
       "name": "App filter still shows merged this week per app",
       "path": "/?demo=1&openfilter=1&mergestats=1",
@@ -3823,6 +3835,16 @@
       "impact": [
         "public/index.html",
         "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.menu-options",
+      "name": "The Density control offers Comfortable and Compact",
+      "path": "/?demo=1&tap-menu=1",
+      "expectSelector": "body:has([data-density-option='comfortable']):has([data-density-option='compact']) [data-density-menu]",
+      "impact": [
+        "public/index.html",
         "dapp.json"
       ]
     },
@@ -3851,6 +3873,17 @@
       ]
     },
     {
+      "id": "density.menu-previews",
+      "name": "The Density menu shows a preview of each density",
+      "path": "/?demo=1&tap-menu=1",
+      "expectSelector": "body:has([data-density-preview='comfortable']):has([data-density-preview='compact']) [data-density-menu]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "app-filter.stats-tap-applies",
       "name": "Tapping an app filter row still applies the filter",
       "path": "/?demo=1&openfilter=1&mergestats=1&tap-app-option=staging-demo-notes",
@@ -3859,6 +3892,16 @@
       "impact": [
         "public/index.html",
         "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.default-comfortable",
+      "name": "Comfortable is the default density",
+      "path": "/?demo=1&density-clear=1",
+      "expectSelector": "body[data-density-summary-visible='1'] [data-proposal-card][data-session-id='demo-1'][data-density='comfortable']",
+      "impact": [
+        "public/index.html",
         "dapp.json"
       ]
     },
@@ -3909,6 +3952,17 @@
       ]
     },
     {
+      "id": "density.inbox-compact",
+      "name": "Compact density applies to the Inbox",
+      "path": "/?demo=1&density=compact",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-density='compact']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "app-filter.stats-phone",
       "name": "The filter stats render at phone width",
       "path": "/?demo=1&openfilter=1&mergestats=1&filter-phone=1",
@@ -3917,6 +3971,67 @@
       "impact": [
         "public/index.html",
         "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.votes-compact",
+      "name": "Compact density applies to My Votes",
+      "path": "/?tab=votes&demo=1&density=compact",
+      "expectSelector": "[data-vote-row][data-density='compact']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.compact-hides-preview",
+      "name": "Compact hides the description preview",
+      "path": "/?demo=1&density=compact",
+      "expectSelector": "body[data-density-applied='compact'][data-density-summary-visible='0']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.compact-saves-pad",
+      "name": "Compact reduces card padding",
+      "path": "/?demo=1&density=compact&density-fit=1",
+      "expectSelector": "body[data-density-saves-pad='1']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.compact-saves-space",
+      "name": "Compact cards are shorter, so more fit per screen",
+      "path": "/?demo=1&density=compact&density-fit=1",
+      "expectSelector": "body[data-density-saves-space='1']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.compact-fits-phone",
+      "name": "Compact cards do not overflow at phone width",
+      "path": "/?demo=1&density=compact&density-fit=1",
+      "expectSelector": "body[data-density-phone-fit='ok']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.persist-reload",
+      "name": "The density choice survives a reload",
+      "path": "/?demo=1&tap-density=compact",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-density='compact']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
         "dapp.json"
       ]
     }
