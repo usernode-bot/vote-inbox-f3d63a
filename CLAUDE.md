@@ -213,6 +213,20 @@ user's vote history.
   reload. Demo fixtures: bug 2, feature 2, copy 1, ux 1 open (demo-1 is
   voted, demo-5 merged, demo-3 untagged — those three are the absence and
   hidden-count assertions).
+- Share as image (My Votes): a "Share as image" pill at the end of the
+  Sort row draws a fixed 1200×630 summary card (handle, votes this week,
+  merged count, top apps — the apps section omitted entirely when there
+  are no votes) onto a canvas using the resolved theme colours, previews
+  it above the votes, and opens the native share sheet with the PNG;
+  without a share sheet it offers Download ("Image saved") and Copy link
+  ("Copied!", same pattern as the card share button), and a render
+  failure shows "Could not make the image. Please try again." Stats come
+  from the loaded my-votes rows and the handle from the `/api/my-votes`
+  `username` field; nothing is persisted. Demo hooks (staging + `?demo=1`
+  only): `?shareimg=sheet|fallback|error` forces the path (error throws
+  through the real draw), `?tap-shareimg=1|share|download|copy` taps the
+  button then that panel action, `?shareimg-theme=dark|light` pins the
+  theme for the draw, and `?no-votes=1` empties the demo votes fixture.
 - `?turnout-refresh=1` (demo only) reloads the inbox through the real
   refresh path with the fetch carrying `?turnoutalt=1`, which the server
   answers with a variant fixture (two more proposals merged), so the app

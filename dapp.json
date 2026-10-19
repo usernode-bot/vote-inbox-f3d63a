@@ -2830,6 +2830,150 @@
         "server.js",
         "dapp.json"
       ]
+    },
+    {
+      "id": "my-votes.shareimg-button",
+      "name": "My Votes offers Share as image",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "#votes-order-row [data-shareimg-open]",
+      "expectText": "Share as image",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-handle",
+      "name": "The generated card shows my handle",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-handle]:not([data-handle='']) [data-shareimg-preview]",
+      "expectText": "@",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-week",
+      "name": "The card shows my votes this week",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-week='2']",
+      "expectText": "2 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-merged",
+      "name": "The card shows my merged count",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-merged='1']",
+      "expectText": "1 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-apps",
+      "name": "The card lists the top apps",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-apps='Staging Demo App,Staging Demo Notes']",
+      "expectText": "Top apps: Staging Demo App, Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-theme",
+      "name": "The card follows the current theme",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&shareimg-theme=dark&tap-shareimg=1",
+      "expectSelector": "html.dark [data-share-card][data-theme='dark']",
+      "expectText": "Share as image",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-sheet",
+      "name": "Share opens the native share sheet when available",
+      "path": "/?tab=votes&demo=1&shareimg=sheet&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-share-state='sheet'] [data-shareimg-share]",
+      "expectText": "Share",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-download",
+      "name": "A Download fallback saves the image",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=download",
+      "expectSelector": "[data-share-card][data-share-state='downloaded']",
+      "expectText": "Image saved",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-copy",
+      "name": "A Copy link fallback copies a link when sharing is unavailable",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=copy",
+      "expectSelector": "[data-share-card] [data-shareimg-copy]",
+      "expectText": "Copied!",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-size",
+      "name": "The image has a fixed pixel size that fits a chat preview",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-width='1200'][data-height='630']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-error",
+      "name": "An error while rendering shows a friendly message",
+      "path": "/?tab=votes&demo=1&shareimg=error&tap-shareimg=1",
+      "expectSelector": "#shareimg-panel [data-shareimg-error]",
+      "expectText": "Could not make the image",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-no-votes",
+      "name": "The card omits apps when there were no votes",
+      "path": "/?tab=votes&demo=1&no-votes=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-week='0']:not([data-apps])",
+      "expectText": "0 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     }
   ]
 }
