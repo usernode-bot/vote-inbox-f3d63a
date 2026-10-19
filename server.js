@@ -279,6 +279,12 @@ function neededFirst(a, b) {
   return a.title.localeCompare(b.title);
 }
 
+// The fixed tag list a proposal can carry. Tags arrive (when a response has
+// them at all) under the usual spellings as an array of names or one
+// comma-separated string; anything outside this list is dropped, so the
+// cards' chips and the header tag filter always agree on what exists.
+const TAG_LIST = ['bug', 'feature', 'copy', 'ux'];
+
 // The proposal's impact preview, when the platform sends one: an optional
 // object under any of the usual spellings, normalised to one shape for the
 // detail screen's impact panel. Every field is optional and independent —
@@ -395,6 +401,28 @@ function normalizeProposal(raw, appItem) {
     .find((v) => (Number.isInteger(v) && v >= 0) || Array.isArray(v));
   const filesChanged = rawFiles === undefined ? null
     : Array.isArray(rawFiles) ? rawFiles.length : rawFiles;
+  // The proposal's tags, when the response carries any: an array of names or
+  // one comma-separated string, under the usual spellings. Normalised to
+  // lowercase fixed-list names, deduped in first-seen order; unknown names
+  // are dropped so the cards' chips and the header tag filter always agree
+  // on what exists. The full kept list stays on the proposal (the filter
+  // counts and the tag filter ask "carries this tag" over all of it); the
+  // card itself renders at most two chips. An empty array means the response
+  // carried no usable tag and the card renders no chip row.
+  const rawTags = [raw.tags, raw.labels]
+    .find((v) => Array.isArray(v) || typeof v === 'string') || null;
+  const tags = [];
+  if (rawTags !== null) {
+    const names = Array.isArray(rawTags) ? rawTags : String(rawTags).split(',');
+    const seenTags = new Set();
+    for (const t of names) {
+      if (typeof t !== 'string') continue;
+      const name = t.trim().toLowerCase();
+      if (!name || seenTags.has(name) || !TAG_LIST.includes(name)) continue;
+      seenTags.add(name);
+      tags.push(name);
+    }
+  }
   // The impact preview for the detail screen's panel: null when the
   // platform sent none, so the panel labels every field Unknown.
   const impact = normalizeImpact(raw.impact ?? raw.impact_preview ?? raw.impactPreview);
@@ -417,6 +445,7 @@ function normalizeProposal(raw, appItem) {
     yesVoters,
     summary,
     filesChanged,
+    tags,
     impact,
     needed: required != null ? Math.max(0, required - yes) : null,
   };
@@ -860,6 +889,22 @@ function demoInbox() {
     'demo-6': { summary: null, filesChanged: 3 },
     'demo-5': { summary: null, filesChanged: null },
   };
+  // Tags for the cards' chip row and the header tag filter (demo only). The
+  // fixtures cover: two tags (demo-2), three tags so the card's max-two
+  // chip cap is observable (demo-4), a tag on a voted proposal so the tag
+  // counts' hidden-proposal exclusion is observable (demo-1, voted no), a
+  // single copy tag (demo-6), no tags at all (demo-3, so no chip row
+  // renders), and a tag on the merged proposal so the counts' open-only
+  // rule is observable (demo-5). The open, unvoted tallies therefore read
+  // bug 2, feature 2, copy 1, ux 1.
+  const DEMO_TAGS = {
+    'demo-2': ['bug', 'feature'],
+    'demo-4': ['bug', 'feature', 'ux'],
+    'demo-1': ['bug'],
+    'demo-6': ['copy'],
+    'demo-3': [],
+    'demo-5': ['ux'],
+  };
   // Impact records for the detail screen's impact panel (demo only), raw
   // platform spellings, normalised on stamp. Text keeps the obviously fake
   // "Staging demo" prefix.
@@ -901,6 +946,7 @@ function demoInbox() {
     const s = DEMO_CHANGE_SUMMARIES[p.sessionId] || {};
     p.summary = s.summary != null ? s.summary : null;
     p.filesChanged = s.filesChanged != null ? s.filesChanged : null;
+    p.tags = DEMO_TAGS[p.sessionId] || [];
     // Impact records for the detail screen's impact panel (demo only), in
     // the raw platform spellings and pushed through normalizeImpact so the
     // demo payload takes the same shape production produces. Coverage: full

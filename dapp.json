@@ -2268,6 +2268,30 @@
       "expectText": "12 files changed"
     },
     {
+      "id": "tags.chips-render",
+      "name": "Tag chips render on cards with counts",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-tag-chip='bug']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "bug (2)"
+    },
+    {
+      "id": "tags.max-two-chips",
+      "name": "Card with three tags shows at most two chips",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-proposal-tags][data-tag-count='2']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "impact.panel",
       "name": "Proposal detail shows an impact panel",
       "path": "/?demo=1&proposal=demo-4",
@@ -2292,6 +2316,98 @@
         "public/index.html",
         "dapp.json"
       ]
+    },
+    {
+      "id": "tags.header-filter",
+      "name": "Tag filter sits in the header",
+      "path": "/?demo=1",
+      "expectSelector": "[data-tag-filter-trigger]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ],
+      "expectText": "All tags"
+    },
+    {
+      "id": "tags.option-counts",
+      "name": "Tag filter options show open counts",
+      "path": "/?demo=1&opentagfilter=1",
+      "expectSelector": "[data-tag-option='copy'] [data-tag-count='1']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "(1)"
+    },
+    {
+      "id": "tags.filter-select",
+      "name": "Picking a tag filters the inbox",
+      "path": "/?demo=1&opentagfilter=1&tap-tag=bug",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-session-id='demo-6']))",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ],
+      "expectText": "bug"
+    },
+    {
+      "id": "tags.combines-with-app-filter",
+      "name": "Tag filter combines with the app filter",
+      "path": "/?demo=1&filter=staging-demo-notes&opentagfilter=1&tap-tag=feature",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-session-id='demo-2'])):not(:has([data-proposal-card][data-session-id='demo-6']))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tags.clear-restores",
+      "name": "Clearing the tag filter restores the list",
+      "path": "/?demo=1&set-tag=bug&opentagfilter=1&tap-tag=all",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ],
+      "expectText": "All tags"
+    },
+    {
+      "id": "tags.no-chip-card",
+      "name": "Card without tags shows no chip",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3']:not(:has([data-tag-chip]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tags.persist-reload",
+      "name": "Tag filter survives a reload",
+      "path": "/?demo=1&set-tag=bug",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-session-id='demo-6']))",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ],
+      "expectText": "bug"
+    },
+    {
+      "id": "tags.counts-ignore-hidden",
+      "name": "Tag counts exclude voted and merged proposals",
+      "path": "/?demo=1&opentagfilter=1",
+      "expectSelector": "[data-tag-option='bug'] [data-tag-count='2']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "(2)"
     },
     {
       "id": "members.header-link",

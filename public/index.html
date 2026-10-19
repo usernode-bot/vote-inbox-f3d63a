@@ -151,6 +151,15 @@
             </button>
             <div id="app-filter-panel" class="hidden"></div>
           </div>
+          <label for="tag-filter-trigger" class="sr-only">Filter by tag</label>
+          <div class="relative shrink-0">
+            <button id="tag-filter-trigger" data-tag-filter-trigger type="button" aria-haspopup="listbox" aria-expanded="false"
+              class="flex shrink-0 items-center justify-between gap-2 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+              <span id="tag-filter-label" data-tag-filter-label class="truncate">All tags</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div id="tag-filter-panel" class="hidden"></div>
+          </div>
         </div>
         <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
           <button id="select-mode-btn" data-select-mode-toggle type="button" aria-pressed="false"
@@ -326,6 +335,15 @@
     // ?preset-star=<sessionId,...> (demo only) is forwarded to the demo inbox
     // so those cards render starred for that load without touching storage.
     var PRESET_STAR = DEMO ? (params.get('preset-star') || '') : '';
+    // Tag-filter hooks, all demo only. ?opentagfilter=1 opens the tag
+    // dropdown once the inbox has loaded (the way ?openfilter= does for the
+    // app filter). ?tap-tag=<tag|all> opens the dropdown and clicks that
+    // option — the real control, through the real click handler — so
+    // selecting (and, with ?set-tag= preset, clearing) is reachable by a
+    // check. ?set-tag=<tag> writes the tag preference and reloads, the same
+    // pattern as ?set-filter=.
+    var OPEN_TAG_FILTER = params.get('opentagfilter') === '1';
+    var TAP_TAG = DEMO ? (params.get('tap-tag') || '') : '';
     // ?watch-mine=1 (demo only) asks the demo watchlist to merge the caller's
     // own real starred rows (recorded via ?set-star=) into the fixture, so a
     // check can observe star → reload → still listed from actual storage.
@@ -394,6 +412,10 @@
       inboxLoadedAt: null,
       filter: '',
       filterName: '',
+      // Tag filter, one of the fixed list or '' for all. Persisted like the
+      // app filter (see the TAG_FILTER_KEY block); the restored value is
+      // validated there, so a stale storage entry falls back to ''.
+      tagFilter: '',
       search: '',
       hideVoted: false,
       // "One vote away" chip: on when ?one-away=1 (a real deep link, also
@@ -719,6 +741,54 @@
       remainingParams.set('clear-set-filter', '1');
       var remainingQ = remainingParams.toString();
       location.replace(location.pathname + (remainingQ ? '?' + remainingQ : '') + location.hash);
+      return;
+    }
+
+    // ------------------------------------------------------------------
+    // Tag filter: fixed-list tags (bug, feature, copy, ux) served as the
+    // proposal's normalized `tags`. The chosen tag persists like the app
+    // filter, in its own key; the saved value is validated against the
+    // fixed list, so a stale entry falls back to "all tags" rather than
+    // filtering everything out.
+    // ------------------------------------------------------------------
+
+    var TAG_FILTER_KEY = 'vote-inbox:tag-filter';
+    var TAG_VALUES = ['bug', 'feature', 'copy', 'ux'];
+
+    function loadTagFilter() {
+      try {
+        var v = localStorage.getItem(TAG_FILTER_KEY);
+        return TAG_VALUES.indexOf(v) !== -1 ? v : '';
+      } catch (e) { return ''; }
+    }
+
+    function saveTagFilter(v) {
+      try {
+        if (v && TAG_VALUES.indexOf(v) !== -1) localStorage.setItem(TAG_FILTER_KEY, v);
+        else localStorage.removeItem(TAG_FILTER_KEY);
+      } catch (e) { /* not persistable here */ }
+    }
+
+    state.tagFilter = loadTagFilter();
+
+    // One-load cleanup for the set-tag hook below: the reloaded page has
+    // restored the preference into state, then empties it again, so the
+    // hook leaves storage the way it found it (the same reasoning as
+    // clear-set-filter above).
+    if (params.get('clear-set-tag') === '1') saveTagFilter(null);
+
+    // Staging-check hook: ?set-tag=<tag> writes the tag preference the way a
+    // pick in the dropdown would, then reloads without the parameter, so one
+    // check URL observes set → reload → restore. The plain routes never
+    // touch the preference from a parameter.
+    var setTagParam = params.get('set-tag');
+    if (setTagParam && TAG_VALUES.indexOf(setTagParam) !== -1) {
+      saveTagFilter(setTagParam);
+      var remainingTagParams = new URLSearchParams(params);
+      remainingTagParams.delete('set-tag');
+      remainingTagParams.set('clear-set-tag', '1');
+      var remainingTagQ = remainingTagParams.toString();
+      location.replace(location.pathname + (remainingTagQ ? '?' + remainingTagQ : '') + location.hash);
       return;
     }
 
@@ -1248,6 +1318,15 @@
     // never wraps — same colours as the app filter's idle/active looks.
     var ONE_AWAY_IDLE = 'shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
     var ONE_AWAY_ACTIVE = 'shrink-0 whitespace-nowrap rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
+    // Tag filter trigger: the same colours as ONE_AWAY_* (a fixed-width
+    // control beside the app filter), plus its own flex layout so the label
+    // truncates and the chevron stays right. The trigger doubles as the
+    // chip row's style donor: chips are quiet zinc pills, not accent pills,
+    // because a tag is metadata, not a status.
+    var TAG_TRIGGER_IDLE = 'flex shrink-0 items-center justify-between gap-2 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
+    var TAG_TRIGGER_ACTIVE = 'flex shrink-0 items-center justify-between gap-2 whitespace-nowrap rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
+    var TAG_CHIP = 'inline-block whitespace-nowrap rounded-full bg-zinc-200/70 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
+    var TAG_CHIP_COUNT = 'font-normal tabular-nums text-zinc-500 dark:text-zinc-400';
     var FILTER_CHECK = '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
     var FILTER_ALL_ICON = '<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400" aria-hidden="true">'
       + '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'
@@ -1938,6 +2017,38 @@
     // nothing, exactly as before this row existed. The line is a tap target
     // that expands to the full summary in place and collapses again —
     // display only, no other action on it.
+    // Tag chips row: what the proposal is (bug, feature, copy, ux), from the
+    // server's normalized fixed-list `tags`. At most two chips render — the
+    // tag the current filter asks for first, when set, so a filtered-to card
+    // keeps showing why it is on screen — and a card carrying no tags renders
+    // nothing at all. Each chip also shows the tag's open count, the same
+    // number the filter option shows (hidden proposals do not count; see
+    // tagCounts). Display only: no tap action on a chip.
+    function tagChipsRow(p) {
+      var tags = (Array.isArray(p.tags) ? p.tags : [])
+        .filter(function (t) { return TAG_VALUES.indexOf(t) !== -1; });
+      if (!tags.length) return '';
+      if (state.tagFilter && tags.indexOf(state.tagFilter) !== -1) {
+        tags.splice(tags.indexOf(state.tagFilter), 1);
+        tags.unshift(state.tagFilter);
+      }
+      var shown = tags.slice(0, 2);
+      var counts = tagCounts();
+      var html = '';
+      for (var i = 0; i < shown.length; i++) {
+        var tag = shown[i];
+        var n = counts[tag] || 0;
+        html += '<span data-tag-chip="' + esc(tag) + '" class="' + TAG_CHIP + '">'
+          + esc(tag)
+          + ' <span data-tag-chip-count="' + n + '" class="' + TAG_CHIP_COUNT + '">(' + n + ')</span>'
+          + '</span>';
+      }
+      // data-tag-count carries how many chips render, so the max-two cap is
+      // assertable on a fixture that carries three tags.
+      return '<div data-proposal-tags data-tag-count="' + shown.length
+        + '" class="flex flex-wrap items-center gap-1.5">' + html + '</div>';
+    }
+
     function changeSummaryRow(p) {
       var summary = typeof p.summary === 'string' && p.summary.trim() ? p.summary : '';
       var count = typeof p.filesChanged === 'number' && Number.isFinite(p.filesChanged)
@@ -2004,6 +2115,7 @@
         + '</div>'
         + proposedDateLine(p)
         + '<h2 data-proposal-title class="' + (titleExpanded ? TITLE_EXPANDED : TITLE_CLAMPED) + '">' + esc(p.title) + '</h2>'
+        + tagChipsRow(p)
         + changeSummaryRow(p)
         + voteBar(p)
         + voterAvatarRow(p)
@@ -2471,6 +2583,7 @@
     var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
     var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
     var CLEAR_ONE_AWAY_CTA = '<button data-action="clear-one-away" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all proposals</button>';
+    var CLEAR_TAG_CTA = '<button data-action="clear-tag" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all tags</button>';
     var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
     var SHOW_MERGED_CTA = '<button data-action="show-merged" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show merged proposals</button>';
     var CLEAR_SEARCH_CTA = '<button data-action="clear-search" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Clear search</button>';
@@ -2642,6 +2755,14 @@
       var filtered = state.filter
         ? visible.filter(function (p) { return p.appSlug === state.filter; })
         : visible;
+      // Tag filter over the loaded cards, alongside the app filter (a card
+      // must satisfy both): keep proposals carrying the chosen tag. No
+      // refetch — the server already normalized every card's tags.
+      if (state.tagFilter) {
+        filtered = filtered.filter(function (p) {
+          return Array.isArray(p.tags) && p.tags.indexOf(state.tagFilter) !== -1;
+        });
+      }
       if (state.hideVoted) {
         filtered = filtered.filter(function (p) { return !isVoted(p); });
       }
@@ -2719,6 +2840,12 @@
             'Merged proposals hidden',
             'Every proposal here has already merged. Show merged proposals to see them again.',
             SHOW_MERGED_CTA);
+        }
+        if (proposals.length && state.tagFilter) {
+          return emptyHtml(
+            'No proposals with this tag',
+            'No open proposal carries the "' + esc(state.tagFilter) + '" tag right now. Clear the tag filter to see everything.',
+            CLEAR_TAG_CTA);
         }
         return emptyHtml(
           proposals.length ? 'Nothing from this app' : "You're all caught up",
@@ -3045,6 +3172,7 @@
 
     function render() {
       syncFilter();
+      syncTagFilter();
       syncOneAway();
       syncSnoozedChip();
       syncSelectMode();
@@ -3471,6 +3599,186 @@
       render();
     }
 
+    // ------------------------------------------------------------------
+    // Tag filter dropdown: the same machinery as the app filter above —
+    // trigger, kit popover with a plain-panel fallback, click-outside and
+    // Escape dismissal, re-render in place when the inbox reloads under an
+    // open dropdown — kept parallel rather than shared so the app filter
+    // code stays untouched. The options are the fixed list plus "All tags";
+    // each shows the tag's open count (see tagCounts).
+    // ------------------------------------------------------------------
+
+    var tagTrigger = document.getElementById('tag-filter-trigger');
+    var tagPanelEl = document.getElementById('tag-filter-panel');
+    var openTag = null; // { dismiss } from the native kit, or a plain fallback
+    var activeTagRender = null;
+
+    // Tag counts tallied from the loaded inbox, the same way filterStats
+    // works for the app filter: how many OPEN proposals carry each tag, so
+    // "open proposals with this tag" is what the number means. Hidden
+    // proposals are ignored — a proposal the user already voted on
+    // (approved or hidden) or that has merged is no longer waiting on
+    // anyone, so it does not count — deliberately regardless of the Hide
+    // voted / Hide merged toggles, matching how the app filter's own counts
+    // stay stable under those toggles. No extra platform call: tallied from
+    // the cards already loaded and re-tallied whenever the inbox reloads.
+    function tagCounts() {
+      var counts = {};
+      var proposals = (state.inbox && state.inbox.proposals) || [];
+      for (var i = 0; i < proposals.length; i++) {
+        var p = proposals[i];
+        if (p.status === 'merged' || p.status === 'closed') continue;
+        if (isVoted(p)) continue;
+        var tags = Array.isArray(p.tags) ? p.tags : [];
+        for (var j = 0; j < tags.length; j++) {
+          var t = tags[j];
+          if (TAG_VALUES.indexOf(t) === -1) continue;
+          counts[t] = (counts[t] || 0) + 1;
+        }
+      }
+      return counts;
+    }
+
+    function tagRowEl(tag, selected, count) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-selected', selected ? 'true' : 'false');
+      // The "all" row carries a value too (an empty-string attribute selector
+      // is awkward for the tap hook); pickTag maps anything outside the
+      // fixed list, "all" included, back to no tag.
+      btn.setAttribute('data-tag-option', tag || 'all');
+      btn.className = 'flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm '
+        + (selected
+          ? 'bg-violet-600/10 font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+          : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800');
+      btn.innerHTML = '<span class="min-w-0 flex-1 truncate">' + (tag ? esc(tag) : 'All tags') + '</span>'
+        // Muted number tallied from the loaded inbox: the tag's open count,
+        // the same number the card chips show. font-normal and the zinc
+        // colour keep it quiet on the selected (semibold, violet) row;
+        // data-tag-count carries the value for the declared checks.
+        + (tag
+          ? '<span data-tag-count="' + count + '" title="Open proposals with this tag"'
+          + ' class="shrink-0 text-xs font-normal tabular-nums text-zinc-500 dark:text-zinc-400">('
+          + count + ')</span>'
+          : '')
+        + (selected ? FILTER_CHECK : '');
+      return btn;
+    }
+
+    // The dropdown body: "All tags" first, then the fixed list, each real
+    // tag with its open count. No search box — four options do not need one.
+    function buildTagContent() {
+      var content = document.createElement('div');
+      content.setAttribute('data-tag-filter-panel', '');
+      content.className = 'flex flex-col';
+
+      var list = document.createElement('div');
+      list.setAttribute('role', 'listbox');
+      list.setAttribute('aria-label', 'Tags');
+      list.className = 'max-h-60 overflow-y-auto p-1';
+      content.appendChild(list);
+
+      function renderList() {
+        var counts = tagCounts();
+        list.innerHTML = '';
+        list.appendChild(tagRowEl('', state.tagFilter === '', 0));
+        for (var i = 0; i < TAG_VALUES.length; i++) {
+          var tag = TAG_VALUES[i];
+          list.appendChild(tagRowEl(tag, state.tagFilter === tag, counts[tag] || 0));
+        }
+      }
+
+      content.addEventListener('click', function (event) {
+        var btn = event.target.closest ? event.target.closest('[data-tag-option]') : null;
+        if (!btn) return;
+        pickTag(btn.getAttribute('data-tag-option'));
+      });
+      renderList();
+      activeTagRender = renderList;
+      return content;
+    }
+
+    function onTagDocClickClose(event) {
+      if (!openTag) return;
+      if (tagPanelEl.contains(event.target) || tagTrigger.contains(event.target)) return;
+      closeTagFilter();
+    }
+
+    function onTagKeydown(event) {
+      if (event.key === 'Escape') closeTagFilter();
+    }
+
+    function closeTagFilter() {
+      if (!openTag) return;
+      var f = openTag;
+      openTag = null;
+      activeTagRender = null;
+      tagTrigger.setAttribute('aria-expanded', 'false');
+      if (f.dismiss) {
+        try { f.dismiss(); } catch (e) { /* already gone */ }
+      } else {
+        tagPanelEl.className = 'hidden';
+        tagPanelEl.innerHTML = '';
+        document.removeEventListener('click', onTagDocClickClose);
+        document.removeEventListener('keydown', onTagKeydown);
+      }
+      syncTagFilter();
+    }
+
+    function openTagFilterDropdown() {
+      if (openTag) return;
+      var content = buildTagContent();
+      // Width is set before presentation: the kit measures the content to
+      // place and size the popover. Narrower than the app filter — four
+      // short words.
+      content.className = 'flex w-56 max-w-full flex-col';
+      if (window.unNative && unNative.popover) {
+        var handle = null;
+        try {
+          handle = unNative.popover({
+            anchorEl: tagTrigger,
+            contentEl: content,
+            placement: 'bottom-end',
+            onDismiss: function () { openTag = null; activeTagRender = null; syncTagFilter(); },
+          });
+        } catch (e) { handle = null; }
+        if (handle) {
+          openTag = handle;
+          tagTrigger.setAttribute('aria-expanded', 'true');
+          return;
+        }
+      }
+      // Fallback (kit unavailable, e.g. standalone): a plain panel under the
+      // trigger with the same content.
+      content.className = 'flex w-full flex-col';
+      tagPanelEl.innerHTML = '';
+      tagPanelEl.appendChild(content);
+      tagPanelEl.className = 'absolute right-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900';
+      openTag = { fallback: true };
+      tagTrigger.setAttribute('aria-expanded', 'true');
+      document.addEventListener('click', onTagDocClickClose);
+      document.addEventListener('keydown', onTagKeydown);
+    }
+
+    function pickTag(tag) {
+      state.tagFilter = TAG_VALUES.indexOf(tag) !== -1 ? tag : '';
+      saveTagFilter(state.tagFilter || null);
+      closeTagFilter();
+      render();
+    }
+
+    function syncTagFilter() {
+      tagTrigger.className = state.tagFilter ? TAG_TRIGGER_ACTIVE : TAG_TRIGGER_IDLE;
+      document.getElementById('tag-filter-label').textContent = state.tagFilter || 'All tags';
+      tagTrigger.setAttribute('aria-expanded', openTag ? 'true' : 'false');
+    }
+
+    tagTrigger.addEventListener('click', function () {
+      if (openTag) closeTagFilter();
+      else openTagFilterDropdown();
+    });
+
 
     // Demo fixtures carry an anchor hint (days back from today; for day 0 how
     // many hours ago, plus a floor in minutes past local midnight). Recompute
@@ -3555,6 +3863,9 @@
           maybeTapNo();
           maybeTapShare();
           maybeApplyBulkHooks();
+          maybeRerenderTagFilter();
+          maybeAutoOpenTagFilter();
+          maybeTapTag();
           maybeTapStar();
           maybeTapSnooze();
           maybeSetSnooze();
@@ -4340,6 +4651,51 @@
       activeFilterRender();
     }
 
+    // Tag dropdown: the same two hooks as the app filter's, plus a tap hook.
+    // ?opentagfilter=1 opens the dropdown once the inbox has loaded (demo
+    // only, one-shot, only on a successful load). Runs after every inbox
+    // load, mirroring maybeAutoOpenFilter.
+    var openTagFilterSet = OPEN_TAG_FILTER;
+    function maybeAutoOpenTagFilter() {
+      if (!openTagFilterSet) return;
+      if (!DEMO || state.errorInbox || !state.inbox) return;
+      openTagFilterSet = false;
+      openTagFilterDropdown();
+    }
+
+    // The open tag dropdown's counts re-render in place after every inbox
+    // load, the way the app filter's do.
+    function maybeRerenderTagFilter() {
+      if (!openTag || !activeTagRender || !state.inbox) return;
+      activeTagRender();
+    }
+
+    // Staging demo hook: ?tap-tag=<tag|all> opens the tag dropdown and
+    // clicks that option — the real control, through the real click handler
+    // — so selecting (and, with ?set-tag= preset, clearing) is reachable by
+    // a check. A tap that picks a real tag also saves the preference, so
+    // after the tap the hook reloads once with the tap parameter removed
+    // and clear-set-tag=1: the reloaded page restores the same filter from
+    // storage and then empties storage, so later check routes do not
+    // inherit it. Tapping "all" stores nothing, so no reload follows.
+    var tapTagDone = false;
+    function maybeTapTag() {
+      if (!DEMO || !TAP_TAG || tapTagDone) return;
+      tapTagDone = true;
+      if (!openTag) openTagFilterDropdown();
+      waitFor('[data-tag-option="' + TAP_TAG + '"]', function (btn) {
+        btn.click();
+        if (TAG_VALUES.indexOf(TAP_TAG) === -1) return;
+        setTimeout(function () {
+          var remaining = new URLSearchParams(params);
+          remaining.delete('tap-tag');
+          remaining.set('clear-set-tag', '1');
+          var q = remaining.toString();
+          location.replace(location.pathname + (q ? '?' + q : '') + location.hash);
+        }, 200);
+      });
+    }
+
     // Staging check hook (see TURNOUT_REFRESH): once the first load has
     // rendered and the auto-opened dropdown is up, refresh the inbox through
     // the real path (loadInbox) with the variant fixture, so the open
@@ -4649,6 +5005,10 @@
           state.filter = '';
           state.filterName = '';
           saveFilter(null);
+          render();
+        } else if (action === 'clear-tag') {
+          state.tagFilter = '';
+          saveTagFilter(null);
           render();
         } else if (action === 'clear-one-away') {
           state.oneAway = false;
