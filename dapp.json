@@ -2830,6 +2830,151 @@
         "server.js",
         "dapp.json"
       ]
+    },
+    {
+      "id": "recap.menu-link",
+      "name": "Header menu links to the Recap screen",
+      "path": "/?demo=1&openmenu=1&tap-recap=1",
+      "expectSelector": "[data-recap-month]",
+      "expectText": "Votes cast",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.prev-month",
+      "name": "Recap covers the previous month",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-prev-month='1']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.votes-cast",
+      "name": "Recap shows votes cast",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-votes]",
+      "expectText": "Votes cast",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.merged",
+      "name": "Recap shows proposals merged",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-merged]",
+      "expectText": "Proposals merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.acceptance",
+      "name": "Recap shows the acceptance rate",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-acceptance]",
+      "expectText": "Acceptance rate",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.most-active",
+      "name": "Recap names the most active app",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-app]",
+      "expectText": "Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.rank",
+      "name": "Recap shows rank movement",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-rank]",
+      "expectText": "Up 3 places",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.weeks",
+      "name": "Recap groups activity by week",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-weeks]",
+      "expectText": "Weekly activity",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.trend",
+      "name": "Recap draws a weekly trend line",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-trend] polyline",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.share",
+      "name": "Share copies a recap link",
+      "path": "/?demo=1&recap=1&share=copy&tap-recap-share=1",
+      "expectSelector": "[data-recap-top] [data-share-link]",
+      "expectText": "Copied!",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.empty",
+      "name": "A month with no activity shows an empty recap",
+      "path": "/?demo=1&recap=1&recap-empty=1",
+      "expectSelector": "[data-recap-empty]",
+      "expectText": "No activity",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.from-votes",
+      "name": "Recap is reachable from My Votes",
+      "path": "/?tab=votes&demo=1&tap-recap-entry=1",
+      "expectSelector": "[data-recap-month]",
+      "expectText": "Votes cast",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     }
   ]
 }
