@@ -102,8 +102,9 @@ user's vote history.
 - Three local tables: `my_votes` (one person's vote history) and
   `watchlist` (one person's starred proposals, plus the status each row
   was last seen in) are both marked `staging:private` (per-person data).
-  Proposal data stays on the platform — with one exception: the
-  discussion thread.
+  `saved_searches` (one person's saved inbox searches: name, query,
+  filters, last-seen stamp) is the third private table. Proposal data
+  stays on the platform — with one exception: the discussion thread.
 - `proposal_comments` holds the discussion thread. It is PUBLIC (on
   purpose): comments are in-app content visible to every signed-in
   member, so a stranger seeing every row is fine. Nesting is one level
@@ -121,6 +122,17 @@ user's vote history.
   the frontend deals with one shape; keep field-spelling tolerance there.
 - `?demo=1` (staging only) serves obviously-fake fixture data for the
   Inbox, My Votes and Watchlist screens; production never serves demo data.
+- Saved-searches demo hooks (staging + `?demo=1` only, all through the real
+  functions): `?seed-searches=A,B` replaces the caller's saved searches with
+  the `SAVED_SEARCH_SEEDS` fixtures (`Weekly` matches demo-2 → unread 1;
+  `All demo` matches all six → unread 3: demo-1 is newer but voted, demo-3
+  and demo-5 are older than the 3-day seed stamp), `none` empties the list.
+  `?savesearch=<name>` (repeatable) saves the current screen's query +
+  filters — an empty value tests the name fallback; `?delsearch=<name>`
+  deletes; `?tap-search=<name>` clicks the chip once inbox + list have
+  loaded; `?search-reload=1` reloads a clean URL (drops the hooks and `q`).
+  Seeded rows are real DB rows for the signed-in account, stamped 3 days
+  back, so every check run starts from a known list.
 - Watchlist demo knobs (staging + `?demo=1` only): `?tab=watchlist` opens
   the Watchlist tab on the fixture rows; `?preset-star=<sessionId>` marks
   inbox cards starred for that load; `?tap-star=<sessionId>` taps a star

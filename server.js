@@ -467,6 +467,26 @@ async function migrate() {
     );
     COMMENT ON TABLE watchlist IS 'staging:private';
   `);
+  // The user's saved inbox searches: a name, the search text and the filters
+  // each chip holds, plus when it was last opened so the chip can count new
+  // matches since. Like watchlist this is one person's own data, so it is
+  // staging:private. The unique index keeps one name per person (case
+  // ignored); a duplicate save is a server-side no-op.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS saved_searches (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      name VARCHAR(60) NOT NULL,
+      query VARCHAR(200) NOT NULL,
+      filters JSONB NOT NULL DEFAULT '{}'::jsonb,
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS saved_searches_user_name_idx
+      ON saved_searches (user_id, lower(name));
+    COMMENT ON TABLE saved_searches IS 'staging:private';
+  `);
 }
 
 async function seedStaging() {
@@ -1371,6 +1391,150 @@ app.post('/api/watchlist/seen', async (req, res) => {
         [req.user.id, String(s.sessionId), s.status]);
     }
     res.json({ ok: true, marked: statuses.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Saved searches: the user's saved inbox queries. Rows are per user
+// (staging:private — one person's own searches and when they last opened
+// each). The new-match counts are tallied on the client from the inbox it
+// already loaded, no extra platform calls; the row only stores the query,
+// its filters and the last-opened stamp.
+// ---------------------------------------------------------------------------
+
+const SAVED_SEARCH_FILTER_KEYS = ['filter', 'filterName', 'oneAway', 'hideVoted', 'hideMerged'];
+
+// Keep only the known filter keys, in their expected types, so a saved
+// search re-applies exactly what the screen saw and nothing else rides in.
+function cleanSavedFilters(raw) {
+  const out = {};
+  if (raw && typeof raw === 'object') {
+    for (const key of SAVED_SEARCH_FILTER_KEYS) {
+      const v = raw[key];
+      if (typeof v === 'string') out[key] = v.slice(0, 255);
+      else if (typeof v === 'boolean') out[key] = v;
+    }
+  }
+  return out;
+}
+
+function savedSearchPayload(r) {
+  return {
+    id: r.id,
+    name: r.name,
+    query: r.query,
+    filters: r.filters || {},
+    lastSeenAt: r.last_seen_at,
+  };
+}
+
+app.get('/api/saved-searches', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, query, filters, last_seen_at
+       FROM saved_searches WHERE user_id = $1 ORDER BY created_at, id`,
+      [req.user.id]);
+    res.json({ demo: false, rows: rows.map(savedSearchPayload) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save the current search. An empty name falls back to the search text so
+// the chip is still labelled. A name the user already has (case ignored) is
+// a no-op: the first saved search stays, `created: false` says so.
+app.post('/api/saved-searches/save', async (req, res) => {
+  const body = req.body || {};
+  const query = typeof body.query === 'string' ? body.query.trim().slice(0, 200) : '';
+  let name = typeof body.name === 'string' ? body.name.trim().slice(0, 60) : '';
+  if (!query) return res.status(400).json({ error: 'Type a search first' });
+  if (!name) name = query.slice(0, 60);
+  const filters = cleanSavedFilters(body.filters);
+  try {
+    const inserted = await pool.query(
+      `INSERT INTO saved_searches (user_id, username, name, query, filters, last_seen_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (user_id, lower(name)) DO NOTHING
+       RETURNING id, name, query, filters, last_seen_at`,
+      [req.user.id, req.user.username, name, query, filters]);
+    if (inserted.rows.length) {
+      return res.json({ ok: true, created: true, row: savedSearchPayload(inserted.rows[0]) });
+    }
+    const existing = await pool.query(
+      'SELECT id, name, query, filters, last_seen_at FROM saved_searches WHERE user_id = $1 AND lower(name) = lower($2)',
+      [req.user.id, name]);
+    return res.json({
+      ok: true,
+      created: false,
+      row: existing.rows[0] ? savedSearchPayload(existing.rows[0]) : null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/saved-searches/delete', async (req, res) => {
+  const body = req.body || {};
+  const id = Number(body.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: 'id is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM saved_searches WHERE user_id = $1 AND id = $2',
+      [req.user.id, id]);
+    res.json({ ok: true, removed: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Opening a chip counts as opening the saved search: stamp now, so only
+// proposals that went up for vote after this moment count as new next time.
+app.post('/api/saved-searches/seen', async (req, res) => {
+  const body = req.body || {};
+  const id = Number(body.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: 'id is required' });
+  }
+  try {
+    const { rows } = await pool.query(
+      'UPDATE saved_searches SET last_seen_at = NOW() WHERE user_id = $1 AND id = $2 RETURNING last_seen_at',
+      [req.user.id, id]);
+    res.json({ ok: true, lastSeenAt: rows[0] ? rows[0].last_seen_at : null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Staging-only fixture seeding for the declared checks (like demo starring):
+// replaces the caller's saved searches with the named demo rows, each last
+// opened three days ago so the new-match counts are deterministic against
+// the demo inbox fixture's ages. Unknown names (for example `none`) insert
+// nothing, which leaves the list empty.
+const SAVED_SEARCH_SEEDS = {
+  Weekly: { query: 'weekly', filters: {} },
+  'All demo': { query: 'staging demo', filters: {} },
+};
+
+app.post('/api/saved-searches/seed', async (req, res) => {
+  const body = req.body || {};
+  if (!IS_STAGING) return res.status(400).json({ error: 'Demo seeding is staging-only' });
+  const names = Array.isArray(body.names)
+    ? body.names.filter((n) => typeof n === 'string' && n.trim()) : [];
+  try {
+    await pool.query('DELETE FROM saved_searches WHERE user_id = $1', [req.user.id]);
+    for (const name of names) {
+      const seed = SAVED_SEARCH_SEEDS[name.trim()];
+      if (!seed) continue;
+      await pool.query(
+        `INSERT INTO saved_searches (user_id, username, name, query, filters, last_seen_at)
+         VALUES ($1, $2, $3, $4, $5, NOW() - INTERVAL '3 days')`,
+        [req.user.id, req.user.username, name.trim(), seed.query, seed.filters]);
+    }
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

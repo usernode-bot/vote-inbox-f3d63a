@@ -161,10 +161,20 @@
           </label>
         </div>
       </div>
-      <div id="search-row" class="mt-2">
+      <div id="search-row" data-search-row class="mt-2">
         <label for="inbox-search" class="sr-only">Search proposals</label>
         <input id="inbox-search" type="text" placeholder="Search titles" autocomplete="off"
           class="w-full rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500">
+      </div>
+      <!-- Saved searches bar: one chip per saved search, sitting directly
+           under the search box and shown exactly where the search box is.
+           A chip re-runs its search; the small × deletes it. -->
+      <div id="saved-searches-row" data-saved-searches-row data-hidden="0" class="mt-2 flex items-center gap-2">
+        <div id="saved-searches-chips" data-saved-searches-chips role="group" aria-label="Saved searches" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5"></div>
+        <button id="save-search-btn" data-save-search-btn type="button" class="flex shrink-0 items-center gap-1 rounded-full py-1.5 pl-2 pr-3 text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">
+          <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          <span>Save search</span>
+        </button>
       </div>
     </div>
 
@@ -400,6 +410,11 @@
       // Saved views, loaded from localStorage right after the state object
       // (see the saved-views section below).
       views: [],
+      // Saved searches, the user's own rows from the server (staging:private
+      // table, like the watchlist). loaded flips true once the GET settled
+      // (successfully or not) so the check hooks know the list is current.
+      savedSearches: [],
+      savedSearchesLoaded: false,
       // Compare selection: up to two session ids picked from the inbox via
       // the cards' Compare buttons, plus whether the dedicated side-by-side
       // view is open. Transient, like oneAway: a reload starts empty unless
@@ -915,19 +930,23 @@
     // plain in-app dialog with the same field and answers. The kit both
     // invokes the button's handler and resolves its promise, so submit is
     // guarded against firing twice.
-    function promptViewName(title, message, initial, onOk) {
+    function promptViewName(title, message, initial, onOk, opts) {
+      opts = opts || {};
       var done = false;
       var submit = function (value) {
         if (done) return;
         done = true;
-        if (value && String(value).trim()) onOk(String(value).trim());
+        var v = String(value == null ? '' : value).trim();
+        // Saved views ignore an empty answer; a saved search allows one (it
+        // then falls back to the search text as the name).
+        if (v || opts.allowEmpty) onOk(v);
       };
       if (window.unNative && unNative.alert) {
         try {
           var answered = unNative.alert({
             title: title,
             message: message,
-            field: { placeholder: 'View name', value: initial || '', submitOnEnter: true },
+            field: { placeholder: opts.placeholder || 'View name', value: initial || '', submitOnEnter: true },
             buttons: [
               // The kit passes the field's value as the handler's argument.
               { label: 'Save', style: 'default', handler: function (value) { submit(typeof value === 'string' ? value : undefined); } },
@@ -944,10 +963,10 @@
           return;
         } catch (e) { /* fall through to the plain dialog */ }
       }
-      fallbackPromptDialog(title, message, initial, submit);
+      fallbackPromptDialog(title, message, initial, submit, opts);
     }
 
-    function fallbackPromptDialog(title, message, initial, submit) {
+    function fallbackPromptDialog(title, message, initial, submit, opts) {
       var overlay = document.createElement('div');
       overlay.setAttribute('data-view-prompt', '');
       overlay.setAttribute('role', 'dialog');
@@ -957,7 +976,7 @@
       overlay.innerHTML = '<div class="w-72 rounded-2xl bg-white p-4 shadow-xl dark:bg-zinc-900">'
         + '<p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">' + esc(title) + '</p>'
         + (message ? '<p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">' + esc(message) + '</p>' : '')
-        + '<input data-view-name-input type="text" autocomplete="off" placeholder="View name" aria-label="View name"'
+        + '<input data-view-name-input type="text" autocomplete="off" placeholder="' + esc((opts && opts.placeholder) || 'View name') + '" aria-label="' + esc((opts && opts.placeholder) || 'View name') + '"'
         + ' class="mt-3 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500">'
         + '<div class="mt-3 flex flex-col gap-2">'
         + '<button data-view-prompt-save class="min-h-9 rounded-xl bg-violet-600 py-2 text-sm font-semibold text-white active:scale-95">Save</button>'
@@ -972,7 +991,7 @@
       });
       overlay.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') close();
-        else if (event.key === 'Enter' && input.value.trim()) { var v = input.value; close(); submit(v); }
+        else if (event.key === 'Enter' && (input.value.trim() || (opts && opts.allowEmpty))) { var v = input.value; close(); submit(v); }
       });
       document.body.appendChild(overlay);
       input.focus();
@@ -1148,6 +1167,322 @@
         var restQ = remaining.toString();
         location.replace(location.pathname + (restQ ? '?' + restQ : '') + location.hash);
       }
+    }
+
+    // ------------------------------------------------------------------
+    // Saved searches: chips under the search box. Each holds a search text
+    // plus the filters in force when it was saved, and shows how many
+    // loaded proposals match it AND went up for vote since it was last
+    // opened AND are not voted on. Stored per person on the server (like
+    // the watchlist), so the list survives reloads and other devices. The
+    // counts are tallied from the inbox the page already loaded; no extra
+    // platform calls.
+    // ------------------------------------------------------------------
+
+    var SEARCH_UNREAD_CLASS = 'shrink-0 rounded-full bg-violet-600 px-1.5 text-[10px] font-bold text-white';
+
+    function normalizeSavedRow(r) {
+      return {
+        id: r && r.id != null ? r.id : '',
+        name: r && typeof r.name === 'string' ? r.name : '',
+        query: r && typeof r.query === 'string' ? r.query : '',
+        filters: r && r.filters && typeof r.filters === 'object' ? r.filters : {},
+        lastSeenAt: r && typeof r.lastSeenAt === 'string' ? r.lastSeenAt : '',
+      };
+    }
+
+    function savedSearchConfig(row) {
+      // The row's filters plus its search text, in the view-config shape the
+      // existing matcher understands (sort is deliberately not kept).
+      return normalizeViewConfig(Object.assign({}, row.filters || {}, { search: row.query }));
+    }
+
+    function findSavedSearch(name) {
+      var needle = String(name == null ? '' : name).toLowerCase();
+      for (var i = 0; i < state.savedSearches.length; i++) {
+        if (state.savedSearches[i].name.toLowerCase() === needle) return state.savedSearches[i];
+      }
+      return null;
+    }
+
+    function findSavedSearchRow(id) {
+      for (var i = 0; i < state.savedSearches.length; i++) {
+        if (String(state.savedSearches[i].id) === String(id)) return state.savedSearches[i];
+      }
+      return null;
+    }
+
+    // How many loaded proposals are new for this saved search, or null while
+    // the inbox is not loaded (no badges then, and the chips still work).
+    // A proposal counts when it matches the saved query and filters, has not
+    // been voted on, and went up for vote after the search was last opened.
+    // A proposal with no known start date is never counted as new.
+    function searchUnread(row) {
+      var proposals = state.inbox && state.inbox.proposals;
+      if (!proposals) return null;
+      var cfg = savedSearchConfig(row);
+      var seen = Date.parse(row.lastSeenAt);
+      var n = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        var p = proposals[i];
+        if (!matchesViewConfig(p, cfg)) continue;
+        if (isVoted(p)) continue;
+        var t = p.proposedAt ? Date.parse(p.proposedAt) : NaN;
+        if (!isFinite(t) || !isFinite(seen) || t <= seen) continue;
+        n++;
+      }
+      return n;
+    }
+
+    // Plain-words tooltip, like viewDescription but without a sort (a saved
+    // search does not keep one).
+    function savedSearchDescription(row) {
+      var cfg = savedSearchConfig(row);
+      var bits = [];
+      bits.push((cfg.filterName || cfg.filter) ? 'App: ' + (cfg.filterName || cfg.filter) : 'All apps');
+      if (cfg.oneAway) bits.push('One vote away');
+      if (cfg.hideVoted) bits.push('Hides voted');
+      if (cfg.hideMerged) bits.push('Hides merged');
+      if (cfg.search) bits.push('Search: "' + cfg.search + '"');
+      return bits.join(' · ');
+    }
+
+    // The saved search whose query and filters the screen currently shows,
+    // or null (a manual change deactivates the chip on its own).
+    function activeSavedSearchRow() {
+      var cur = currentViewConfig();
+      for (var i = 0; i < state.savedSearches.length; i++) {
+        var cfg = savedSearchConfig(state.savedSearches[i]);
+        if (cfg.search === cur.search && cfg.filter === cur.filter
+          && cfg.oneAway === cur.oneAway && cfg.hideVoted === cur.hideVoted
+          && cfg.hideMerged === cur.hideMerged) {
+          return state.savedSearches[i];
+        }
+      }
+      return null;
+    }
+
+    function renderSavedSearches() {
+      var chips = document.getElementById('saved-searches-chips');
+      if (!chips) return;
+      var active = activeSavedSearchRow();
+      var html = '';
+      for (var i = 0; i < state.savedSearches.length; i++) {
+        var row = state.savedSearches[i];
+        var cfg = savedSearchConfig(row);
+        var count = searchUnread(row);
+        html += '<span data-saved-search data-search-id="' + esc(String(row.id)) + '"'
+          + ' data-search-name="' + esc(row.name) + '"'
+          + ' data-search-query="' + esc(row.query) + '"'
+          + ' data-search-app="' + esc(cfg.filter) + '"'
+          + ' class="flex shrink-0 items-center gap-0.5">'
+          + '<button type="button" data-saved-search-open aria-pressed="' + (row === active ? 'true' : 'false') + '"'
+          + ' title="' + esc(savedSearchDescription(row)) + '"'
+          + ' class="' + (row === active ? VIEW_CHIP_ACTIVE : VIEW_CHIP_IDLE) + '">'
+          + '<span class="truncate">' + esc(row.name) + '</span>'
+          + (count != null && count > 0
+            ? '<span data-search-unread class="' + SEARCH_UNREAD_CLASS + '">' + count + '</span>'
+            : '')
+          + '</button>'
+          + '<button type="button" data-saved-search-delete'
+          + ' aria-label="Delete saved search ' + esc(row.name) + '"'
+          + ' class="' + VIEW_MENU_CLASS + '">'
+          + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>'
+          + '</button>'
+          + '</span>';
+      }
+      chips.innerHTML = html;
+    }
+
+    // Run a saved search again: its text goes back in the box and its
+    // filters come back on, for this visit only (the same way typed search
+    // text is not remembered after a reload), then the chip counts as
+    // opened and its badge clears at once.
+    function openSavedSearch(row) {
+      var cfg = savedSearchConfig(row);
+      state.search = cfg.search;
+      state.filter = cfg.filter;
+      state.filterName = cfg.filterName;
+      state.oneAway = cfg.oneAway;
+      state.hideVoted = cfg.hideVoted;
+      state.hideMerged = cfg.hideMerged;
+      var box = document.getElementById('inbox-search');
+      if (box) box.value = state.search;
+      var hv = document.getElementById('hide-voted');
+      if (hv) hv.checked = state.hideVoted;
+      var hm = document.getElementById('hide-merged');
+      if (hm) hm.checked = state.hideMerged;
+      row.lastSeenAt = new Date().toISOString();
+      render();
+      api('/api/saved-searches/seen', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: row.id }),
+      }).catch(function () { /* stays cleared locally */ });
+    }
+
+    // Save the current search text and filters under a name. An empty name
+    // falls back to the search text; a name that already exists (case
+    // ignored) saves nothing and says so. Saving counts as opening: a fresh
+    // chip starts with no unread count.
+    function saveSearch(name) {
+      var query = state.search.trim();
+      if (!query) {
+        toast('Type a search first');
+        return Promise.resolve(false);
+      }
+      name = String(name == null ? '' : name).trim();
+      if (!name) name = query;
+      if (name.length > 60) name = name.slice(0, 60);
+      if (findSavedSearch(name)) {
+        toast('You already have a saved search with that name');
+        return Promise.resolve(false);
+      }
+      var cur = currentViewConfig();
+      var filters = {
+        filter: cur.filter, filterName: cur.filterName,
+        oneAway: cur.oneAway, hideVoted: cur.hideVoted, hideMerged: cur.hideMerged,
+      };
+      return api('/api/saved-searches/save', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: name, query: query, filters: filters }),
+      }).then(function (data) {
+        if (data && data.created && data.row) {
+          state.savedSearches.push(normalizeSavedRow(data.row));
+          render();
+          toast('Search saved');
+          return true;
+        }
+        // Name taken (e.g. another device won the race): keep the first one.
+        toast('You already have a saved search with that name');
+        return loadSavedSearches().then(function () { return false; });
+      }).catch(function (err) {
+        toast('Could not save the search: ' + (err.message || 'try again'));
+        return false;
+      });
+    }
+
+    // Delete a saved search by id or name: the chip goes away at once, the
+    // server row follows. The search text and filters on screen stay put.
+    function deleteSavedSearch(x) {
+      var row = findSavedSearchRow(x) || findSavedSearch(x);
+      if (!row) return Promise.resolve(false);
+      state.savedSearches = state.savedSearches.filter(function (r) { return r !== row; });
+      render();
+      toast('Saved search deleted');
+      return api('/api/saved-searches/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: row.id }),
+      }).catch(function (err) {
+        // Put the truth back before saying anything went wrong.
+        return loadSavedSearches().then(function () {
+          toast('Could not delete the saved search: ' + (err.message || 'try again'));
+          return false;
+        });
+      });
+    }
+
+    function loadSavedSearches() {
+      return api('/api/saved-searches')
+        .then(function (data) {
+          state.savedSearches = ((data && data.rows) || []).map(normalizeSavedRow);
+        })
+        .catch(function () { /* the bar then shows only Save search */ })
+        .then(function () {
+          state.savedSearchesLoaded = true;
+          // The chip bar is all this fetch can change, so re-render just
+          // that: a full render() here can land after the tap-share demo
+          // hook has shown a card's Copied! state and would wipe it.
+          renderSavedSearches();
+          maybeTapSearch();
+        });
+    }
+
+    function openSaveSearchDialog() {
+      if (!state.search.trim()) {
+        toast('Type a search first');
+        return;
+      }
+      promptViewName('Save search',
+        'Saves the search text and filters. Leave the name empty to use the search text.',
+        '',
+        function (name) { saveSearch(name); },
+        { placeholder: 'Search name', allowEmpty: true });
+    }
+
+    // ------------------------------------------------------------------
+    // Staging check hooks for saved searches (?demo=1 only), in the same
+    // spirit as the saved-views hooks: each drives the real function the
+    // tap would.
+    //   seed-searches=A,B  POSTs /seed first, replacing the caller's rows
+    //                      with fixtures ('none' empties the list)
+    //   savesearch=<name>  saves the current screen through saveSearch(),
+    //                      once per value, in order (an empty value tests
+    //                      the name fallback)
+    //   delsearch=<name>   deletes through deleteSavedSearch()
+    //   tap-search=<name>  once the inbox AND the saved list have loaded,
+    //                      clicks that chip's real open button
+    //   search-reload=1    reloads a clean URL after the hooks (persistence)
+    // Production never reads these parameters.
+    // ------------------------------------------------------------------
+
+    var TAP_SEARCH = DEMO ? (params.get('tap-search') || '') : '';
+    var tapSearchDone = false;
+    // The tap waits until the boot chain has fully settled (hooks, then the
+    // saved-search list itself): an earlier tap could be followed by the
+    // boot's final GET, which would restore the pre-open last-seen stamp
+    // and bring the badge straight back.
+    var savedSearchesSettled = false;
+
+    function maybeTapSearch() {
+      if (!TAP_SEARCH || tapSearchDone) return;
+      if (!state.inbox || !state.inbox.proposals) return;
+      if (!state.savedSearchesLoaded || !savedSearchesSettled) return;
+      var row = findSavedSearch(TAP_SEARCH);
+      if (!row) return;
+      tapSearchDone = true;
+      var btn = document.querySelector('[data-saved-search][data-search-id="' + esc(String(row.id)) + '"] [data-saved-search-open]');
+      if (btn) btn.click();
+    }
+
+    function runSavedSearchHooks() {
+      if (!DEMO) return Promise.resolve();
+      var p = Promise.resolve();
+      var seedParam = (params.get('seed-searches') || '').trim();
+      if (seedParam) {
+        var names = seedParam.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        p = api('/api/saved-searches/seed', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ demo: true, names: names }),
+        }).then(function () { return loadSavedSearches(); })
+          .catch(function () { return loadSavedSearches(); });
+      }
+      var saveValues = params.getAll ? params.getAll('savesearch') : [];
+      for (var i = 0; i < saveValues.length; i++) {
+        (function (value) {
+          p = p.then(function () { return saveSearch(value); });
+        })(saveValues[i]);
+      }
+      var delParam = (params.get('delsearch') || '').trim();
+      if (delParam) {
+        p = p.then(function () { return deleteSavedSearch(delParam); });
+      }
+      if (params.get('search-reload') === '1') {
+        p = p.then(function () {
+          // Reload a clean URL, dropping the saved-search hook parameters
+          // AND the search text (q), keeping the rest (token, theme), the
+          // way the saved-views hooks do.
+          var remaining = new URLSearchParams(params);
+          ['seed-searches', 'savesearch', 'delsearch', 'tap-search',
+            'search-reload', 'q'].forEach(function (k) { remaining.delete(k); });
+          var restQ = remaining.toString();
+          location.replace(location.pathname + (restQ ? '?' + restQ : '') + location.hash);
+        });
+      }
+      return p;
     }
 
     // ------------------------------------------------------------------
@@ -2278,6 +2613,14 @@
         'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail ? '' : ' hidden');
       document.getElementById('search-row').className =
         'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail ? '' : ' hidden');
+      // The saved searches bar sits under the search box and shows exactly
+      // where it does.
+      var savedSearchesRow = document.getElementById('saved-searches-row');
+      if (savedSearchesRow) {
+        var showSearches = state.tab === 'inbox' && !state.compareView && !inDetail;
+        savedSearchesRow.className = 'mt-2 flex items-center gap-2' + (showSearches ? '' : ' hidden');
+        savedSearchesRow.setAttribute('data-hidden', showSearches ? '0' : '1');
+      }
       var sortRow = document.getElementById('sort-row');
       if (sortRow) sortRow.className =
         'flex items-center gap-2 pt-1' + (state.tab === 'inbox' && !state.compareView && !inDetail ? '' : ' hidden');
@@ -2633,6 +2976,7 @@
       renderSelectBar();
       renderTabs();
       renderViews();
+      renderSavedSearches();
       renderSort();
       renderVotesOrder();
       renderDemoBanner();
@@ -3119,6 +3463,7 @@
           maybeApplyBulkHooks();
           maybeTapStar();
           maybeTapSummary();
+          maybeTapSearch();
           maybeAutoComment();
           maybeAutoReply();
           // A ?proposal= deep link lands on the inbox first; once the list
@@ -4093,6 +4438,29 @@
     var saveViewBtn = document.getElementById('save-view-btn');
     if (saveViewBtn) saveViewBtn.addEventListener('click', openSaveViewDialog);
 
+    // Saved searches: tap a chip to run its search again, tap its × to
+    // delete it (a saved search is cheap to make again, so no confirm).
+    var savedSearchesChips = document.getElementById('saved-searches-chips');
+    if (savedSearchesChips) {
+      savedSearchesChips.addEventListener('click', function (event) {
+        var target = event.target;
+        var delBtn = target.closest ? target.closest('[data-saved-search-delete]') : null;
+        if (delBtn) {
+          var wrap = delBtn.closest('[data-saved-search]');
+          deleteSavedSearch(wrap ? wrap.getAttribute('data-search-id') : '');
+          return;
+        }
+        var openBtn = target.closest ? target.closest('[data-saved-search-open]') : null;
+        if (openBtn) {
+          var holder = openBtn.closest('[data-saved-search]');
+          var row = holder && findSavedSearchRow(holder.getAttribute('data-search-id'));
+          if (row) openSavedSearch(row);
+        }
+      });
+    }
+    var saveSearchBtn = document.getElementById('save-search-btn');
+    if (saveSearchBtn) saveSearchBtn.addEventListener('click', openSaveSearchDialog);
+
     if (oneAwayChip) {
       oneAwayChip.addEventListener('click', function () {
         state.oneAway = !state.oneAway;
@@ -4200,6 +4568,14 @@
     // Staging check hooks run before the first render, so the page shows
     // their result as if it had come from a tap.
     runViewsHooks();
+    // Saved-search check hooks run first (before the first render, like the
+    // views hooks); the list itself loads right after, alongside the active
+    // tab's load below.
+    runSavedSearchHooks().then(function () { return loadSavedSearches(); })
+      .then(function () {
+        savedSearchesSettled = true;
+        maybeTapSearch();
+      });
     render();
     var hideVotedBox = document.getElementById('hide-voted');
     if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
