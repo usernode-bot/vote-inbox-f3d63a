@@ -393,6 +393,23 @@ user's vote history.
   last seven calendar days), both tallied from the already-loaded inbox
   data and re-tallied whenever the inbox reloads while the dropdown is
   open. No extra platform calls.
+- Time-to-merge stats on each app filter row: "N waiting" (proposals
+  neither merged nor closed), "N merged this week" (unchanged), the median
+  opened-to-merged time over merges in the trailing 30 calendar days
+  ("2d", "5h", "<1h", or "–" with no data) and a four-week merge
+  sparkline (oldest bar first; the right-hand bar matches merged this
+  week; a week with no merges is a flat stub; no merges at all shows "–").
+  Everything is tallied from the loaded inbox proposals and re-rendered
+  whenever the inbox reloads; while a refresh is in flight the open
+  dropdown keeps the same rows and heights with grey placeholders, and
+  tapping a row still applies the filter. Demo hooks (staging + `?demo=1`
+  only): `?mergestats=1` (forwarded to /api/inbox) adds merged fixtures
+  (demo-m1..m4 on staging-demo-app; demo-5 pinned to a merge 2 days ago);
+  `?tap-app-option=<slug>` taps that row then reloads at a
+  `clear-set-filter=1` marker; `?stats-layout=1` compares row heights
+  before, during and after a held refresh and stamps
+  `data-layout-stable="1"`; `?filter-phone=1` pins the panel to 288 px and
+  stamps `data-phone-fit="1"` when every stats line fits.
 - `?splits=<sessionId>:<yes>-<no>,…` (demo only) overrides named fixture
   proposals' vote counts so the controversy sort's tie behaviour is
   reachable by checks without changing the default fixture's numbers.

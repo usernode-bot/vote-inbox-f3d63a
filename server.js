@@ -930,7 +930,7 @@ function watchRowPayload(r) {
 // checks deterministic. It is never served in production.
 // ---------------------------------------------------------------------------
 
-function demoInbox() {
+function demoInbox(withMergeStats) {
   const apps = [
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
@@ -1027,6 +1027,31 @@ function demoInbox() {
     mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya', 4.5 * D), voter('Priya', 3.5 * D), voter('Raul', 2.5 * D), voter('Sara', 1.5 * D)], { days: 5 }, null),
     mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn', 7.5 * D), voter('Raul', 6.5 * D)], { days: 9 }, 2.5 * D),
   ];
+  // ?mergestats=1 (staging demo only): four extra merged proposals for
+  // staging-demo-app, spread over the last 50 days, so the app filter's
+  // time-to-merge stats are deterministic. Merged 1, 10 and 21 days ago with
+  // opened-to-merged times of 1d, 2d and 4d (median 2d, inside the 30-day
+  // window) plus one merged 40 days ago after 10d (outside the window, so it
+  // counts in neither). demoAnchor / demoMergedAnchor let the frontend
+  // re-stamp both times to local noon, keeping the durations whole days.
+  // demo-5 is pinned to a merge 2 days ago so Notes reads a 7d median and a
+  // this-week merge with its chart's right-hand bar only.
+  if (withMergeStats) {
+    const stat = (id, proposalId, title, openDays, mergedDays) => {
+      const p = mk('staging-demo-app', id, proposalId, title, 1, 0, null,
+        'merged', openDays * D, null, null, { days: openDays }, mergedDays * D);
+      p.demoMergedAnchor = { days: mergedDays };
+      return p;
+    };
+    proposals.push(
+      stat('demo-m1', 90211, 'Staging demo proposal: one-day merge', 2, 1),
+      stat('demo-m2', 90212, 'Staging demo proposal: two-day merge', 12, 10),
+      stat('demo-m3', 90213, 'Staging demo proposal: four-day merge', 25, 21),
+      stat('demo-m4', 90214, 'Staging demo proposal: ten-day merge', 50, 40),
+    );
+    const pinned = proposals.find((p) => p.sessionId === 'demo-5');
+    if (pinned) pinned.demoMergedAnchor = { days: 2 };
+  }
   // Change summaries for the cards' one-line summary row (demo only). Keyed
   // by sessionId; every fixture not covered gets an explicit null pair so
   // the demo shape matches what normalizeProposal produces in production.
@@ -1134,7 +1159,7 @@ function demoInbox() {
 // last so every variant (and ?allmerged=1, which merges everything) leaves
 // only genuinely queued proposals carrying a position.
 function demoInboxPayload(req) {
-  const demo = demoInbox();
+  const demo = demoInbox(req.query.mergestats === '1');
   // ?empty=1 (staging demo only): the fixture with every proposal removed
   // (the app list kept, so the empty state's Browse apps action opens a
   // populated filter), giving checks a stable URL for the genuinely empty
