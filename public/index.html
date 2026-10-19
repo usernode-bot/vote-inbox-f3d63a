@@ -314,6 +314,23 @@
     // Demo only; the tap is one-shot.
     var IMPACT_MOBILE = DEMO && params.get('impact-mobile') === '1';
     var TAP_IMPACT_TOGGLE = DEMO ? (params.get('tap-impact-toggle') || '') : '';
+    // Proposal-detail hooks (demo only), all driven through the real
+    // controls: ?tap-card=1 taps the demo-2 card's body (its title, which is
+    // not one of the card's controls) so the tap-card-opens-detail path is
+    // reachable by a check; ?tap-back=1 scrolls the inbox down, opens
+    // demo-2's detail through its real Discuss button and then taps the
+    // detail's real Back button, so Back's scroll restoration runs end to
+    // end; ?scroll-detail=1 checks the detail's sticky action bar stays on
+    // screen from the top of the page to the bottom. Demo only; each tap is
+    // one-shot.
+    var TAP_CARD = DEMO && params.get('tap-card') === '1';
+    var TAP_BACK = DEMO && params.get('tap-back') === '1';
+    var SCROLL_DETAIL = DEMO && params.get('scroll-detail') === '1';
+    // Set by the ?scroll-detail=1 hook once the sticky action bar proved it
+    // follows the scroll; the bar re-emits its marker on every re-render so
+    // the async loads that follow the hook cannot drop the attribute. Demo
+    // only; production never sets it.
+    var detailStickyObserved = false;
     // Bulk-triage hooks (demo only), one URL per check behaviour:
     // ?selectmode=1 turns select mode on with nothing selected;
     // ?select=<ids> / ?deselect=<ids> tick and untick cards through the same
@@ -493,6 +510,10 @@
       // are fetched per proposal; commentsKey remembers which thread is
       // loaded so a re-render (a vote, a reply) never refetches it.
       detail: params.get('proposal') || '',
+      // Where the inbox was scrolled when the detail opened, so Back can
+      // restore it instead of dropping the reader at the top. Not persisted:
+      // a reload starts at the top like any fresh visit.
+      detailScroll: 0,
       detailComments: [],
       commentsKey: '',
       commentsLoading: false,
@@ -2327,8 +2348,8 @@
         + '</div>';
     }
 
-    // The voting block, shared by the card and the proposal detail screen
-    // so both always offer the same vote buttons.
+    // The voting block on the inbox card (the detail screen has its own sticky
+    // action bar in detailActionBar, with the same button classes).
     function proposalActions(p) {
       return voteActions(p, false);
     }
@@ -2773,37 +2794,237 @@
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
+    // The proposal's full description on the detail screen, untruncated (the
+    // card clamps the same text to one line; the detail never does). Falls
+    // back to the proposal's title when the platform sent no description,
+    // marked with data-description-fallback so that state is observable.
+    function detailDescription(p) {
+      var text = typeof p.summary === 'string' && p.summary.trim() ? p.summary : '';
+      if (text) {
+        return '<div data-proposal-description'
+          + ' class="whitespace-pre-line break-words text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">'
+          + esc(text) + '</div>';
+      }
+      return '<div data-proposal-description data-description-fallback="1"'
+        + ' class="whitespace-pre-line break-words text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">'
+        + esc(p.title) + '</div>';
+    }
+
+    // Vote progress ring for the detail screen: a circular gauge of the yes
+    // count against the merge threshold, with the yes/no/needed counts and
+    // the "x of y yes to merge" label beside it. Without a known threshold
+    // the gauge fills by the yes share, and the label and needed count are
+    // left out (optional fields are never invented); a merged proposal
+    // fills the ring completely. Whole literals for the Tailwind compiler.
+    var RING_CIRC = 2 * Math.PI * 19;
+    function voteRing(p) {
+      var merged = p.status === 'merged';
+      var hasRequired = p.required != null && p.required > 0;
+      var pct = merged ? 100
+        : hasRequired ? Math.min(100, Math.round((p.yes * 100) / p.required))
+        : (p.yes + p.no > 0 ? Math.round((p.yes * 100) / (p.yes + p.no)) : 0);
+      var met = merged || (hasRequired && p.yes >= p.required);
+      var fillCls = met ? 'stroke-emerald-500 dark:stroke-emerald-400'
+        : 'stroke-violet-500 dark:stroke-violet-400';
+      var label = hasRequired ? p.yes + ' of ' + p.required + ' yes to merge' : '';
+      return '<div data-vote-ring class="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/70">'
+        + '<svg viewBox="0 0 44 44" class="h-16 w-16 shrink-0 -rotate-90" role="img"'
+        + ' aria-label="' + esc(label || ('Yes ' + p.yes + ', No ' + p.no)) + '">'
+        + '<circle cx="22" cy="22" r="19" fill="none" stroke-width="4" class="stroke-zinc-200 dark:stroke-zinc-700"></circle>'
+        + '<circle data-ring-fill cx="22" cy="22" r="19" fill="none" stroke-width="4"'
+        + ' stroke-linecap="round" class="' + fillCls + '"'
+        + ' stroke-dasharray="' + ((pct / 100) * RING_CIRC).toFixed(1) + ' ' + RING_CIRC.toFixed(1) + '"></circle>'
+        + '</svg>'
+        + '<div class="flex min-w-0 flex-col gap-0.5">'
+        + '<span data-ring-yes class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Yes ' + p.yes + '</span>'
+        + '<span data-ring-no class="text-sm text-zinc-600 dark:text-zinc-300">No ' + p.no + '</span>'
+        + (p.needed != null
+          ? '<span data-ring-needed class="text-xs text-zinc-500 dark:text-zinc-400">'
+            + (p.needed === 0 ? 'Threshold met' : p.needed + (p.needed === 1 ? ' vote needed' : ' votes needed'))
+            + '</span>'
+          : '')
+        + (label ? '<p data-ring-label class="text-xs font-medium text-zinc-600 dark:text-zinc-300">' + esc(label) + '</p>' : '')
+        + '</div>'
+        + '</div>';
+    }
+
+    // Numbered timeline of the proposal's life so far: Opened first, then
+    // one row per yes vote (display name, avatar chip and, when the
+    // platform response carries per-vote timestamps, when the vote was
+    // cast), then Threshold reached once the yes count meets the
+    // requirement, then Merged with its date. Rows the data cannot support
+    // (no proposedAt, no named voters, no mergedAt) simply do not render —
+    // optional fields are never invented. The section itself renders empty
+    // only when nothing at all can be placed on it.
+    function timelineSection(p) {
+      var items = [];
+      var index = 0;
+      function rowHtml(attrs, inner, timeHtml, ariaTitle) {
+        index += 1;
+        return '<li ' + attrs + ' data-timeline-index="' + index + '"'
+          + ' class="flex items-start gap-2.5">'
+          + '<span aria-hidden="true" class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs font-bold text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200">' + index + '</span>'
+          + '<div class="flex min-w-0 flex-col gap-0.5">'
+          + '<span class="text-xs font-semibold text-zinc-800 dark:text-zinc-100">' + inner + '</span>'
+          + (timeHtml
+            ? '<span data-timeline-time class="text-xs text-zinc-500 dark:text-zinc-400"'
+              + (ariaTitle ? ' title="' + esc(ariaTitle) + '"' : '')
+              + '>' + timeHtml + '</span>'
+            : '')
+          + '</div>'
+          + '</li>';
+      }
+      if (p.proposedAt && isFinite(new Date(p.proposedAt).getTime())) {
+        items.push(rowHtml(
+          'data-timeline-event="opened"',
+          'Opened',
+          esc(relTime(p.proposedAt)),
+          'Opened ' + new Date(p.proposedAt).toLocaleString()));
+      }
+      var voters = Array.isArray(p.yesVoters) ? p.yesVoters : [];
+      var voteRows = 0;
+      var lastVoteAt = null;
+      for (var i = 0; i < voters.length; i++) {
+        var voter = voters[i];
+        var username = voter && typeof voter.username === 'string' ? voter.username : '';
+        if (!username) continue;
+        var label = (voter.name && typeof voter.name === 'string' && voter.name) || username;
+        var initial = (label.trim().charAt(0) || '?').toUpperCase() || '?';
+        var chip = '<span aria-hidden="true" class="' + VOTER_AVATAR_CLASS + avatarClass(username) + '">' + esc(initial) + '</span>';
+        var time = typeof voter.votedAt === 'string' && voter.votedAt ? esc(relTime(voter.votedAt)) : '';
+        items.push(rowHtml(
+          'data-timeline-event="vote" data-timeline-voter="' + esc(username) + '"',
+          '<span class="flex items-center gap-1.5">' + chip
+            + '<span data-timeline-voter-name class="truncate">' + esc(label) + '</span></span>',
+          time,
+          username + ' voted yes'));
+        voteRows += 1;
+        var t = typeof voter.votedAt === 'string' ? Date.parse(voter.votedAt) : NaN;
+        if (!isNaN(t) && (lastVoteAt === null || t > lastVoteAt)) lastVoteAt = t;
+      }
+      if (p.required != null && p.required > 0 && p.yes >= p.required) {
+        items.push(rowHtml(
+          'data-timeline-event="threshold"',
+          'Threshold reached',
+          lastVoteAt ? esc(relTime(new Date(lastVoteAt).toISOString())) : '',
+          'Yes count reached the threshold'));
+      }
+      if (p.status === 'merged' && p.mergedAt && isFinite(new Date(p.mergedAt).getTime())) {
+        var mergedLabel = wakeDateLabel(p.mergedAt);
+        var mergedAge = relTime(p.mergedAt);
+        items.push(rowHtml(
+          'data-timeline-event="merged" data-timeline-merged="' + esc(mergedLabel) + '"',
+          'Merged',
+          esc(mergedAge ? mergedLabel + ' · ' + mergedAge : mergedLabel),
+          'Merged ' + new Date(p.mergedAt).toLocaleString()));
+      }
+      if (!items.length) return '';
+      return '<section data-timeline data-timeline-votes="' + voteRows + '" class="' + CARD_CLASS + '">'
+        + '<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Timeline</h3>'
+        + '<ol class="flex flex-col gap-2.5">' + items.join('') + '</ol>'
+        + '</section>';
+    }
+
+    // Related proposals: other loaded proposals from the same app that are
+    // still open (not merged or closed, and not this one), so a reader can
+    // jump to the rest of the app's business. Hidden entirely when there
+    // are none. Each row opens that proposal's detail through the same
+    // openDetail the cards' Discuss button uses, so a related tap is a
+    // normal detail navigation.
+    function relatedSection(p) {
+      var list = (state.inbox && state.inbox.proposals) || [];
+      var related = [];
+      for (var i = 0; i < list.length; i++) {
+        var q = list[i];
+        if (q.sessionId === p.sessionId) continue;
+        if (q.appSlug !== p.appSlug) continue;
+        if (q.status === 'merged' || q.status === 'closed') continue;
+        related.push(q);
+      }
+      if (!related.length) return '';
+      var rows = '';
+      for (var j = 0; j < related.length; j++) {
+        var q2 = related[j];
+        rows += '<li>'
+          + '<button type="button" data-open-detail data-session="' + esc(q2.sessionId) + '"'
+          + ' class="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-left transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/70 dark:hover:bg-zinc-800/60">'
+          + '<span class="min-w-0 truncate text-xs font-medium text-zinc-700 dark:text-zinc-200">' + esc(q2.title) + '</span>'
+          + neededPill(q2)
+          + '</button></li>';
+      }
+      return '<section data-related-proposals data-related-count="' + related.length + '" class="' + CARD_CLASS + '">'
+        + '<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">More from ' + esc(p.appName) + '</h3>'
+        + '<ul class="flex flex-col gap-1.5">' + rows + '</ul>'
+        + '</section>';
+    }
+
+    // Sticky action bar for the detail screen: Yes, No and Share stay
+    // reachable while the proposal scrolls (the bar pins to the bottom of
+    // the screen and content slides under it). Yes and No disable once
+    // voted — a pill names the way — and while a vote is in flight or the
+    // proposal has merged or closed; an offline-queued vote keeps its Retry
+    // pill here. Share runs the same native-sheet-or-copy decision as the
+    // cards' share button. Whole literals for the Tailwind compiler.
+    var DETAIL_BAR_CLASS = 'sticky bottom-0 z-10 -mx-4 mt-1 flex flex-col gap-2 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95';
+    var DETAIL_SHARE_CLASS = 'inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-zinc-300 bg-white px-3.5 text-sm font-semibold text-zinc-700 transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200';
+
+    function detailActionBar(p) {
+      var voted = p.myVote === 'yes' || p.myVote === 'no';
+      var settled = p.status === 'merged' || p.status === 'closed';
+      var disabled = voted || settled || !!state.pending[p.sessionId];
+      var copy = resolveShareMode() === 'copy';
+      return '<div data-detail-actions'
+        + (detailStickyObserved ? ' data-sticky-observed="1"' : '')
+        + ' class="' + DETAIL_BAR_CLASS + '">'
+        + (voted
+          ? '<p data-voted-pill class="text-xs font-semibold text-violet-700 dark:text-violet-300">You voted ' + esc(p.myVote) + '</p>'
+          : '')
+        + '<div class="flex items-center gap-2">'
+        + '<button data-vote="yes" data-session="' + esc(p.sessionId) + '"'
+        + ' class="' + VOTE_YES_ROW + '"' + (disabled ? ' disabled' : '') + '>Yes</button>'
+        + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
+        + ' class="' + VOTE_NO_ROW + '"' + (disabled ? ' disabled' : '') + '>No</button>'
+        + (p.url
+          ? '<button data-share-link data-url="' + esc(p.url) + '"'
+            + (copy ? ' data-share-mode="copy"' : ' data-share-mode="sheet"')
+            + (copy ? ' aria-label="Copy link to this proposal" title="Copy link"' : ' aria-label="Share this proposal" title="Share"')
+            + ' class="' + DETAIL_SHARE_CLASS + '">' + (copy ? COPY_IDLE_HTML : SHARE_IDLE_HTML) + '</button>'
+          : '')
+        + '</div>'
+        + retryRow(p.sessionId)
+        + '</div>';
+    }
+
     function renderDetail() {
       var p = findProposal(state.detail);
       if (!p) return '';
       return '<div data-proposal-detail data-session-id="' + esc(p.sessionId) + '" class="flex flex-col gap-3">'
         + '<button data-action="close-detail"'
+        + ' aria-label="Back to the inbox" title="Back"'
         + ' class="self-start inline-flex items-center gap-1 rounded-full text-sm font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">'
         + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back</button>'
         + '<article class="' + CARD_CLASS + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + appAvatar(p)
-        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
+        + '<span data-detail-app="' + esc(p.appName) + '" class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(p.appName) + '</span>'
         + ageSpan(p)
         + '</span>'
         + neededPill(p)
         + '</div>'
         + proposedDateLine(p)
         + '<h2 data-proposal-title class="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(p.title) + '</h2>'
-        + voteBar(p)
-        + voterAvatarRow(p)
-        + voterNamesRow(p)
-        + '<div class="flex items-center justify-between gap-2">'
-        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
-        + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
-        + (p.url ? shareLinkButton(p) : '')
-        + '</div>'
+        + detailDescription(p)
+        + voteRing(p)
         + statusProgress(p)
-        + proposalActions(p)
+        + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
+        + (p.author ? '<span data-detail-author>by @' + esc(p.author) + '</span>' : '') + '</p>'
         + '</article>'
+        + timelineSection(p)
+        + relatedSection(p)
         + impactPanel(p)
         + '<section data-thread class="flex flex-col gap-2">' + renderThread() + '</section>'
+        + detailActionBar(p)
         + '</div>';
     }
 
@@ -3596,6 +3817,9 @@
 
     function openDetail(sessionId) {
       if (!findProposal(sessionId)) return;
+      // Remember where the inbox was scrolled, so Back can return to the
+      // same place instead of dropping the reader at the top.
+      state.detailScroll = window.scrollY || 0;
       state.detail = sessionId;
       state.replyForm = null;
       render();
@@ -3607,7 +3831,12 @@
       state.detail = '';
       state.replyForm = null;
       render();
-      window.scrollTo(0, 0);
+      // Back returns to the inbox where the reader left it, not the top.
+      var restored = state.detailScroll || 0;
+      window.scrollTo(0, restored);
+      // Carry the offset Back actually restored on <body> so checks (and
+      // debugging) can read it.
+      document.body.setAttribute('data-inbox-scroll', String(Math.round(window.scrollY || 0)));
     }
 
     // Post a comment (parentId null) or a reply (parentId = the top-level
@@ -4217,6 +4446,9 @@
           maybeTapSummary();
           maybeTapSearch();
           maybeTapImpactToggle();
+          maybeTapCard();
+          maybeTapBack();
+          maybeScrollDetail();
           maybeAutoComment();
           maybeAutoReply();
           // A ?proposal= deep link lands on the inbox first; once the list
@@ -4910,6 +5142,64 @@
       btn.click();
     }
 
+    // Staging demo hook: ?demo=1&tap-card=1 taps the demo-2 card's body —
+    // its title, which is not one of the card's controls — so the
+    // tap-card-to-open-detail path runs through the real delegated click
+    // handler. Demo only; one-shot.
+    var tapCardDone = false;
+    function maybeTapCard() {
+      if (!DEMO || !TAP_CARD || tapCardDone) return;
+      var card = document.querySelector('[data-proposal-card][data-session-id="demo-2"]');
+      var title = card ? card.querySelector('[data-proposal-title]') : null;
+      if (!title) return;
+      tapCardDone = true;
+      title.click();
+    }
+
+    // Staging demo hook: ?demo=1&tap-back=1 scrolls the demo inbox down,
+    // opens demo-2's detail through its real Discuss button, then taps the
+    // detail's real Back button, so Back's scroll restoration runs end to
+    // end; closeDetail stamps the offset it restored on <body> for the
+    // check to read. The scroll target clamps to the page's real max so a
+    // short page cannot over-scroll. Demo only; one-shot.
+    var tapBackDone = false;
+    function maybeTapBack() {
+      if (!DEMO || !TAP_BACK || tapBackDone) return;
+      var card = document.querySelector('[data-proposal-card][data-session-id="demo-2"]');
+      if (!card || !card.querySelector('[data-open-detail]')) return;
+      tapBackDone = true;
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      window.scrollTo(0, Math.min(400, Math.max(0, max)));
+      card.querySelector('[data-open-detail]').click();
+      var back = document.querySelector('[data-proposal-detail] [data-action="close-detail"]');
+      if (back) back.click();
+    }
+
+    // Staging demo hook: ?demo=1&proposal=<id>&scroll-detail=1 verifies the
+    // detail's sticky action bar the way a reader experiences it: the bar
+    // must be on screen when the detail opens (pinned above the fold) and
+    // still on screen at the bottom of the page. Only when both hold does
+    // the observation flip the flag whose marker the bar re-emits on every
+    // re-render, so a check that reads the marker fails if the bar stops
+    // following the scroll, and the async loads that run after this hook
+    // cannot wipe it. Demo only; one-shot.
+    var scrollDetailDone = false;
+    function maybeScrollDetail() {
+      if (!DEMO || !SCROLL_DETAIL || scrollDetailDone) return;
+      var bar = document.querySelector('[data-detail-actions]');
+      if (!bar) return;
+      scrollDetailDone = true;
+      var top = bar.getBoundingClientRect().bottom <= window.innerHeight + 1;
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      window.scrollTo(0, Math.max(0, max));
+      var bottom = bar.getBoundingClientRect().bottom <= window.innerHeight + 1
+        && bar.getBoundingClientRect().top < window.innerHeight;
+      if (top && bottom) {
+        detailStickyObserved = true;
+        render();
+      }
+    }
+
     // Staging demo hook: ?demo=1&tap-no=1 clicks the demo-4 card's "No"
     // button once the demo inbox has rendered — the real button, through the
     // real delegated click handler — so the confirm-before-No dialog is
@@ -5487,11 +5777,26 @@
         // "No" asks first; "Yes" stays one-tap.
         if (voteChoice === 'no') openNoConfirm(voteSession);
         else castVote(voteSession, voteChoice);
+        return;
       }
       var retryBtn = target.closest ? target.closest('[data-retry-vote]') : null;
-      if (retryBtn) retryVote(retryBtn.getAttribute('data-session'));
+      if (retryBtn) {
+        retryVote(retryBtn.getAttribute('data-session'));
+        return;
+      }
       var copyBtn = target.closest ? target.closest('[data-share-link]') : null;
-      if (copyBtn) shareProposalLink(copyBtn);
+      if (copyBtn) {
+        shareProposalLink(copyBtn);
+        return;
+      }
+      // Tapping a proposal card anywhere that is not one of its controls
+      // opens the proposal's detail screen, like tapping a list row. Every
+      // control above returns before this, so it only catches the card
+      // body itself.
+      var cardEl = target.closest ? target.closest('[data-proposal-card]') : null;
+      if (cardEl) {
+        openDetail(cardEl.getAttribute('data-session-id') || '');
+      }
     });
 
     filterTrigger.addEventListener('click', function () {
