@@ -30,3 +30,8 @@
     animation: none;
   }
 }
+
+/* The Filter sheet opens and closes by toggling the `hidden` attribute, but
+ * the same element carries Tailwind's `flex` utility, which would override
+ * the UA's [hidden] display:none — keep the attribute winning. */
+#filter-sheet[hidden] { display: none; }
