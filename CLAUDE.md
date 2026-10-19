@@ -106,9 +106,44 @@ user's vote history.
   filters, last-seen stamp) is the third private table, and `snoozes`
   (one person's snoozed proposals and their wake dates) is a fourth,
   also `staging:private`. `proposal_reads` (one person's opened proposals:
-  append-only session-id rows) is the fifth, also `staging:private`.
+  append-only session-id rows) is the fifth, also `staging:private`, and
+  `bookmarks` (one person's bookmarked proposals: app, title, saved date)
+  is the sixth, also `staging:private`.
   Proposal data stays on the platform — with one exception: the discussion
   thread.
+- Bookmarks: the Bookmark button on every proposal card and in the
+  detail's action bar saves a proposal to the person's Saved tab (next to
+  Inbox, My Votes and Watchlist; badge shows the row count, hidden at
+  zero). Saving is per member (a `bookmarks` row keyed by user id, so it
+  survives reloads and follows the account); un-bookmarking removes the
+  row at once, optimistically on the client with a rollback on failure
+  (same pattern as stars and votes). The button is a quiet ghost pill —
+  "Bookmark" idle, violet "Bookmarked" saved — independent of starring,
+  voting and snoozing, and works on voted and merged proposals too.
+  Cards show the saved date on Saved rows ("Saved 5 Oct"); the tab's
+  summary line reads "N saved, M settled" (settled = merged or closed,
+  from the row's own status when the server supplies one, else from the
+  loaded inbox data — no extra platform calls). The empty state says
+  "Nothing saved yet" with a Browse apps button like the inbox's.
+  Demo knobs (staging + `?demo=1` only): `?tab=saved` opens the tab on
+  two fixture rows (demo-5 saved 6 days ago, demo-6 2 days ago); the
+  inbox demo load stamps `myBookmark` onto cards like stars (from the
+  caller's real rows, or `?preset-bookmark=<id>` display-only); saving
+  through the demo route stores a real row for the signed-in account so
+  persistence is observable. Hooks, all through the real buttons or
+  routes: `?tap-bookmark=<id>` (clears that proposal's stored row first,
+  then taps the card's button); `?set-bookmark=<id>` (saves for real then
+  reloads without the param — pair with `?tab=saved`, which turns on
+  `?saved-mine=` on the reload so the persisted row is listed);
+  `?tap-unbookmark=<id>` (taps the button from a bookmarked render; pair
+  with `?preset-bookmark=<same id>` on the inbox, or use it directly on
+  the Saved tab where the fixture rows render bookmarked);
+  `?saved-empty=1` empties the Saved tab (the empty state); and
+  `?saved-other=1` stores a bookmark for a fake member (staging-demo-user
+  on demo-4) after resetting the caller's rows on the six fixture ids, so
+  the per-member check sees the caller's list without it. `set-bookmark`,
+  `tap-bookmark` and `saved-other` all reset the caller's fixture rows
+  first, so repeated check runs start clean.
 - Read tracking: opening a proposal (Discuss, or a `?proposal=` deep link)
   marks it read for the signed-in account only — an append-only row in
   `proposal_reads`, so read state survives reloads, follows the account and

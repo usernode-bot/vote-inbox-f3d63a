@@ -3915,6 +3915,153 @@
         "public/index.html",
         "dapp.json"
       ]
+    },
+    {
+      "id": "saved.card-button",
+      "name": "Every card offers a Bookmark button",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-bookmark-toggle]",
+      "expectText": "Bookmark",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.card-tap",
+      "name": "Tapping Bookmark saves the card",
+      "path": "/?demo=1&tap-bookmark=demo-6",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-bookmark-toggle][aria-pressed='true']",
+      "expectText": "Bookmarked",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.detail-button",
+      "name": "The detail screen offers a Bookmark button",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "[data-proposal-detail][data-session-id='demo-2'] [data-bookmark-toggle]",
+      "expectText": "Bookmark",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.detail-press",
+      "name": "The detail screen shows the bookmarked state",
+      "path": "/?demo=1&proposal=demo-2&preset-bookmark=demo-2",
+      "expectSelector": "[data-proposal-detail][data-session-id='demo-2'] [data-bookmark-toggle][aria-pressed='true']",
+      "expectText": "Bookmarked",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.tab-rows",
+      "name": "The Saved tab lists bookmarked proposals",
+      "path": "/?tab=saved&demo=1",
+      "expectSelector": "[data-saved-row][data-session-id='demo-5']",
+      "expectText": "pinned notes",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.tab-badge",
+      "name": "The Saved tab shows its row count",
+      "path": "/?tab=saved&demo=1",
+      "expectSelector": "[data-tab='saved'] .tab-badge:not(.hidden)"
+    },
+    {
+      "id": "saved.tab-summary",
+      "name": "The Saved tab shows a summary line",
+      "path": "/?tab=saved&demo=1",
+      "expectText": "2 saved, 1 settled"
+    },
+    {
+      "id": "saved.persist-card",
+      "name": "A bookmark survives a reload",
+      "path": "/?demo=1&set-bookmark=demo-1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-bookmark-toggle][aria-pressed='true']",
+      "expectText": "Bookmarked",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.persist-tab",
+      "name": "A bookmarked proposal is listed on the Saved tab",
+      "path": "/?tab=saved&demo=1&set-bookmark=demo-1",
+      "expectSelector": "[data-saved-row][data-session-id='demo-1']",
+      "expectText": "dark mode",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.per-user",
+      "name": "Another member's bookmark stays out of your list",
+      "path": "/?tab=saved&demo=1&saved-other=1",
+      "expectSelector": "body:has([data-saved-row][data-session-id='demo-6']):not(:has([data-saved-row][data-session-id='demo-4']))",
+      "expectText": "tag colours",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.remove-card",
+      "name": "Tapping Bookmarked removes the bookmark",
+      "path": "/?demo=1&tap-unbookmark=demo-1&preset-bookmark=demo-1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-bookmark-toggle][aria-pressed='false']",
+      "expectText": "Bookmark",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.remove-tab",
+      "name": "Un-bookmarking removes the row at once",
+      "path": "/?tab=saved&demo=1&tap-unbookmark=demo-5",
+      "expectSelector": "body:has([data-saved-row][data-session-id='demo-6']):not(:has([data-saved-row][data-session-id='demo-5']))",
+      "expectText": "tag colours",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.tab-empty",
+      "name": "An empty Saved tab shows its friendly empty state",
+      "path": "/?tab=saved&demo=1&saved-empty=1",
+      "expectText": "Nothing saved yet",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     }
   ]
 }

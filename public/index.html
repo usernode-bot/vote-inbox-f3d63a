@@ -133,12 +133,14 @@
     </p>
     <p id="votes-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="watchlist-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
+    <p id="saved-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="members-summary" data-members-summary class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
     <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
       <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
+        <button data-tab="saved" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Saved<span class="tab-badge"></span></button>
         <button data-tab="watchlist" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Watchlist<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span data-tab-count></span><span class="tab-badge"></span></button>
         <button data-tab="leaderboard" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Leaderboard<span class="tab-badge"></span></button>
@@ -453,6 +455,23 @@
     // row as already seen, so the no-badge state is reachable too.
     var WATCH_EMPTY = DEMO && params.get('watch-empty') === '1';
     var WATCH_SEEN = DEMO && params.get('watch-seen') === '1';
+    // Bookmark hooks, all demo only, driven through the real controls the way
+    // the star hooks are. ?tap-bookmark=<id> taps that card's bookmark button
+    // once the list has rendered (one-shot, retried on the next render);
+    // ?preset-bookmark=<id,...> is forwarded to the demo inbox so those cards
+    // render bookmarked for that load without touching storage;
+    // ?set-bookmark=<id> bookmarks for real (a DB row for the signed-in
+    // account) then reloads at a ?saved-set=<id> marker, so persistence is
+    // observable; ?tap-unbookmark=<id> taps an already-bookmarked card's
+    // button (paired with ?preset-bookmark=, which needs no storage);
+    // ?saved-mine=<ids> asks the demo Saved tab to merge the caller's own
+    // real rows (recorded via ?set-bookmark=) into the fixture;
+    // ?saved-empty=1 serves no rows, so the empty state is reachable.
+    var TAP_BOOKMARK = DEMO ? (params.get('tap-bookmark') || '') : '';
+    var PRESET_BOOKMARK = DEMO ? (params.get('preset-bookmark') || '') : '';
+    var TAP_UNBOOKMARK = DEMO ? (params.get('tap-unbookmark') || '') : '';
+    var SAVED_MINE = DEMO ? (params.get('saved-mine') || '') : '';
+    var SAVED_EMPTY = DEMO && params.get('saved-empty') === '1';
     // Weekly-digest hooks, all demo only. ?digest=week|quiet asks the demo
     // my-votes route for the digest fixture rows (see demoDigestRows in
     // server.js) instead of the default three; the frontend re-stamps their
@@ -650,11 +669,17 @@
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes'
+        : params.get('tab') === 'saved' ? 'saved'
         : params.get('tab') === 'watchlist' ? 'watchlist'
         : params.get('tab') === 'leaderboard' ? 'leaderboard' : 'inbox',
       inbox: null,
       votes: null,
       watchlist: null,
+      // Saved tab: the signed-in user's bookmarked proposals (one load,
+      // same shape as watchlist.rows). savedPending mirrors starPending for
+      // the bookmark buttons' in-flight state.
+      saved: null,
+      savedPending: {},
       // Pending merge celebrations, from the inbox payload (one row per
       // merged proposal the user voted on). Each card is rendered once and
       // then marked shown server-side, so the next load no longer returns
@@ -711,6 +736,7 @@
       loadingInbox: false,
       loadingVotes: false,
       loadingWatchlist: false,
+      loadingSaved: false,
       errorInbox: null,
       errorVotes: null,
       // Share-as-image preview on My Votes: the drawn card record
@@ -718,6 +744,7 @@
       // Frontend memory only; Close or a reload clears it.
       shareImage: null,
       errorWatchlist: null,
+      errorSaved: null,
       pending: {},
       // Star toggles in flight, per session and per watchlist row.
       starPending: {},
@@ -731,6 +758,7 @@
       queuedInbox: false,
       queuedVotes: false,
       queuedWatchlist: false,
+      queuedSaved: false,
       // Session ids whose card title the user expanded with More. A re-render
       // (a vote, a filter change) keeps those titles expanded; not persisted,
       // a reload starts collapsed again.
@@ -1229,6 +1257,54 @@
         }
         var remainingStarQ = remainingStarParams.toString();
         location.replace(location.pathname + (remainingStarQ ? '?' + remainingStarQ : '') + location.hash);
+      });
+      return;
+    }
+
+    // Staging-check hook: ?tap-bookmark=<sessionId> taps that card's bookmark
+    // button through the real delegated click handler after the list has
+    // rendered. Because checks share one database and one account, it first
+    // clears any stored bookmark for that proposal (one unsave POST, then a
+    // reload with ?bookmark-ensured=1) so the tap always acts from an
+    // unsaved card. Demo only. Pair ?tap-unbookmark=<same id> with
+    // ?preset-bookmark=<same id> (display-only) to reach the unsave
+    // direction instead: the card renders bookmarked, the tap unsaves, and
+    // no stored row is needed either way.
+    if (TAP_BOOKMARK && DEMO && !params.has('bookmark-ensured')) {
+      api('/api/bookmarks/unsave', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ demo: true, sessionId: TAP_BOOKMARK }),
+      }).catch(function () {}).then(function () {
+        var remainingTapParams = new URLSearchParams(params);
+        remainingTapParams.set('bookmark-ensured', '1');
+        var remainingTapQ = remainingTapParams.toString();
+        location.replace(location.pathname + (remainingTapQ ? '?' + remainingTapQ : '') + location.hash);
+      });
+      return;
+    }
+
+    // Staging-check hook: ?set-bookmark=<sessionId> bookmarks that demo
+    // proposal for real (a demo save records the row for the signed-in
+    // account, the same way a demo star or vote is recorded), then reloads
+    // without the parameter, so one check URL observes bookmark → reload →
+    // still bookmarked from the server. Opening it on the Saved tab also
+    // turns on ?saved-mine= for the reloaded page, so the persisted row is
+    // listed there. Demo only.
+    var setBookmarkParam = params.get('set-bookmark');
+    if (setBookmarkParam && DEMO) {
+      api('/api/bookmarks/save', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ demo: true, sessionId: setBookmarkParam }),
+      }).catch(function () {}).then(function () {
+        var remainingBmParams = new URLSearchParams(params);
+        remainingBmParams.delete('set-bookmark');
+        if (remainingBmParams.get('tab') === 'saved') {
+          remainingBmParams.set('saved-mine', setBookmarkParam);
+        }
+        var remainingBmQ = remainingBmParams.toString();
+        location.replace(location.pathname + (remainingBmQ ? '?' + remainingBmQ : '') + location.hash);
       });
       return;
     }
@@ -2463,6 +2539,24 @@
         + (starred ? STAR_FILLED_HTML : STAR_OUTLINE_HTML) + '</button>';
     }
 
+    // Bookmark: a quiet ghost button on every proposal card and in the
+    // detail's action bar, the same idiom as Star. Bookmarked uses the app's
+    // violet accent; whole literals for the Tailwind compiler.
+    var BOOKMARK_ICON_PATH = 'm19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z';
+    var BOOKMARK_OUTLINE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + BOOKMARK_ICON_PATH + '"/></svg><span>Bookmark</span>';
+    var BOOKMARK_FILLED_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="' + BOOKMARK_ICON_PATH + '"/></svg><span>Bookmarked</span>';
+    var BOOKMARK_IDLE_CLASS = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
+    var BOOKMARK_ACTIVE_CLASS = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-300 dark:hover:text-violet-200';
+
+    function bookmarkToggleButton(sessionId, bookmarked, busy) {
+      return '<button data-bookmark-toggle data-session="' + esc(sessionId) + '"'
+        + ' aria-pressed="' + (bookmarked ? 'true' : 'false') + '"'
+        + ' aria-label="' + (bookmarked ? 'Remove from Saved' : 'Save for later') + '"'
+        + (busy ? ' disabled' : '')
+        + ' class="' + (bookmarked ? BOOKMARK_ACTIVE_CLASS : BOOKMARK_IDLE_CLASS) + '">'
+        + (bookmarked ? BOOKMARK_FILLED_HTML : BOOKMARK_OUTLINE_HTML) + '</button>';
+    }
+
     // Snooze: a quiet ghost button on each open proposal card (not on cards
     // already snoozed; those carry Unsnooze instead). Tapping it opens the
     // card's inline snooze menu.
@@ -2981,6 +3075,8 @@
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
         + '<div class="' + cardFooterBtnsClass() + '">'
         + starToggleButton(p.sessionId, !!p.myStar, !!state.starPending['star:' + p.sessionId])
+        + bookmarkToggleButton(p.sessionId, !!p.myBookmark,
+          !!state.savedPending['bookmark:' + p.sessionId])
         + (!snoozed ? snoozeToggleButton(p.sessionId) : '')
         + discussButton(p)
         + compareButton(p)
@@ -3484,6 +3580,8 @@
         + ' class="' + VOTE_YES_ROW + '"' + (disabled ? ' disabled' : '') + '>Yes</button>'
         + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
         + ' class="' + VOTE_NO_ROW + '"' + (disabled ? ' disabled' : '') + '>No</button>'
+        + bookmarkToggleButton(p.sessionId, !!p.myBookmark,
+          !!state.savedPending['bookmark:' + p.sessionId])
         + (p.url
           ? '<button data-share-link data-url="' + esc(p.url) + '"'
             + (copy ? ' data-share-mode="copy"' : ' data-share-mode="sheet"')
@@ -3779,6 +3877,55 @@
         + '</article>';
     }
 
+    // One Saved row: the app name, the proposal title, the row's current
+    // status pill (from the inbox data when it holds the proposal, so a
+    // merged save shows Merged) and the date it was saved. The bookmark
+    // button is pressed here; tapping it unsaves and drops the row at once.
+    function savedRow(r) {
+      var statusPill = '';
+      var key = null;
+      // The server supplies a status when it has one (demo rows); otherwise
+      // fall back to the loaded inbox data (no extra platform calls).
+      if (r.status) {
+        key = r.status === 'proposed' ? 'voting' : (r.status || 'voting');
+      } else if (state.inbox && state.inbox.proposals) {
+        for (var i = 0; i < state.inbox.proposals.length; i++) {
+          if (state.inbox.proposals[i].sessionId === r.sessionId) {
+            key = state.inbox.proposals[i].status === 'proposed'
+              ? 'voting' : (state.inbox.proposals[i].status || 'voting');
+            break;
+          }
+        }
+      }
+      if (key) {
+        var style = STATUS_STYLE[key] || STATUS_STYLE.closed;
+        statusPill = '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold '
+          + style[1] + '">' + style[0] + '</span>';
+      }
+      var savedDate = '';
+      if (r.savedAt && isFinite(new Date(r.savedAt).getTime())) {
+        savedDate = new Date(r.savedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      }
+      return '<article data-saved-row data-session-id="' + esc(r.sessionId) + '"'
+        + ' class="' + CARD_CLASS + '">'
+        + '<div class="flex items-start justify-between gap-2">'
+        + '<span class="flex min-w-0 items-center gap-1.5">'
+        + appAvatar({ appSlug: r.appSlug, appName: r.appName, icon: r.icon })
+        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(r.appName || r.appSlug) + '</span>'
+        + '</span>'
+        + statusPill
+        + '</div>'
+        + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(r.title) + '</h2>'
+        + '<div class="flex items-center justify-between gap-2">'
+        + (savedDate
+          ? '<p data-saved-date class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">Saved ' + esc(savedDate) + '</p>'
+          : '<span></span>')
+        + bookmarkToggleButton(r.sessionId, true,
+          !!state.savedPending['bookmark:' + r.sessionId])
+        + '</div>'
+        + '</article>';
+    }
+
     function skeletonCard() {
       return '<div class="animate-pulse rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70">'
         + '<div class="flex items-center justify-between gap-2">'
@@ -4048,12 +4195,14 @@
       var inboxCount = state.inbox && state.inbox.proposals ? state.inbox.proposals.length : null;
       var votesCount = state.votes && state.votes.votes ? state.votes.votes.length : null;
       var watchlistCount = state.watchlist && state.watchlist.rows ? state.watchlist.rows.length : null;
+      var savedCount = state.saved && state.saved.rows ? state.saved.rows.length : null;
       for (var i = 0; i < buttons.length; i++) {
         var btn = buttons[i];
         var tab = btn.getAttribute('data-tab');
         var active = tab === state.tab;
         var badge = btn.querySelector('.tab-badge');
         var count = tab === 'inbox' ? inboxCount
+          : tab === 'saved' ? savedCount
           : tab === 'watchlist' ? watchlistCount
           : tab === 'votes' ? votesCount : null;
         btn.className = 'tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors '
@@ -4160,7 +4309,7 @@
     }
 
     function renderRefreshButton() {
-      var busy = state.loadingInbox || state.loadingVotes;
+      var busy = state.loadingInbox || state.loadingVotes || state.loadingSaved;
       var icon = document.getElementById('refresh-icon');
       if (icon) icon.classList.toggle('animate-spin', busy);
       document.getElementById('refresh-btn').setAttribute('aria-busy', busy ? 'true' : 'false');
@@ -4169,7 +4318,8 @@
     function renderDemoBanner() {
       var demo = (state.inbox && state.inbox.demo) || (state.votes && state.votes.demo)
         || (state.members && state.members.demo)
-        || (state.leaderboard && state.leaderboard.demo);
+        || (state.leaderboard && state.leaderboard.demo)
+        || (state.saved && state.saved.demo);
       document.getElementById('demo-banner').className = demo
         ? 'mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300'
         : 'hidden';
@@ -4497,6 +4647,24 @@
       }
       var html = '';
       for (var i = 0; i < rows.length; i++) html += watchRow(rows[i]);
+      return html;
+    }
+
+    // The Saved tab: this user's bookmarked proposals, newest save first.
+    // Same states as the Watchlist: error, skeletons, and a friendly empty
+    // state pointing back at the Inbox.
+    function renderSaved() {
+      if (state.errorSaved) return errorHtml(state.errorSaved);
+      if (!state.saved || state.loadingSaved && !state.saved.rows) return skeletons();
+      var rows = state.saved.rows || [];
+      if (!rows.length) {
+        return emptyHtml(
+          'Nothing saved yet',
+          'Bookmark proposals in the Inbox to find them here.',
+          BROWSE_CTA);
+      }
+      var html = '';
+      for (var i = 0; i < rows.length; i++) html += savedRow(rows[i]);
       return html;
     }
 
@@ -5369,6 +5537,37 @@
       el.hidden = false;
     }
 
+    // One-line summary under the header on the Saved tab, from the loaded
+    // rows (no extra request): how many are bookmarked and how many are
+    // already merged or closed (worth revisiting or clearing).
+    function renderSavedSummary() {
+      var el = document.getElementById('saved-summary');
+      if (!el) return;
+      var rows = state.saved && state.saved.rows;
+      var total = rows ? rows.length : 0;
+      // Same zero rule as the inbox and votes summaries.
+      if (state.tab !== 'saved' || state.membersView || state.errorSaved
+        || !state.saved) {
+        el.hidden = true;
+        return;
+      }
+      var settled = 0;
+      var seen = {};
+      if (state.inbox && state.inbox.proposals) {
+        for (var i = 0; i < state.inbox.proposals.length; i++) {
+          seen[state.inbox.proposals[i].sessionId] = state.inbox.proposals[i].status;
+        }
+      }
+      for (var j = 0; j < rows.length; j++) {
+        // Rows carry a status when the server knows one; the loaded inbox
+        // fills in the rest (no extra platform calls).
+        var st = rows[j].status || seen[rows[j].sessionId];
+        if (st === 'merged' || st === 'closed') settled++;
+      }
+      el.textContent = total + ' saved, ' + settled + ' settled';
+      el.hidden = false;
+    }
+
     // One-line summary under the header while the Members directory is open,
     // computed from the loaded roster (no extra request). Without a search
     // it reads "N members · M active this week"; with one it narrows to
@@ -5432,6 +5631,7 @@
       renderShareImagePanel();
       renderDigest();
       renderWatchlistSummary();
+      renderSavedSummary();
       renderMembersSummary();
       var viewHtml;
       if (state.membersView) {
@@ -5455,6 +5655,8 @@
         }
       } else if (state.tab === 'votes') {
         viewHtml = renderVotes();
+      } else if (state.tab === 'saved') {
+        viewHtml = renderSaved();
       } else if (state.tab === 'leaderboard') {
         viewHtml = renderLeaderboard();
       } else {
@@ -6232,6 +6434,12 @@
         if (CELEB) query.push('celeb=1');
         if (CELEBVOTE) query.push('celebvote=' + encodeURIComponent(CELEBVOTE));
         if (CELEB_CLEAR) query.push('celeb-clear=1');
+        // Bookmark fixture knobs: the display-only preset, the per-user
+        // fixture and the saved-set marker page (that one has nothing to
+        // forward itself, but its ?saved-mine= reader lives on the Saved
+        // tab, not here). Never sent without demo data.
+        if (PRESET_BOOKMARK) query.push('preset-bookmark=' + encodeURIComponent(PRESET_BOOKMARK));
+        if (DEMO && params.get('saved-other') === '1') query.push('saved-other=1');
       }
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
@@ -6267,6 +6475,8 @@
           maybeAutoOpenTagFilter();
           maybeTapTag();
           maybeTapStar();
+          maybeTapBookmark();
+          maybeTapUnbookmark();
           maybeTapSnooze();
           maybeSetSnooze();
           maybeTapUnsnooze();
@@ -6350,6 +6560,7 @@
       if (state.membersView) return loadMembers(true);
       return state.tab === 'inbox' ? loadInbox(true)
         : state.tab === 'votes' ? loadVotes(true)
+        : state.tab === 'saved' ? loadSaved(true)
         : state.tab === 'leaderboard' ? loadLeaderboard(true)
         : loadWatchlist(true);
     }
@@ -6409,6 +6620,7 @@
       render();
       window.scrollTo(0, 0);
       if (state.tab === 'votes') loadVotes(!state.votes);
+      else if (state.tab === 'saved') loadSaved(!state.saved);
       else if (state.tab === 'watchlist') loadWatchlist(!state.watchlist);
       else if (state.tab === 'leaderboard') loadLeaderboard(!state.leaderboard);
       else loadInbox(!state.inbox);
@@ -6497,6 +6709,41 @@
           if (state.queuedWatchlist) {
             state.queuedWatchlist = false;
             loadWatchlist(true);
+          }
+        });
+    }
+
+    // The Saved tab's data: this user's bookmarked rows. Same queued-refetch
+    // contract as the other tabs. Demo forwards the ?saved-mine= and
+    // ?saved-empty= knobs to the demo route; production ignores them.
+    function loadSaved(force) {
+      if (state.loadingSaved) {
+        if (force) state.queuedSaved = true;
+        return Promise.resolve();
+      }
+      state.loadingSaved = true;
+      state.errorSaved = null;
+      if (force) state.saved = null;
+      render();
+      var query = [];
+      if (DEMO) query.push('demo=1');
+      if (SAVED_MINE) query.push('saved-mine=' + encodeURIComponent(SAVED_MINE));
+      if (SAVED_EMPTY) query.push('saved-empty=1');
+      return api('/api/bookmarks' + (query.length ? '?' + query.join('&') : ''))
+        .then(function (data) {
+          state.saved = data;
+        })
+        .catch(function (err) {
+          state.errorSaved = err.message || 'Could not load your saved proposals.';
+        })
+        .then(function () {
+          state.loadingSaved = false;
+          render();
+          maybeTapBookmark();
+          maybeTapUnbookmark();
+          if (state.queuedSaved) {
+            state.queuedSaved = false;
+            loadSaved(true);
           }
         });
     }
@@ -6875,6 +7122,67 @@
       });
     }
 
+    // Bookmark / unbookmark from wherever the button sits: an inbox card or
+    // the detail's action bar. Optimistic in both directions, rolled back on
+    // failure; the save request carries the card's own fields so the server
+    // can store the row without a second lookup. Unbookmarking a Saved-row
+    // drops the row at once (the immediate-removal rule).
+    function toggleBookmark(sessionId) {
+      var r = null;
+      if (state.saved && state.saved.rows) {
+        var rows = state.saved.rows;
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].sessionId === sessionId) { r = rows[i]; break; }
+        }
+      }
+      var p = findProposal(sessionId);
+      if (!p && !r) return;
+      var pendingKey = 'bookmark:' + sessionId;
+      if (state.savedPending[pendingKey]) return;
+      // A row on the Saved tab is a bookmark by definition, even when the
+      // inbox card under it has not been stamped (demo fixture rows carry
+      // no stamp). Otherwise the card's own state decides.
+      var wasBookmarked = r ? true : !!p.myBookmark;
+      var from = p || r;
+      var rowIdx = r ? state.saved.rows.indexOf(r) : -1;
+      var payload = {
+        sessionId: sessionId,
+        appSlug: from.appSlug,
+        appName: from.appName,
+        title: from.title,
+        proposalId: from.proposalId,
+        demo: !!((p && state.inbox && state.inbox.demo)
+          || (state.saved && state.saved.demo)),
+      };
+      state.savedPending[pendingKey] = true;
+      var original = p ? !!p.myBookmark : null;
+      if (p) p.myBookmark = !wasBookmarked;
+      if (r) state.saved.rows.splice(rowIdx, 1);
+      render();
+      var request = wasBookmarked
+        ? api('/api/bookmarks/unsave', {
+            method: 'POST',
+            headers: headers({ 'content-type': 'application/json' }),
+            body: JSON.stringify({ sessionId: sessionId, demo: payload.demo }),
+          })
+        : api('/api/bookmarks/save', {
+            method: 'POST',
+            headers: headers({ 'content-type': 'application/json' }),
+            body: JSON.stringify(payload),
+          });
+      request.then(function () {
+        toast(wasBookmarked ? 'Removed from Saved' : 'Saved to your list');
+      }).catch(function (err) {
+        // Roll the optimistic state back so the card/row shows the truth.
+        if (p) p.myBookmark = original === null ? wasBookmarked : original;
+        if (r && rowIdx >= 0) state.saved.rows.splice(rowIdx, 0, r);
+        toast('Could not update your saved list: ' + (err.message || 'try again'));
+      }).then(function () {
+        delete state.savedPending[pendingKey];
+        render();
+      });
+    }
+
     // ------------------------------------------------------------------
     // Snooze: tuck a proposal away until a wake date. The wake stamp is per
     // user and purely a view concern — it never touches the vote or the
@@ -7067,6 +7375,34 @@
         '[data-star-toggle][data-session="' + TAP_STAR + '"]');
       if (!btn) return;
       tapStarDone = true;
+      btn.click();
+    }
+
+    // Staging demo hook: ?demo=1&tap-bookmark=<sessionId> clicks that card's
+    // bookmark button once its list has rendered — the real button, through
+    // the real delegated click handler. Works on the Inbox and the Saved tab
+    // alike. Demo only; one-shot.
+    var tapBookmarkDone = false;
+    function maybeTapBookmark() {
+      if (!DEMO || !TAP_BOOKMARK || tapBookmarkDone) return;
+      var btn = document.querySelector(
+        '[data-bookmark-toggle][data-session="' + TAP_BOOKMARK + '"]');
+      if (!btn) return;
+      tapBookmarkDone = true;
+      btn.click();
+    }
+
+    // Staging demo hook: ?tap-unbookmark=<sessionId> with ?preset-bookmark=
+    // <same id> renders the card bookmarked and then taps its button, so the
+    // unsave direction runs through the real tap path with no stored row.
+    // Demo only; one-shot.
+    var tapUnbookmarkDone = false;
+    function maybeTapUnbookmark() {
+      if (!DEMO || !TAP_UNBOOKMARK || tapUnbookmarkDone) return;
+      var btn = document.querySelector(
+        '[data-bookmark-toggle][data-session="' + TAP_UNBOOKMARK + '"]');
+      if (!btn) return;
+      tapUnbookmarkDone = true;
       btn.click();
     }
 
@@ -7923,6 +8259,11 @@
         toggleStar(starBtn.getAttribute('data-session'));
         return;
       }
+      var bookmarkBtn = target.closest ? target.closest('[data-bookmark-toggle]') : null;
+      if (bookmarkBtn) {
+        toggleBookmark(bookmarkBtn.getAttribute('data-session'));
+        return;
+      }
       // The Snooze button opens (or closes) the little inline menu with the
       // one day and one week choices.
       var snoozeBtn = target.closest ? target.closest('[data-snooze-toggle]') : null;
@@ -8274,6 +8615,7 @@
         // and a tab switch used to keep the previous tab's scroll offset.
         window.scrollTo(0, 0);
         if (tab === 'votes') loadVotes(!state.votes);
+        else if (tab === 'saved') loadSaved(!state.saved);
         else if (tab === 'watchlist') loadWatchlist(!state.watchlist);
         else if (tab === 'leaderboard') loadLeaderboard(!state.leaderboard);
       });
@@ -8317,6 +8659,7 @@
     if (membersBox && state.memberQuery) membersBox.value = state.memberQuery;
     if (state.membersView) loadMembers(true);
     else if (state.tab === 'votes') loadVotes(true);
+    else if (state.tab === 'saved') loadSaved(true);
     else if (state.tab === 'watchlist') loadWatchlist(true);
     else if (state.tab === 'leaderboard') {
       bootBoardLoad = loadLeaderboard(true);
