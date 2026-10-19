@@ -118,6 +118,20 @@ user's vote history.
   button that returns the proposal immediately; unsnoozing the last one
   returns to the inbox, and an all-snoozed inbox gets its own empty
   state pointing at the filter.
+- App following: each app row in the app filter carries a star toggle
+  (aria-pressed); following an app (persisted in localStorage
+  `vote-inbox:follows`) adds it to the Following tab, which groups the
+  followed apps' open (non-merged) proposals per app with a summary line
+  ("N open, M votes needed" via `data-following-needed` / `data-following-apps`)
+  and a tab badge. Unfollowing removes the star and the app's group. An app
+  with no open proposals renders no group; a followed proposal counts as
+  needing a vote until it is voted or merged. The Inbox is untouched.
+  Following demo hooks (staging + `?demo=1` only): `?set-follow=<slug,slug>`
+  replaces the caller's followed set (reloads at `clear-set-follow=1`, the
+  same pattern as set-filter); `?clear-follows=1` empties it for that load;
+  `?tap-follow=<slug>` / `?tap-unfollow=<slug>` tap the star through the real
+  delegated handler (boot-time storage adjust makes the tap act from the
+  intended direction).
 - Snooze demo hooks (staging + `?demo=1` only): `?tap-snooze=<id>` opens
   that card's snooze menu; `?set-snooze=<id>&snooze-days=1|7` snoozes for
   real (a DB row for the signed-in account) then reloads at a
