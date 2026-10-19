@@ -1847,6 +1847,124 @@
       ]
     },
     {
+      "id": "searches.save-keeps-filters",
+      "name": "A saved search keeps the current query and app filter",
+      "path": "/?demo=1&seed-searches=none&q=weekly&set-filter=staging-demo-app&set-filter-name=Staging%20Demo%20App&savesearch=Filtered%20weekly",
+      "expectSelector": "[data-saved-search][data-search-name='Filtered weekly'][data-search-query='weekly'][data-search-app='staging-demo-app']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.chips-under-search",
+      "name": "Saved searches appear as chips under the search box",
+      "path": "/?demo=1&seed-searches=Weekly",
+      "expectSelector": "[data-search-row] + [data-saved-searches-row] [data-saved-search][data-search-name='Weekly']",
+      "expectText": "Weekly",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.apply-query",
+      "name": "Selecting a saved search re-applies its query",
+      "path": "/?demo=1&seed-searches=Weekly,All%20demo&tap-search=Weekly",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-2']):not(:has([data-proposal-card][data-session-id='demo-4'])) [data-saved-search][data-search-name='Weekly'] [data-saved-search-open][aria-pressed='true']",
+      "expectText": "Weekly",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.unread-count",
+      "name": "A saved search shows a count of new matches since last opened",
+      "path": "/?demo=1&seed-searches=Weekly",
+      "expectSelector": "[data-saved-search][data-search-name='Weekly'] [data-search-unread]",
+      "expectText": "1",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.open-clears-count",
+      "name": "Opening a saved search clears its count",
+      "path": "/?demo=1&seed-searches=All%20demo&tap-search=All%20demo",
+      "expectSelector": "body:not(:has([data-saved-search][data-search-name='All demo'] [data-search-unread])) [data-saved-search][data-search-name='All demo'] [data-saved-search-open][aria-pressed='true']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.delete",
+      "name": "Deleting a saved search removes its chip, keeps the others",
+      "path": "/?demo=1&seed-searches=Weekly,All%20demo&delsearch=Weekly",
+      "expectSelector": "body:not(:has([data-saved-search][data-search-name='Weekly'])) [data-saved-search][data-search-name='All demo']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.survive-reload",
+      "name": "Saved searches survive a reload",
+      "path": "/?demo=1&seed-searches=none&q=export&savesearch=Exports&search-reload=1",
+      "expectSelector": "[data-saved-search][data-search-name='Exports'][data-search-query='export']",
+      "expectText": "Exports",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.empty-name-fallback",
+      "name": "An empty saved name falls back to the search text",
+      "path": "/?demo=1&seed-searches=none&q=tag%20colours&savesearch=",
+      "expectSelector": "[data-saved-search][data-search-name='tag colours']",
+      "expectText": "tag colours",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.no-duplicate",
+      "name": "A saved name is not created twice",
+      "path": "/?demo=1&seed-searches=Weekly&q=export&savesearch=Weekly",
+      "expectSelector": "body:not(:has([data-saved-search][data-search-name='Weekly'] ~ [data-saved-search][data-search-name='Weekly'])) [data-saved-search][data-search-name='Weekly'][data-search-query='weekly']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.count-ignores-read",
+      "name": "The count ignores proposals already read or voted",
+      "path": "/?demo=1&seed-searches=All%20demo",
+      "expectSelector": "[data-saved-search][data-search-name='All demo'] [data-search-unread]",
+      "expectText": "3",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "compare.clear-bar",
       "name": "Clear on the compare bar empties the selection",
       "path": "/?demo=1&pick=demo-1&tap-clear=1",
