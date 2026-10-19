@@ -279,6 +279,66 @@ function neededFirst(a, b) {
   return a.title.localeCompare(b.title);
 }
 
+// The proposal's impact preview, when the platform sends one: an optional
+// object under any of the usual spellings, normalised to one shape for the
+// detail screen's impact panel. Every field is optional and independent —
+// the panel labels whatever is missing "Unknown" rather than guessing.
+// Values are capped (same reasoning as the 50-voter cap) so a large
+// payload cannot bloat the inbox response. Returns null when the response
+// carries nothing usable, so the panel renders an all-Unknown record.
+function normalizeImpact(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const str = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 4000) : null);
+  // Apps touched: an array of names, or a bare count when the platform
+  // sends a number instead of the list.
+  const rawApps = [raw.apps, raw.apps_affected, raw.appsAffected, raw.apps_touched, raw.appsTouched]
+    .find((v) => Array.isArray(v) || (Number.isInteger(v) && v >= 0));
+  let apps = null;
+  let appsCount = null;
+  if (Array.isArray(rawApps)) {
+    apps = rawApps.map((n) => (typeof n === 'string' ? n.trim() : ''))
+      .filter(Boolean).slice(0, 20);
+    if (!apps.length) apps = null;
+  } else if (typeof rawApps === 'number') {
+    appsCount = rawApps;
+  }
+  const members = [raw.members, raw.members_affected, raw.membersAffected,
+    raw.members_touched, raw.membersTouched]
+    .find((v) => Number.isInteger(v) && v >= 0) ?? null;
+  const targetRelease = str(raw.target_release) ?? str(raw.targetRelease)
+    ?? str(raw.release) ?? str(raw.target);
+  // Automated checks: entries are either plain name strings or objects
+  // carrying a name plus a result. A result that is neither passed nor
+  // failed (or absent) normalises to state null — the panel then shows the
+  // row without a tick rather than a wrong verdict.
+  const rawChecks = [raw.checks, raw.automated_checks, raw.automatedChecks,
+    raw.check_list, raw.checkList]
+    .find(Array.isArray) || null;
+  const checks = rawChecks === null ? null : rawChecks.slice(0, 30)
+    .map((c) => {
+      if (typeof c === 'string' && c.trim()) return { name: c.trim(), state: null };
+      if (!c || typeof c !== 'object') return null;
+      const name = [c.name, c.title, c.label]
+        .find((v) => typeof v === 'string' && v.trim());
+      if (!name) return null;
+      const passed = c.passed === true || c.ok === true
+        || c.state === 'passed' || c.status === 'passed';
+      const failed = c.passed === false || c.ok === false
+        || c.state === 'failed' || c.status === 'failed';
+      return { name: name.trim().slice(0, 200), state: passed ? 'passed' : failed ? 'failed' : null };
+    })
+    .filter(Boolean);
+  const summary = str(raw.plain_summary) ?? str(raw.plainSummary)
+    ?? str(raw.what_changes) ?? str(raw.whatChanges)
+    ?? str(raw.user_summary) ?? str(raw.userSummary)
+    ?? str(raw.summary);
+  if (apps === null && appsCount === null && members === null
+      && targetRelease === null && checks === null && summary === null) {
+    return null;
+  }
+  return { apps, appsCount, members, targetRelease, checks, summary };
+}
+
 function normalizeProposal(raw, appItem) {
   if (!raw || typeof raw !== 'object') return null;
   const sessionId = raw.session_id ?? raw.sessionId
@@ -335,6 +395,9 @@ function normalizeProposal(raw, appItem) {
     .find((v) => (Number.isInteger(v) && v >= 0) || Array.isArray(v));
   const filesChanged = rawFiles === undefined ? null
     : Array.isArray(rawFiles) ? rawFiles.length : rawFiles;
+  // The impact preview for the detail screen's panel: null when the
+  // platform sent none, so the panel labels every field Unknown.
+  const impact = normalizeImpact(raw.impact ?? raw.impact_preview ?? raw.impactPreview);
   return {
     sessionId: String(sessionId),
     proposalId,
@@ -354,6 +417,7 @@ function normalizeProposal(raw, appItem) {
     yesVoters,
     summary,
     filesChanged,
+    impact,
     needed: required != null ? Math.max(0, required - yes) : null,
   };
 }
@@ -796,10 +860,57 @@ function demoInbox() {
     'demo-6': { summary: null, filesChanged: 3 },
     'demo-5': { summary: null, filesChanged: null },
   };
+  // Impact records for the detail screen's impact panel (demo only), raw
+  // platform spellings, normalised on stamp. Text keeps the obviously fake
+  // "Staging demo" prefix.
+  const DEMO_IMPACT = {
+    'demo-4': {
+      apps_affected: ['Staging Demo Notes', 'Staging Demo Archive'],
+      members_affected: 5,
+      target_release: 'Staging demo build 2.4',
+      automated_checks: [
+        { name: 'Staging demo check: detail loads', status: 'passed' },
+        { name: 'Staging demo check: thread replies', status: 'passed' },
+        { name: 'Staging demo check: export runs', status: 'failed' },
+      ],
+      plain_summary: 'Staging demo impact: keyboard shortcuts land on every list screen at once, so the keys people already use keep working while the new panel keys arrive alongside them.',
+    },
+    'demo-2': {
+      apps: ['Staging Demo App'],
+      members: 3,
+      targetRelease: 'Staging demo build 2.5',
+      checks: [{ name: 'Staging demo check: inbox loads', passed: true }],
+      summary: 'Staging demo impact: the weekly email goes out to the whole group the morning after this merges, and anyone can turn it off in settings from that day on.',
+    },
+    'demo-5': {
+      apps_affected: ['Staging Demo Notes'],
+      members_affected: 4,
+      target_release: 'Staging demo build 2.3',
+      automated_checks: [
+        { name: 'Staging demo check: notes pin', status: 'passed' },
+      ],
+      plain_summary: 'Staging demo impact: pinned notes move to the top of every list, which is live for the whole group now that this has merged.',
+    },
+    'demo-6': {
+      automated_checks: [
+        { name: 'Staging demo check: tag colours', status: 'passed' },
+      ],
+    },
+  };
   for (const p of proposals) {
     const s = DEMO_CHANGE_SUMMARIES[p.sessionId] || {};
     p.summary = s.summary != null ? s.summary : null;
     p.filesChanged = s.filesChanged != null ? s.filesChanged : null;
+    // Impact records for the detail screen's impact panel (demo only), in
+    // the raw platform spellings and pushed through normalizeImpact so the
+    // demo payload takes the same shape production produces. Coverage: full
+    // record with a mixed pass/fail checks list (demo-4), a full record
+    // (demo-2), the merged proposal's read-only record (demo-5), and a
+    // partial record where apps/members/release/summary are missing so the
+    // panel's Unknown labels are observable (demo-6). demo-1 and demo-3
+    // carry none at all, like most production responses today.
+    const imp = DEMO_IMPACT[p.sessionId];
+    p.impact = imp ? normalizeImpact(imp) : null;
   }
   return { demo: true, apps, proposals, refreshedAt: new Date().toISOString() };
 }
