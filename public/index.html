@@ -626,6 +626,27 @@
     var FINISH_TOUR = DEMO && params.get('finish-tour') === '1';
     var SKIP_TOUR = DEMO && params.get('skip-tour') === '1';
     var TAP_TOUR_OPEN = DEMO && params.get('tap-tour-open') === '1';
+    // Density hooks (demo only), through the REAL controls:
+    //   ?tap-menu=1           opens the header menu once after render, so a
+    //                         check can assert the Density rows and their
+    //                         previews while the menu is open
+    //   ?tap-density=<value>  opens the menu and taps that option (the real
+    //                         click path, so storage is written the way a
+    //                         person's tap writes it), then reloads at a
+    //                         ?density-set=<value> marker whose load renders
+    //                         from the persisted preference — and whose
+    //                         clear-set-density cleanup empties it again, so
+    //                         check runs don't leak the choice into later
+    //                         routes (the same pattern as set-tag)
+    //   ?density-fit=1        stamps the fit markers on <body>: the first
+    //                         card's height and padding measured at both
+    //                         densities, and every card's fit inside a 390px
+    //                         probe (phone width)
+    // ?density=<value> and ?density-clear=1 are the one-load override and
+    // forced-default described at the preference above.
+    var TAP_MENU = DEMO && params.get('tap-menu') === '1';
+    var TAP_DENSITY = DEMO ? (params.get('tap-density') || '') : '';
+    var DENSITY_FIT = DEMO && params.get('density-fit') === '1';
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes'
@@ -962,6 +983,62 @@
     function isRead(p) {
       return p.read === true;
     }
+
+    // ------------------------------------------------------------------
+    // Density preference: how tall the Inbox and My Votes cards are.
+    // Comfortable (the default) keeps today's padding and shows the
+    // change-summary row; Compact tightens card padding and hides that
+    // description preview, so more proposals fit per screen. Persists in
+    // localStorage so the choice survives reloads, and ?density=comfortable|
+    // compact overrides it for one load (used by the staging checks)
+    // without writing back — the same shape as the hide-voted preference.
+    // ------------------------------------------------------------------
+
+    var DENSITY_KEY = 'vote-inbox:density';
+    var DENSITY_VALUES = ['comfortable', 'compact'];
+
+    function loadDensity() {
+      try {
+        var v = localStorage.getItem(DENSITY_KEY);
+        return DENSITY_VALUES.indexOf(v) !== -1 ? v : 'comfortable';
+      } catch (e) { return 'comfortable'; }
+    }
+
+    function saveDensity(v) {
+      try {
+        if (DENSITY_VALUES.indexOf(v) !== -1) localStorage.setItem(DENSITY_KEY, v);
+        else localStorage.removeItem(DENSITY_KEY);
+      } catch (e) { /* not persistable here */ }
+    }
+
+    state.density = loadDensity();
+
+    // One-load cleanup for the set-density hook below: the reloaded page
+    // has restored the preference into state, then empties it again, so
+    // the hook leaves storage the way it found it (the same reasoning as
+    // clear-set-filter above).
+    if (params.get('clear-set-density') === '1') saveDensity(null);
+
+    // Staging-check fixture: ?density-clear=1 empties the stored density
+    // and loads with the default, so a check can assert Comfortable with
+    // no stored value (a check run shares one browser profile across
+    // routes; earlier routes must not decide what the default looks like).
+    if (DEMO && params.get('density-clear') === '1') {
+      saveDensity(null);
+      state.density = 'comfortable';
+    }
+
+    // ?density=<value> overrides for one load without writing back.
+    var densityParam = DEMO ? params.get('density') : '';
+    if (DENSITY_VALUES.indexOf(densityParam) !== -1) state.density = densityParam;
+
+    function setDensity(v) {
+      state.density = v;
+      saveDensity(v);
+      render();
+    }
+
+    // ------------------------------------------------------------------
 
     // ------------------------------------------------------------------
     // Sort order preference. Same shape as the hide-voted preference:
@@ -2293,9 +2370,41 @@
     }
 
     var CARD_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
+    // Compact density: tighter padding and spacing, so more proposals fit
+    // per screen. Only the Inbox cards and My Votes rows use it (the
+    // density preference's own scope); every other CARD_CLASS consumer
+    // keeps the comfortable layout.
+    var CARD_COMPACT_CLASS = 'flex flex-col gap-1.5 rounded-2xl border border-zinc-200 bg-white p-2.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
     // Selected card in select mode: the same card with the violet border the
     // active filter trigger and chip use, so a ticked card reads at a glance.
     var CARD_SELECTED_CLASS = 'flex flex-col gap-2.5 rounded-2xl border border-violet-500/70 bg-white p-4 shadow-sm dark:border-violet-500/70 dark:bg-zinc-900/70';
+    var CARD_SELECTED_COMPACT_CLASS = 'flex flex-col gap-1.5 rounded-2xl border border-violet-500/70 bg-white p-2.5 shadow-sm dark:border-violet-500/70 dark:bg-zinc-900/70';
+
+    // The card surface class the density preference governs: Inbox cards
+    // (and My Votes rows) at Comfortable or Compact. Whole literals above
+    // so the Tailwind compiler sees both spellings.
+    function densityCardClass(selected) {
+      if (state.density === 'compact') {
+        return selected ? CARD_SELECTED_COMPACT_CLASS : CARD_COMPACT_CLASS;
+      }
+      return selected ? CARD_SELECTED_CLASS : CARD_CLASS;
+    }
+
+    // The card's footer action row (author line + Star/Snooze/Discuss/
+    // Compare/Copy link). The labeled buttons cannot shrink, and together
+    // they are wider than a 390px card's content box, so Compact wraps the
+    // row instead of letting it overflow at phone width (Comfortable keeps
+    // the single-line row it has always had).
+    var CARD_FOOTER_ROW_CLASS = 'flex items-center justify-between gap-2';
+    var CARD_FOOTER_ROW_COMPACT_CLASS = 'flex flex-wrap items-center justify-between gap-x-2 gap-y-1';
+    var CARD_FOOTER_BTNS_CLASS = 'flex shrink-0 items-center gap-0.5';
+    var CARD_FOOTER_BTNS_COMPACT_CLASS = 'flex flex-wrap items-center gap-0.5';
+    function cardFooterRowClass() {
+      return state.density === 'compact' ? CARD_FOOTER_ROW_COMPACT_CLASS : CARD_FOOTER_ROW_CLASS;
+    }
+    function cardFooterBtnsClass() {
+      return state.density === 'compact' ? CARD_FOOTER_BTNS_COMPACT_CLASS : CARD_FOOTER_BTNS_CLASS;
+    }
 
     // Select-mode checkbox: an empty circle when unticked, a filled violet
     // circle with a check when ticked (same 24-grid check the filter rows
@@ -2783,6 +2892,10 @@
     }
 
     function changeSummaryRow(p) {
+      // Compact density hides the description preview: the row is the
+      // tallest optional part of a card, and dropping it is where the
+      // compact layout saves most of its space.
+      if (state.density === 'compact') return '';
       var summary = typeof p.summary === 'string' && p.summary.trim() ? p.summary : '';
       var count = typeof p.filesChanged === 'number' && Number.isFinite(p.filesChanged)
         && p.filesChanged >= 0 ? p.filesChanged : null;
@@ -2837,7 +2950,11 @@
         + (state.selectMode && !voted
           ? ' data-selected="' + (isSelected ? 'true' : 'false') + '"' : '')
         + ' data-contested="' + (contested ? 'true' : 'false') + '"'
-        + ' class="' + (isSelected ? CARD_SELECTED_CLASS : CARD_CLASS) + '">'
+        // data-density carries the layout a card rendered with, so the
+        // checks (and the density menu's own preview promise) can assert
+        // Comfortable vs Compact without comparing pixel values.
+        + ' data-density="' + (state.density === 'compact' ? 'compact' : 'comfortable') + '"'
+        + ' class="' + densityCardClass(isSelected) + '">'
         + '<div class="flex items-center justify-between gap-2">'
         + '<span class="flex min-w-0 items-center gap-1.5">'
         + selectBtn
@@ -2859,10 +2976,10 @@
         + voteBar(p)
         + voterAvatarRow(p)
         + voterNamesRow(p)
-        + '<div class="flex items-center justify-between gap-2">'
+        + '<div class="' + cardFooterRowClass() + '">'
         + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
-        + '<div class="flex shrink-0 items-center gap-0.5">'
+        + '<div class="' + cardFooterBtnsClass() + '">'
         + starToggleButton(p.sessionId, !!p.myStar, !!state.starPending['star:' + p.sessionId])
         + (!snoozed ? snoozeToggleButton(p.sessionId) : '')
         + discussButton(p)
@@ -3440,7 +3557,10 @@
         // The weekly digest's "matches the list" check reads this: rows
         // inside the current calendar week are marked.
         + (isThisWeek(v.created_at) ? ' data-this-week' : '')
-        + ' class="' + CARD_CLASS + '">'
+        // Same density the Inbox cards use; My Votes rows carry the marker
+        // so a check can assert the preference reached this tab too.
+        + ' data-density="' + (state.density === 'compact' ? 'compact' : 'comfortable') + '"'
+        + ' class="' + densityCardClass(false) + '">'
         + '<div class="flex items-start justify-between gap-2">'
         + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(v.title) + '</h2>'
         + '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ' + style[1] + '">' + style[0] + '</span>'
@@ -3805,24 +3925,96 @@
       window.scrollTo(0, 0);
     }
 
-    // The header's overflow menu. One item today ("Show the tour"); the
-    // hosted kit renders it as a menu, with a small fallback panel when the
-    // kit is unavailable (standalone).
+    // The header's overflow menu: the Density control (Comfortable and
+    // Compact, each with a small preview of the card spacing it gives) and
+    // "Show the tour". The hosted kit renders it as an anchored popover
+    // with custom content, with a small fallback panel when the kit is
+    // unavailable (standalone). Both paths render the same rows.
+    function densityPreviewHtml(kind) {
+      // A tiny card mock: Comfortable shows roomy padding and a clear gap
+      // between the two lines, Compact shows both tightened. Pure
+      // decoration; the row's label carries the meaning for screen readers.
+      if (kind === 'compact') {
+        return '<span data-density-preview="compact" aria-hidden="true" class="flex shrink-0 flex-col gap-0.5 rounded-md border border-zinc-300 bg-white p-1 dark:border-zinc-600 dark:bg-zinc-800">'
+          + '<span class="h-0.5 w-10 rounded bg-zinc-400 dark:bg-zinc-500"></span>'
+          + '<span class="h-0.5 w-6 rounded bg-zinc-300 dark:bg-zinc-600"></span>'
+          + '</span>';
+      }
+      return '<span data-density-preview="comfortable" aria-hidden="true" class="flex shrink-0 flex-col gap-1 rounded-md border border-zinc-300 bg-white p-1.5 dark:border-zinc-600 dark:bg-zinc-800">'
+        + '<span class="h-0.5 w-10 rounded bg-zinc-400 dark:bg-zinc-500"></span>'
+        + '<span class="h-0.5 w-6 rounded bg-zinc-300 dark:bg-zinc-600"></span>'
+        + '</span>';
+    }
+
+    function densityOptionHtml(kind) {
+      var label = kind === 'compact' ? 'Compact' : 'Comfortable';
+      var active = (state.density === 'compact') === (kind === 'compact');
+      return '<button type="button" data-density-option="' + kind + '"'
+        + ' aria-pressed="' + (active ? 'true' : 'false') + '"'
+        + ' class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800">'
+        + densityPreviewHtml(kind)
+        + '<span class="min-w-0 flex-1">'
+        + '<span class="block text-sm font-medium ' + (active ? 'text-violet-600 dark:text-violet-400' : 'text-zinc-700 dark:text-zinc-200') + '">' + label + '</span>'
+        + (active ? '<span class="block text-xs text-zinc-500 dark:text-zinc-400">Current</span>' : '')
+        + '</span>'
+        + (active
+          ? '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>'
+          : '')
+        + '</button>';
+    }
+
+    function headerMenuHtml() {
+      return '<div data-density-menu class="w-56 rounded-xl p-1">'
+        + '<p class="px-2 pb-0.5 pt-1.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Density</p>'
+        + densityOptionHtml('comfortable')
+        + densityOptionHtml('compact')
+        + '</div>'
+        + '<div class="my-1 h-px bg-zinc-200 dark:bg-zinc-800"></div>'
+        + '<button data-menu-item="tour" class="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">Show the tour</button>';
+    }
+
+    // Dismisses the open header menu, whichever path opened it. Set while
+    // the menu is open, cleared on close.
+    var closeHeaderMenu = null;
+
+    function closeHeaderMenuPanel() {
+      var panel = document.getElementById('menu-panel');
+      if (panel) panel.hidden = true;
+      var btn = document.getElementById('menu-btn');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+
     function openHeaderMenu() {
       var btn = document.getElementById('menu-btn');
       if (!btn) return;
-      if (window.unNative && unNative.menu) {
+      if (window.unNative && unNative.popover) {
         try {
-          // menu() resolves the chosen item (or null on dismiss); the
-          // action is taken on the resolution, so the behaviour does not
-          // depend on whether the kit runs item handlers itself.
-          unNative.menu({
-            anchorEl: btn,
-            items: [{ label: 'Show the tour' }],
-          }).then(function (item) {
-            btn.setAttribute('aria-expanded', 'false');
-            if (item && item.label === 'Show the tour') reopenTour();
+          var content = document.createElement('div');
+          content.innerHTML = headerMenuHtml();
+          content.addEventListener('click', function (event) {
+            var opt = event.target.closest ? event.target.closest('[data-density-option]') : null;
+            if (opt) {
+              setDensity(opt.getAttribute('data-density-option') === 'compact' ? 'compact' : 'comfortable');
+              if (closeHeaderMenu) closeHeaderMenu();
+              return;
+            }
+            var item = event.target.closest ? event.target.closest('[data-menu-item]') : null;
+            if (item && item.getAttribute('data-menu-item') === 'tour') {
+              if (closeHeaderMenu) closeHeaderMenu();
+              reopenTour();
+            }
           });
+          var handle = unNative.popover({
+            anchorEl: btn,
+            contentEl: content,
+            placement: 'bottom-end',
+            onDismiss: function () { closeHeaderMenu = null; btn.setAttribute('aria-expanded', 'false'); },
+          });
+          closeHeaderMenu = function () {
+            closeHeaderMenu = null;
+            try { handle.dismiss(); } catch (e) { /* already gone */ }
+            btn.setAttribute('aria-expanded', 'false');
+          };
           btn.setAttribute('aria-expanded', 'true');
           return;
         } catch (e) { /* fall through to the plain panel */ }
@@ -3835,7 +4027,7 @@
       var rect = btn.getBoundingClientRect();
       panel.style.top = (rect.bottom + 6) + 'px';
       panel.style.right = (window.innerWidth - rect.right) + 'px';
-      panel.innerHTML = '<button data-menu-item="tour" class="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">Show the tour</button>';
+      panel.innerHTML = headerMenuHtml();
       panel.hidden = false;
       btn.setAttribute('aria-expanded', 'true');
     }
@@ -5284,6 +5476,7 @@
       }
       enhanceTitles();
       updateLbPin();
+      if (DEMO) stampDensityBasic();
     }
 
     // ------------------------------------------------------------------
@@ -6082,6 +6275,9 @@
           maybeMarkAllRead();
           maybeOpenMerged();
           maybeTapHideRead();
+          maybeTapMenu();
+          maybeTapDensity();
+          maybeDensityFit();
           markCelebrationsShown();
           announceCelebrations();
           maybeCelebrationReload();
@@ -7455,6 +7651,102 @@
       });
     }
 
+    // Density markers the checks read, stamped on every demo render: which
+    // density the page rendered with, and whether any change-summary row
+    // (the description preview) is on screen.
+    function stampDensityBasic() {
+      if (!document.body) return;
+      document.body.setAttribute('data-density-applied',
+        state.density === 'compact' ? 'compact' : 'comfortable');
+      document.body.setAttribute('data-density-summary-visible',
+        document.querySelector('#view [data-change-summary]') ? '1' : '0');
+    }
+
+    // ?density-fit=1 (demo only): with a compact load rendered, measure the
+    // same card at both densities and every card's fit at phone width, and
+    // stamp the results on <body> so a check can assert them.
+    var densityFitDone = false;
+    function maybeDensityFit() {
+      if (!DEMO || !DENSITY_FIT || densityFitDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      var card = document.querySelector('#view [data-proposal-card]');
+      if (!card) return;
+      densityFitDone = true;
+      var compactH = card.offsetHeight;
+      var compactPad = parseFloat(getComputedStyle(card).paddingTop) || 0;
+      var proposal = findProposal(card.getAttribute('data-session-id'));
+      if (!proposal) return;
+      // The same card at Comfortable, built into a hidden probe box, so
+      // both numbers come from one run.
+      var prev = state.density;
+      state.density = 'comfortable';
+      var probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;left:-9999px;top:0;width:390px;visibility:hidden;pointer-events:none;';
+      probe.innerHTML = proposalCard(proposal);
+      document.body.appendChild(probe);
+      var comfortableCard = probe.querySelector('[data-proposal-card]');
+      var comfortableH = comfortableCard ? comfortableCard.offsetHeight : 0;
+      var comfortablePad = comfortableCard
+        ? (parseFloat(getComputedStyle(comfortableCard).paddingTop) || 0) : 0;
+      // Phone fit: every rendered card cloned into a 390px-wide box (a
+      // phone viewport's width); a card whose content is wider than its
+      // box would overflow there.
+      var overflow = false;
+      var fitProbe = document.createElement('div');
+      fitProbe.style.cssText = probe.style.cssText;
+      document.body.appendChild(fitProbe);
+      var cards = document.querySelectorAll('#view [data-proposal-card]');
+      for (var i = 0; i < cards.length; i++) {
+        fitProbe.innerHTML = '';
+        var clone = cards[i].cloneNode(true);
+        fitProbe.appendChild(clone);
+        if (clone.scrollWidth > clone.clientWidth + 1) overflow = true;
+      }
+      document.body.removeChild(fitProbe);
+      document.body.removeChild(probe);
+      state.density = prev;
+      document.body.setAttribute('data-density-card-h', String(compactH));
+      document.body.setAttribute('data-density-comfortable-card-h', String(comfortableH));
+      document.body.setAttribute('data-density-saves-space', comfortableH > compactH ? '1' : '0');
+      document.body.setAttribute('data-density-saves-pad', comfortablePad > compactPad ? '1' : '0');
+      document.body.setAttribute('data-density-phone-fit', overflow ? 'overflow' : 'ok');
+    }
+
+    // ?tap-menu=1 (demo only): opens the header menu once after render, the
+    // real click path, so the check asserts the open menu's Density rows.
+    var tapMenuDone = false;
+    function maybeTapMenu() {
+      if (!DEMO || !TAP_MENU || tapMenuDone) return;
+      if (state.errorInbox) return;
+      tapMenuDone = true;
+      waitFor('#menu-btn', function (btn) { btn.click(); });
+    }
+
+    // ?tap-density=<value> (demo only): opens the header menu and taps that
+    // option — the real click path, so the preference is written the way a
+    // person's tap writes it — then reloads at a ?density-set=<value>
+    // marker whose load renders from the persisted preference (and whose
+    // clear-set-density cleanup empties it again afterwards).
+    var tapDensityDone = false;
+    function maybeTapDensity() {
+      if (!DEMO || !TAP_DENSITY || tapDensityDone) return;
+      if (DENSITY_VALUES.indexOf(TAP_DENSITY) === -1 || state.errorInbox) return;
+      tapDensityDone = true;
+      waitFor('#menu-btn', function (btn) {
+        btn.click();
+        waitFor('[data-density-option="' + TAP_DENSITY + '"]', function (opt) {
+          opt.click();
+          setTimeout(function () {
+            var marker = new URL(location.href);
+            marker.searchParams.delete('tap-density');
+            marker.searchParams.set('density-set', TAP_DENSITY);
+            marker.searchParams.set('clear-set-density', '1');
+            location.replace(marker.toString());
+          }, 150);
+        });
+      });
+    }
+
     // Staging demo hooks for the compare flow, all demo-only, one-shot and
     // driven through the REAL controls (the delegated click handler), the
     // way ?tap-no=1 and ?tap-share= work:
@@ -7907,6 +8199,12 @@
       document.getElementById('menu-btn').setAttribute('aria-expanded', 'false');
     });
     document.getElementById('menu-panel').addEventListener('click', function (event) {
+      var opt = event.target.closest('[data-density-option]');
+      if (opt) {
+        setDensity(opt.getAttribute('data-density-option') === 'compact' ? 'compact' : 'comfortable');
+        closeHeaderMenuPanel();
+        return;
+      }
       var item = event.target.closest('[data-menu-item]');
       if (!item) return;
       var panel = document.getElementById('menu-panel');
