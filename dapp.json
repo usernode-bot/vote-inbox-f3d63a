@@ -2832,10 +2832,122 @@
       ]
     },
     {
+      "id": "detail.card-tap",
+      "name": "Card tap opens the detail view",
+      "path": "/?demo=1&tap-card=1",
+      "expectSelector": "[data-proposal-detail][data-session-id='demo-2']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "celebrate.appears",
       "name": "A merge celebration card appears for a voted proposal that merged",
       "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
       "expectSelector": "[data-celebration][data-session-id='demo-3']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.deep-link",
+      "name": "Deep link opens the detail view directly",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-proposal-detail][data-session-id='demo-4']"
+    },
+    {
+      "id": "detail.ring-counts",
+      "name": "Vote ring shows needed count",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-vote-ring] [data-ring-needed]",
+      "expectText": "4 votes needed"
+    },
+    {
+      "id": "detail.ring-label",
+      "name": "Vote ring label shows yes-to-merge progress",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-ring-label]",
+      "expectText": "7 of 11 yes to merge"
+    },
+    {
+      "id": "detail.timeline-opened-first",
+      "name": "Timeline starts with the opened row",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "[data-timeline] li[data-timeline-event='opened'][data-timeline-index='1']"
+    },
+    {
+      "id": "detail.timeline-voter-rows",
+      "name": "Timeline lists yes voters with names",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-timeline][data-timeline-votes='7']",
+      "expectText": "Tom (demo)"
+    },
+    {
+      "id": "detail.timeline-relative-date",
+      "name": "Timeline vote rows show relative dates",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-timeline-event='vote'][data-timeline-voter='staging-demo-sara'] [data-timeline-time]",
+      "expectText": "2h ago"
+    },
+    {
+      "id": "detail.timeline-merged",
+      "name": "Timeline shows the merged row",
+      "path": "/?demo=1&proposal=demo-5",
+      "expectSelector": "[data-timeline-event='merged']",
+      "expectText": "2d ago"
+    },
+    {
+      "id": "detail.full-description",
+      "name": "Detail shows the full description",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-proposal-description]",
+      "expectText": "every shortcut can be turned off in settings"
+    },
+    {
+      "id": "detail.description-fallback",
+      "name": "Empty description falls back to the title",
+      "path": "/?demo=1&proposal=demo-5",
+      "expectSelector": "[data-proposal-description][data-description-fallback='1']",
+      "expectText": "pinned notes"
+    },
+    {
+      "id": "detail.author-app",
+      "name": "Detail shows the author and app name",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "body:has([data-detail-app='Staging Demo Notes']) [data-detail-author]",
+      "expectText": "@staging-demo-user"
+    },
+    {
+      "id": "detail.related-same-app",
+      "name": "Related strip lists same-app open proposals",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "[data-related-proposals] [data-open-detail][data-session='demo-1']",
+      "expectText": "More from Staging Demo App"
+    },
+    {
+      "id": "detail.related-apps-only",
+      "name": "Related strip excludes other apps",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "body:has([data-related-proposals] [data-open-detail][data-session='demo-3']):not(:has([data-related-proposals] [data-open-detail][data-session='demo-4']))"
+    },
+    {
+      "id": "detail.related-hidden",
+      "name": "Related strip hides when none exist",
+      "path": "/?demo=1&proposal=demo-2&allmerged=1",
+      "expectSelector": "body:not(:has([data-related-proposals]))",
+      "expectText": "weekly summary email"
+    },
+    {
+      "id": "detail.sticky-bar-scroll",
+      "name": "Action bar stays reachable while scrolling",
+      "path": "/?demo=1&proposal=demo-4&scroll-detail=1",
+      "expectSelector": "[data-detail-actions][data-sticky-observed='1'] [data-vote='yes']",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -2901,6 +3013,31 @@
         "server.js",
         "dapp.json"
       ]
+    },
+    {
+      "id": "detail.share-sheet",
+      "name": "Share button keeps the native sheet mode",
+      "path": "/?demo=1&proposal=demo-2&share=sheet",
+      "expectSelector": "[data-detail-actions] [data-share-link][data-share-mode='sheet']",
+      "expectText": "Share"
+    },
+    {
+      "id": "detail.back-scroll",
+      "name": "Back returns to the inbox at the same scroll",
+      "path": "/?demo=1&tap-back=1",
+      "expectSelector": "body[data-inbox-scroll='400']"
+    },
+    {
+      "id": "detail.voted-state",
+      "name": "Voted proposal shows the pill and disables voting",
+      "path": "/?demo=1&proposal=demo-1",
+      "expectSelector": "[data-detail-actions]:has([data-voted-pill]):has([data-vote='yes'][disabled]):has([data-vote='no'][disabled])"
+    },
+    {
+      "id": "detail.keyboard",
+      "name": "Detail actions are keyboard buttons",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "body:has([data-proposal-detail] > button[data-action='close-detail']) [data-detail-actions] button[data-vote='yes']"
     },
     {
       "id": "celebrate.see-merged",

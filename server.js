@@ -368,17 +368,21 @@ function normalizeProposal(raw, appItem) {
   // The proposal's yes voters, when the platform response names them: an
   // optional field under any of the usual spellings, entries either plain
   // username strings or objects carrying a username. Normalised to
-  // { username, name } for the cards' avatar row; null when the response
-  // carries no usable list (the row simply does not render then). Capped to
-  // keep a pathological payload from bloating the inbox response.
+  // { username, name, votedAt } for the cards' avatar row and the detail
+  // screen's timeline (votedAt is the optional per-vote timestamp, '' when
+  // the response carries none); null when the response carries no usable
+  // list (the row simply does not render then). Capped to keep a
+  // pathological payload from bloating the inbox response.
   const rawVoters = [raw.yes_voters, raw.yesVoters, raw.voters_for, raw.votersFor]
     .find(Array.isArray) || null;
   const yesVoters = rawVoters === null ? null : rawVoters
     .map((v) => {
-      if (typeof v === 'string') return { username: v.trim(), name: '' };
+      if (typeof v === 'string') return { username: v.trim(), name: '', votedAt: '' };
       if (v && typeof v === 'object' && typeof v.username === 'string') {
         const name = typeof v.name === 'string' ? v.name.trim() : '';
-        return { username: v.username.trim(), name };
+        const votedAt = [v.voted_at, v.votedAt]
+          .find((t) => typeof t === 'string' && t) || '';
+        return { username: v.username.trim(), name, votedAt };
       }
       return null;
     })
@@ -890,11 +894,19 @@ function demoInbox() {
     // landing on it sees the "Show all apps" empty state of a real filter.
     { slug: 'staging-demo-archive', name: 'Staging Demo Archive', icon: '🗄️' },
   ];
-  // Fake yes-voter identities for the cards' avatar row; "(demo)" in the
-  // display name keeps them obviously made up, matching the seed rules.
-  const voter = (u) => ({
+  // Fake yes-voter identities for the cards' avatar row and the detail
+  // screen's timeline; "(demo)" in the display name keeps them obviously
+  // made up, matching the seed rules. `agoMs` optionally stamps when the
+  // vote was cast (ms ago), for the timeline's relative "2h ago" label;
+  // ages are chosen mid-bucket (2.5h, 1.5d) so relTime's output never
+  // changes across an hourly or daily bucket boundary, and are NOT
+  // midnight-capped: a vote row's age crossing into yesterday only moves
+  // "2h ago" to "3h ago" for a few hours, never breaks a check (checks read
+  // demo-4's rows, whose ages stay inside today at any hour).
+  const voter = (u, agoMs) => ({
     username: 'staging-demo-' + u.toLowerCase(),
     name: u + ' (demo)',
+    votedAt: agoMs != null ? new Date(Date.now() - agoMs).toISOString() : '',
   });
   // `anchor` is a demo hint the frontend uses to re-place the fixture on the
   // viewer's own calendar (see reanchorDemo in public/index.html): days back
@@ -945,9 +957,10 @@ function demoInbox() {
   // Two of the six are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
   // null (an open proposal, Voting), 'merging' and 'merged'. demo-5 is the
-  // one merged proposal, and it merged 2 days ago (within the week) so the
-  // app filter's merged-this-week count is nonzero for its app while the
-  // other app reads 0. demo-4 carries
+  // one merged proposal, and it merged 2.5 days ago (within the week, and
+  // mid-bucket so the detail timeline's "2d ago" merged label never shifts)
+  // so the app filter's merged-this-week count is nonzero for its app while
+  // the other app reads 0. demo-4 carries
   // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
   // avatar row shows its max-5-then-"+N" case in previews and checks, and a
   // deliberately long title (3+ rendered lines) so the expandable-title
@@ -960,13 +973,13 @@ function demoInbox() {
   // demo-4/demo-2/demo-1/demo-6. demo-1 and demo-6 each sit exactly one yes
   // vote from their threshold so the One vote away chip has something to show.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya', 2.5 * H)], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, Math.min(8 * H, todayCap()), null,
-      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }, null),
-    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }, null),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }, null),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }, 2 * D),
+      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map((u, i) => voter(u, (7.5 - i) * H)), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar', 1.75 * D), voter('Priya', 1.5 * D), voter('Quinn', 1.25 * D)], { days: 2 }, null),
+    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya', 0.9 * D), voter('Omar', 0.8 * D)], { days: 1 }, null),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya', 4.5 * D), voter('Priya', 3.5 * D), voter('Raul', 2.5 * D), voter('Sara', 1.5 * D)], { days: 5 }, null),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn', 7.5 * D), voter('Raul', 6.5 * D)], { days: 9 }, 2.5 * D),
   ];
   // Change summaries for the cards' one-line summary row (demo only). Keyed
   // by sessionId; every fixture not covered gets an explicit null pair so
