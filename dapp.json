@@ -2,7 +2,7 @@
   "description": "One inbox for all open proposals with vote counts. Vote fast, track mine.",
   "icon": {
     "image": "brand/icon.png",
-    "emoji": "\ud83d\udce5"
+    "emoji": "📥"
   },
   "secrets": [],
   "tests": [
@@ -538,7 +538,7 @@
       "name": "Proposal cards show proportional yes/no vote bar",
       "path": "/?demo=1",
       "expectSelector": "[data-vote-bar]",
-      "expectText": "Yes 1 \u00b7 No 0",
+      "expectText": "Yes 1 · No 0",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -1581,7 +1581,7 @@
       "id": "compare.counts",
       "name": "Compare columns show each proposal's vote counts",
       "path": "/?demo=1&compare=demo-1,demo-2",
-      "expectText": "Yes 3 \u00b7 No 1",
+      "expectText": "Yes 3 · No 1",
       "impact": [
         "public/index.html",
         "dapp.json"
@@ -2266,6 +2266,124 @@
         "dapp.json"
       ],
       "expectText": "12 files changed"
+    },
+    {
+      "id": "theme.menu-options",
+      "name": "Theme menu offers Light, Dark and System",
+      "path": "/?demo=1&open-theme=1&theme-clear=1",
+      "expectSelector": "[data-theme-menu='open'] [data-theme-option='system']",
+      "expectText": "System"
+    },
+    {
+      "id": "theme.dark-applies",
+      "name": "Choosing Dark darkens the inbox",
+      "path": "/?demo=1&set-theme=dark",
+      "expectSelector": "html.dark[data-theme-resolved='dark']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "theme.light-applies",
+      "name": "Choosing Light returns the light look",
+      "path": "/?demo=1&set-theme=light",
+      "expectSelector": "html[data-theme-resolved='light']:not(.dark)"
+    },
+    {
+      "id": "theme.system-follows-os-dark",
+      "name": "System follows a dark OS preference",
+      "path": "/?demo=1&set-theme=system&theme-os=dark",
+      "expectSelector": "html.dark[data-theme-stored='system']"
+    },
+    {
+      "id": "theme.system-follows-os-light",
+      "name": "System follows a light OS preference",
+      "path": "/?demo=1&set-theme=system&theme-os=light",
+      "expectSelector": "html[data-theme-stored='system']:not(.dark)"
+    },
+    {
+      "id": "theme.persists-reload",
+      "name": "Chosen theme survives a reload",
+      "path": "/?demo=1&set-theme=dark&theme-reload=1",
+      "expectSelector": "html.dark[data-theme-stored='dark']"
+    },
+    {
+      "id": "theme.default-system",
+      "name": "First load with no stored choice uses the system setting",
+      "path": "/?demo=1&theme-clear=1&theme-os=dark",
+      "expectSelector": "html.dark[data-theme-stored='none']"
+    },
+    {
+      "id": "theme.contrast-dark",
+      "name": "Dark text contrast passes",
+      "path": "/?demo=1&set-theme=dark&theme-audit=1",
+      "expectSelector": "html[data-contrast-audit='pass']"
+    },
+    {
+      "id": "theme.contrast-light",
+      "name": "Light text contrast passes",
+      "path": "/?demo=1&set-theme=light&theme-audit=1",
+      "expectSelector": "html[data-contrast-audit='pass']"
+    },
+    {
+      "id": "theme.surface-dark",
+      "name": "Dark cards are distinguishable from the page",
+      "path": "/?demo=1&set-theme=dark&theme-audit=1",
+      "expectSelector": "html[data-surface-audit='pass']"
+    },
+    {
+      "id": "theme.progress-dark",
+      "name": "Dark progress bars stay readable",
+      "path": "/?demo=1&set-theme=dark&theme-audit=1",
+      "expectSelector": "html[data-progress-readable='pass']"
+    },
+    {
+      "id": "theme.chips-dark",
+      "name": "Dark status chips keep readable contrast",
+      "path": "/?demo=1&set-theme=dark&theme-audit=1",
+      "expectSelector": "html[data-chips-audit='pass']"
+    },
+    {
+      "id": "theme.chips-light",
+      "name": "Light status chips keep readable contrast",
+      "path": "/?demo=1&set-theme=light&theme-audit=1",
+      "expectSelector": "html[data-chips-audit='pass']"
+    },
+    {
+      "id": "theme.toast-dark",
+      "name": "Vote toast follows the dark theme",
+      "path": "/?demo=1&set-theme=dark&cast=demo-2:yes&theme-audit=1",
+      "expectSelector": "html[data-toast-audit='pass']"
+    },
+    {
+      "id": "theme.no-flash",
+      "name": "Theme applied before first paint, no light flash",
+      "path": "/?demo=1&set-theme=dark&theme-reload=1",
+      "expectSelector": "html[data-theme-applied='pre-paint'][data-theme-resolved='dark'][data-theme-stored='dark']"
+    },
+    {
+      "id": "theme.selected-state",
+      "name": "Theme menu shows the active option selected",
+      "path": "/?demo=1&open-theme=1&theme-clear=1&set-theme=dark",
+      "expectSelector": "[data-theme-menu='open'] [data-theme-option='dark'][aria-checked='true']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "theme.scroll-preserved",
+      "name": "Switching theme keeps the inbox scroll position",
+      "path": "/?demo=1&theme-clear=1&theme-os=light&theme-scroll=700&tap-theme=dark",
+      "expectSelector": "html[data-scroll-kept='1']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     }
   ]
 }
