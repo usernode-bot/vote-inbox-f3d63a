@@ -30,3 +30,14 @@
     animation: none;
   }
 }
+
+/* Section tabs: a horizontally scrollable row on narrow screens. The row
+ * scrolls by touch or trackpad, so the scrollbar itself is hidden.
+ */
+.tab-row {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.tab-row::-webkit-scrollbar {
+  display: none;
+}
