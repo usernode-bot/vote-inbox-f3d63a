@@ -368,17 +368,21 @@ function normalizeProposal(raw, appItem) {
   // The proposal's yes voters, when the platform response names them: an
   // optional field under any of the usual spellings, entries either plain
   // username strings or objects carrying a username. Normalised to
-  // { username, name } for the cards' avatar row; null when the response
-  // carries no usable list (the row simply does not render then). Capped to
-  // keep a pathological payload from bloating the inbox response.
+  // { username, name, votedAt } for the cards' avatar row and the detail
+  // screen's timeline (votedAt is the optional per-vote timestamp, '' when
+  // the response carries none); null when the response carries no usable
+  // list (the row simply does not render then). Capped to keep a
+  // pathological payload from bloating the inbox response.
   const rawVoters = [raw.yes_voters, raw.yesVoters, raw.voters_for, raw.votersFor]
     .find(Array.isArray) || null;
   const yesVoters = rawVoters === null ? null : rawVoters
     .map((v) => {
-      if (typeof v === 'string') return { username: v.trim(), name: '' };
+      if (typeof v === 'string') return { username: v.trim(), name: '', votedAt: '' };
       if (v && typeof v === 'object' && typeof v.username === 'string') {
         const name = typeof v.name === 'string' ? v.name.trim() : '';
-        return { username: v.username.trim(), name };
+        const votedAt = [v.voted_at, v.votedAt]
+          .find((t) => typeof t === 'string' && t) || '';
+        return { username: v.username.trim(), name, votedAt };
       }
       return null;
     })
@@ -616,6 +620,32 @@ async function migrate() {
     );
     COMMENT ON TABLE snoozes IS 'staging:private';
   `);
+  // Merge celebrations: one row per (user, proposal) the app should
+  // celebrate having merged. Like my_votes and snoozes this is one
+  // person's own tracking data, so it is staging:private, and it carries
+  // only what the card renders (title, app, the caller's choice) — the
+  // proposal itself stays on the platform. `shown` is set once the card
+  // has rendered (a celebration is a one-time card per proposal);
+  // `dismissed` is set when the user dismisses it. Both persist.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS merge_celebrations (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      choice VARCHAR(4) NOT NULL DEFAULT 'yes',
+      merged_at TIMESTAMPTZ,
+      shown BOOLEAN NOT NULL DEFAULT FALSE,
+      dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE merge_celebrations IS 'staging:private';
+  `);
 }
 
 async function seedStaging() {
@@ -737,6 +767,66 @@ async function withMySnoozes(proposals, userId) {
   return proposals;
 }
 
+// ---------------------------------------------------------------------------
+// Merge celebrations. When a proposal the caller voted on (through this app)
+// is now reported merged, a one-time celebration card shows at the top of
+// their inbox: the title, the app, and "you voted yes". Detection happens
+// wherever the caller's recorded votes meet the merge state (the inbox load,
+// and the demo fixtures behind ?celeb=1); `merged` must be recent, since a
+// merge first seen weeks later is history, not news. One row per (user,
+// proposal), created only once in production — the `reset` demo mode re-arms
+// the caller's rows so every check run starts from unseen cards.
+// ---------------------------------------------------------------------------
+
+const CELEBRATION_MERGE_WINDOW_MS = 7 * 24 * 3600 * 1000;
+
+async function syncMergeCelebrations(proposals, user, opts) {
+  const now = Date.now();
+  for (const p of proposals) {
+    if (!p.myVote || p.status !== 'merged' || !p.mergedAt) continue;
+    const merged = Date.parse(p.mergedAt);
+    if (!isFinite(merged) || now - merged > CELEBRATION_MERGE_WINDOW_MS) continue;
+    const conflict = opts && opts.reset
+      ? 'DO UPDATE SET shown = FALSE, dismissed = FALSE, choice = EXCLUDED.choice,'
+        + ' merged_at = EXCLUDED.merged_at, title = EXCLUDED.title'
+      : 'DO NOTHING';
+    try {
+      await pool.query(`
+        INSERT INTO merge_celebrations
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title, choice, merged_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (user_id, session_id) ${conflict}
+      `, [user.id, user.username, p.appSlug || '', p.appName || '', p.sessionId,
+          p.proposalId || null, p.title, p.myVote, p.mergedAt]);
+    } catch {
+      // Celebration bookkeeping never blocks the inbox.
+    }
+  }
+}
+
+// The caller's pending celebrations: not yet shown and not dismissed,
+// newest recorded first (so several merges stack newest on top).
+async function pendingCelebrations(userId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT app_slug, app_name, session_id, proposal_id, title, choice, merged_at
+       FROM merge_celebrations
+       WHERE user_id = $1 AND shown = FALSE AND dismissed = FALSE
+       ORDER BY id DESC`, [userId]);
+    return rows.map((r) => ({
+      sessionId: r.session_id,
+      proposalId: r.proposal_id,
+      appSlug: r.app_slug,
+      appName: r.app_name || r.app_slug,
+      title: r.title,
+      choice: r.choice,
+      mergedAt: r.merged_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // Status a row is on now, for the "since last look" badge. Current status
 // comes from the app's promoted list when the platform answers for it:
 // still listed means open ('voting', or the platform's own merging state),
@@ -804,11 +894,19 @@ function demoInbox() {
     // landing on it sees the "Show all apps" empty state of a real filter.
     { slug: 'staging-demo-archive', name: 'Staging Demo Archive', icon: '🗄️' },
   ];
-  // Fake yes-voter identities for the cards' avatar row; "(demo)" in the
-  // display name keeps them obviously made up, matching the seed rules.
-  const voter = (u) => ({
+  // Fake yes-voter identities for the cards' avatar row and the detail
+  // screen's timeline; "(demo)" in the display name keeps them obviously
+  // made up, matching the seed rules. `agoMs` optionally stamps when the
+  // vote was cast (ms ago), for the timeline's relative "2h ago" label;
+  // ages are chosen mid-bucket (2.5h, 1.5d) so relTime's output never
+  // changes across an hourly or daily bucket boundary, and are NOT
+  // midnight-capped: a vote row's age crossing into yesterday only moves
+  // "2h ago" to "3h ago" for a few hours, never breaks a check (checks read
+  // demo-4's rows, whose ages stay inside today at any hour).
+  const voter = (u, agoMs) => ({
     username: 'staging-demo-' + u.toLowerCase(),
     name: u + ' (demo)',
+    votedAt: agoMs != null ? new Date(Date.now() - agoMs).toISOString() : '',
   });
   // `anchor` is a demo hint the frontend uses to re-place the fixture on the
   // viewer's own calendar (see reanchorDemo in public/index.html): days back
@@ -859,9 +957,10 @@ function demoInbox() {
   // Two of the six are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
   // null (an open proposal, Voting), 'merging' and 'merged'. demo-5 is the
-  // one merged proposal, and it merged 2 days ago (within the week) so the
-  // app filter's merged-this-week count is nonzero for its app while the
-  // other app reads 0. demo-4 carries
+  // one merged proposal, and it merged 2.5 days ago (within the week, and
+  // mid-bucket so the detail timeline's "2d ago" merged label never shifts)
+  // so the app filter's merged-this-week count is nonzero for its app while
+  // the other app reads 0. demo-4 carries
   // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
   // avatar row shows its max-5-then-"+N" case in previews and checks, and a
   // deliberately long title (3+ rendered lines) so the expandable-title
@@ -874,13 +973,13 @@ function demoInbox() {
   // demo-4/demo-2/demo-1/demo-6. demo-1 and demo-6 each sit exactly one yes
   // vote from their threshold so the One vote away chip has something to show.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya', 2.5 * H)], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, Math.min(8 * H, todayCap()), null,
-      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }, null),
-    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }, null),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }, null),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }, 2 * D),
+      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map((u, i) => voter(u, (7.5 - i) * H)), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar', 1.75 * D), voter('Priya', 1.5 * D), voter('Quinn', 1.25 * D)], { days: 2 }, null),
+    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya', 0.9 * D), voter('Omar', 0.8 * D)], { days: 1 }, null),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya', 4.5 * D), voter('Priya', 3.5 * D), voter('Raul', 2.5 * D), voter('Sara', 1.5 * D)], { days: 5 }, null),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn', 7.5 * D), voter('Raul', 6.5 * D)], { days: 9 }, 2.5 * D),
   ];
   // Change summaries for the cards' one-line summary row (demo only). Keyed
   // by sessionId; every fixture not covered gets an explicit null pair so
@@ -1124,6 +1223,55 @@ async function applyDemoSnoozeFixtures(req) {
   }
 }
 
+// Celebration check fixtures (staging demo only), applied to a demo inbox
+// load only when the load opts in with ?celeb=1 — the marker the celebration
+// checks' pages and their reloaded marker pages carry, mirroring ?snooze=1 —
+// so a plain ?demo=1 load never shows or creates celebration cards:
+//   ?celebvote=<ids>  marks those fixture proposals as voted by the caller
+//                     (the fixture's own choice stands; unvoted ones become
+//                     yes) and merged, so the real detection path sees them;
+//                     the caller's rows for them are re-armed too, so every
+//                     check run starts from unseen cards no matter what an
+//                     earlier run left behind.
+//   ?celeb-clear=1    empties the caller's celebration rows first, so the
+//                     "absent for proposals the caller did not vote on"
+//                     check never sees leftovers from other checks.
+async function applyDemoCelebrationFixtures(req, proposals) {
+  if (req.query['celeb-clear'] === '1') {
+    await pool.query('DELETE FROM merge_celebrations WHERE user_id = $1', [req.user.id]);
+  }
+  const ids = String(req.query.celebvote || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!ids.length) return;
+  const byId = new Map(proposals.map((p) => [p.sessionId, p]));
+  for (const id of ids) {
+    const p = byId.get(id);
+    if (!p) continue;
+    if (!p.myVote) p.myVote = 'yes';
+    if (p.status !== 'merged') {
+      p.status = 'merged';
+      p.eta = null;
+      delete p.queuePos;
+      p.mergedAt = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    }
+  }
+}
+
+// Shared tail of both demo inbox branches: the caller's stars, plus — behind
+// the ?celeb=1 opt-in — the celebration fixtures, the real detection pass and
+// the caller's pending celebration cards. Without the opt-in the payload
+// stays celebration-free, the same determinism rule the snooze fixtures use.
+async function finishDemoInbox(req, demo) {
+  if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
+  await withMyStars(demo.proposals, req.user.id, req);
+  demo.celebrations = [];
+  if (req.query.celeb === '1') {
+    await applyDemoCelebrationFixtures(req, demo.proposals);
+    await syncMergeCelebrations(demo.proposals, req.user, { reset: true });
+    demo.celebrations = await pendingCelebrations(req.user.id);
+  }
+  return demo;
+}
+
 function demoVoteRows() {
   const row = (sessionId, appSlug, appName, title, choice, status, yes, no,
                required, at, mergedAt) => ({
@@ -1151,6 +1299,79 @@ function demoVoteRows() {
         daysAgo(2)),
     row('demo-v3', 'staging-demo-notes', 'Staging Demo Notes',
         'Staging demo proposal: pinned notes', 'yes', 'closed', 4, 2, 5, daysAgo(9)),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Weekly-digest fixtures (?demo=1&digest=week|quiet), staging only. Rows
+// carry a demo_anchor { weeksAgo, weekday } the frontend re-stamps to local
+// noon of that weekday (see reanchorDigestDemo), so the digest's week
+// buckets are deterministic relative to whenever the check runs. `week`
+// gives 6 votes this week (2 of them merged), 4 last week (1 merged), 1
+// two weeks ago and 1 four weeks ago: streak 3, "Up from 4 last week", and
+// top apps App, Notes, Archive (Extras loses the alphabetical tie at the
+// third slot). `quiet` gives nothing this week: streak 0 (the tile is left
+// out), "Down from 2 last week", every bar zero, "None merged yet". Without
+// ?digest= the default three demoVoteRows() are served, unchanged.
+// ---------------------------------------------------------------------------
+
+function demoDigestRows(kind) {
+  const row = (id, sessionId, appSlug, appName, title, choice, status,
+               yes, no, required, weeksAgo, weekday, merged) => ({
+    id,
+    app_slug: appSlug,
+    app_name: appName,
+    session_id: sessionId,
+    title,
+    choice,
+    status,
+    votes_for: yes,
+    votes_against: no,
+    votes_required: required,
+    created_at: new Date(0).toISOString(), // re-stamped client-side
+    updated_at: new Date(0).toISOString(),
+    merged_at: merged ? new Date(0).toISOString() : null,
+    demo_anchor: { weeksAgo, weekday },
+  });
+  if (kind === 'quiet') {
+    return [
+      row('dq-1', 'demo-q1', 'staging-demo-app', 'Staging Demo App',
+          'Staging demo proposal: digest quiet export', 'no', 'closed', 2, 3, 5, 1, 1),
+      row('dq-2', 'demo-q2', 'staging-demo-notes', 'Staging Demo Notes',
+          'Staging demo proposal: digest quiet themes', 'yes', 'voting', 4, 1, 5, 1, 3),
+      row('dq-3', 'demo-q3', 'staging-demo-archive', 'Staging Demo Archive',
+          'Staging demo proposal: digest quiet search', 'yes', 'closed', 5, 0, 5, 3, 2),
+    ];
+  }
+  return [
+    // This week: 6 votes, 2 merged (one in App, one in Notes).
+    row('dg-1', 'demo-w1', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest weekly recap', 'yes', 'voting', 3, 1, 5, 0, 0),
+    row('dg-2', 'demo-w2', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest custom themes', 'yes', 'merged', 6, 0, 5, 0, 1, true),
+    row('dg-3', 'demo-w3', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest pinned notes', 'yes', 'voting', 4, 2, 5, 0, 1),
+    row('dg-4', 'demo-w4', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest export button', 'yes', 'merged', 6, 0, 5, 0, 2, true),
+    row('dg-5', 'demo-w5', 'staging-demo-archive', 'Staging Demo Archive',
+        'Staging demo proposal: digest archive search', 'no', 'voting', 2, 3, 5, 0, 2),
+    row('dg-6', 'demo-w6', 'staging-demo-extras', 'Staging Demo Extras',
+        'Staging demo proposal: digest quiet hours', 'yes', 'voting', 4, 1, 5, 0, 3),
+    // Last week: 4 votes, 1 merged.
+    row('dg-7', 'demo-w7', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest rate limits', 'yes', 'voting', 3, 2, 5, 1, 1),
+    row('dg-8', 'demo-w8', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest inline comments', 'yes', 'merged', 6, 1, 5, 1, 2, true),
+    row('dg-9', 'demo-w9', 'staging-demo-archive', 'Staging Demo Archive',
+        'Staging demo proposal: digest bulk move', 'no', 'closed', 2, 4, 5, 1, 3),
+    row('dg-10', 'demo-w10', 'staging-demo-extras', 'Staging Demo Extras',
+        'Staging demo proposal: digest dark mode', 'yes', 'voting', 5, 1, 5, 1, 4),
+    // Two weeks ago: 1 vote. Three weeks ago: none, so the streak stops at 3.
+    row('dg-11', 'demo-w11', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest keyboard nav', 'yes', 'closed', 5, 0, 5, 2, 2),
+    // Four weeks ago: 1 vote.
+    row('dg-12', 'demo-w12', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest mobile layout', 'no', 'closed', 1, 4, 5, 4, 3),
   ];
 }
 
@@ -1278,8 +1499,7 @@ app.get('/api/inbox', async (req, res) => {
     if (req.query.demo === '1' && IS_STAGING) {
       const demo = demoInboxPayload(req);
       await applyDemoSnoozeFixtures(req);
-      if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
-      await withMyStars(demo.proposals, req.user.id, req);
+      await finishDemoInbox(req, demo);
       return res.json(demo);
     }
     if (!PLATFORM_ORIGIN) {
@@ -1288,8 +1508,7 @@ app.get('/api/inbox', async (req, res) => {
       if (IS_STAGING) {
         const demo = demoInboxPayload(req);
         await applyDemoSnoozeFixtures(req);
-        if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
-        await withMyStars(demo.proposals, req.user.id, req);
+        await finishDemoInbox(req, demo);
         return res.json(demo);
       }
       return res.status(500).json({ error: 'Platform origin is not configured' });
@@ -1328,6 +1547,11 @@ app.get('/api/inbox', async (req, res) => {
     // next to merge); voting and merged proposals are left unstamped.
     stampQueuePositions(proposals);
 
+    // Celebrations for proposals the caller voted on that are now merged:
+    // record the new ones (once), then return the caller's pending cards.
+    await syncMergeCelebrations(proposals, req.user);
+    const celebrations = await pendingCelebrations(req.user.id);
+
     const filterApps = [];
     const seen = new Set();
     for (const p of proposals) {
@@ -1341,6 +1565,7 @@ app.get('/api/inbox', async (req, res) => {
       demo: false,
       apps: filterApps,
       proposals,
+      celebrations,
       failures,
       totalApps: apps.length,
     });
@@ -1450,6 +1675,12 @@ app.get('/api/my-votes', async (req, res) => {
       // deterministic run to run. The caller's real history, including rows
       // the ?cast= demo hook persists for the vote → Undo check, is served
       // by the plain route below, not mixed in here.
+      const digestKind = req.query.digest;
+      if (digestKind === 'week' || digestKind === 'quiet') {
+        // Weekly-digest fixture variant (see demoDigestRows): rows spread
+        // across known weeks so the digest card's numbers are checkable.
+        return res.json({ demo: true, votes: demoDigestRows(digestKind) });
+      }
       return res.json({ demo: true, votes: demoVoteRows() });
     }
 
@@ -1895,6 +2126,43 @@ app.post('/api/unsnooze', async (req, res) => {
       'DELETE FROM snoozes WHERE user_id = $1 AND session_id = $2',
       [req.user.id, sessionId]);
     res.json({ ok: true, removed: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark celebration cards shown. The frontend calls this right after the
+// cards render, so each proposal's celebration is a one-time card: the next
+// inbox load no longer returns it. Only the caller's own rows are touched.
+app.post('/api/celebrations/shown', async (req, res) => {
+  const body = req.body || {};
+  const ids = Array.isArray(body.ids)
+    ? body.ids.map((s) => String(s)).filter(Boolean)
+    : [];
+  if (!ids.length) return res.json({ ok: true, updated: 0 });
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE merge_celebrations SET shown = TRUE WHERE user_id = $1 AND session_id = ANY($2)',
+      [req.user.id, ids]);
+    res.json({ ok: true, updated: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Dismiss one celebration: the card leaves the inbox now and the row is
+// marked dismissed, so the proposal never celebrates again.
+app.post('/api/celebrations/dismiss', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE merge_celebrations SET dismissed = TRUE, shown = TRUE WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, updated: rowCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
