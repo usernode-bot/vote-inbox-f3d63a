@@ -55,6 +55,20 @@ const PROMOTED_CONCURRENCY = 8;
 
 app.use(express.json());
 
+// "Now" for time-dependent answers (the members directory's active-this-week
+// window). A staging preview opened at a chosen moment carries the platform's
+// x-usernode-now header or un-now query; production always reads the clock,
+// so the code path is identical everywhere and only the value differs.
+const PREVIEW_NOW_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+app.use((req, _res, next) => {
+  const raw = IS_STAGING
+    ? (req.headers['x-usernode-now'] || req.query['un-now'])
+    : null;
+  req.now = typeof raw === 'string' && PREVIEW_NOW_RE.test(raw)
+    ? new Date(raw) : new Date();
+  next();
+});
+
 // The platform's three centrally hosted files — the bridge, the native UI
 // kit and the Tailwind runtime — are reachable at these paths on this app's
 // OWN origin, so index.html can load them with a RELATIVE path and never
@@ -1545,6 +1559,173 @@ app.post('/api/comments', async (req, res) => {
        RETURNING id, parent_id, username, body, created_at`,
       [appSlug, sessionId, parentId, req.user.id, req.user.username, text]);
     return res.status(201).json({ ok: true, comment: normalizeComment(rows[0]) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Members directory
+//
+// The roster comes from the platform's own member list (GET /members on the
+// app-facing API), read with the caller's forwarded identity — the platform
+// answers only for actual members of the project, so a non-member (the check
+// runner, an admin looking in) gets an explicit notMember flag and the screen
+// explains itself instead of failing. Fields the platform does not document
+// per member (joined date, accepted-proposal count) are passed through under
+// any usual spelling when the response carries them and stay null when it
+// does not, so the row simply omits them — the same optional-field contract
+// normalizeProposal uses. Votes cast come from this app's own my_votes
+// history aggregated per username: counts only, the rows themselves stay
+// private (my_votes is staging:private).
+// ---------------------------------------------------------------------------
+
+const MEMBER_ACTIVE_WINDOW_MS = 7 * 24 * 3600 * 1000;
+
+function pickString(raw, keys) {
+  for (const k of keys) {
+    if (raw && typeof raw[k] === 'string' && raw[k]) return raw[k];
+  }
+  return null;
+}
+
+function pickInt(raw, keys) {
+  for (const k of keys) {
+    const v = raw && raw[k];
+    if (Number.isInteger(v) && v >= 0) return v;
+  }
+  return null;
+}
+
+// One member row in the shape the frontend renders. `extra` carries the
+// stats derived from this app's own data when the platform response itself
+// did not name them. The owner chip follows the platform's documented
+// /members order (the creator first, then oldest member first), so the
+// first listed member is the creator.
+function memberPayload(raw, extra) {
+  const username = typeof raw === 'string' ? raw.trim()
+    : raw && typeof raw.username === 'string' ? raw.username.trim() : '';
+  if (!username) return null;
+  const id = raw && typeof raw === 'object' && raw.id != null ? raw.id : null;
+  let profileUrl = null;
+  if (PLATFORM_ORIGIN) {
+    profileUrl = PLATFORM_ORIGIN + '/u/' + encodeURIComponent(username);
+  } else if (extra && extra.demo) {
+    // No platform origin at runtime (a bare local launch): the demo
+    // stand-in keeps the rows' profile links shaped like the real ones
+    // without naming a host that could go stale.
+    profileUrl = 'https://staging-demo.invalid/u/' + encodeURIComponent(username);
+  }
+  return {
+    id,
+    username,
+    role: extra && extra.owner ? 'owner' : 'member',
+    joinedAt: pickString(raw, ['joined_at', 'joinedAt', 'member_since', 'memberSince', 'created_at', 'createdAt']),
+    votesCast: pickInt(raw, ['votes_cast', 'votesCast']) != null
+      ? pickInt(raw, ['votes_cast', 'votesCast'])
+      : (extra && extra.votesCast != null ? extra.votesCast : null),
+    proposalsAccepted: pickInt(raw, ['proposals_accepted', 'proposalsAccepted', 'accepted_proposals', 'acceptedProposals', 'accepted_count']),
+    lastActiveAt: pickString(raw, ['last_active_at', 'lastActiveAt', 'last_seen_at', 'lastSeenAt']) != null
+      ? pickString(raw, ['last_active_at', 'lastActiveAt', 'last_seen_at', 'lastSeenAt'])
+      : (extra && extra.lastActiveAt != null ? extra.lastActiveAt : null),
+    profileUrl,
+  };
+}
+
+function membersPayload(rows, now, opts) {
+  const demo = !!(opts && opts.demo);
+  const members = [];
+  rows.forEach((raw, i) => {
+    const extra = opts && opts.extra ? opts.extra(raw, i) : null;
+    const m = memberPayload(raw, { owner: i === 0, demo, ...(extra || {}) });
+    if (m) members.push(m);
+  });
+  const cutoff = now.getTime() - MEMBER_ACTIVE_WINDOW_MS;
+  let activeThisWeek = 0;
+  for (const m of members) {
+    const t = m.lastActiveAt ? Date.parse(m.lastActiveAt) : NaN;
+    if (isFinite(t) && t >= cutoff) activeThisWeek++;
+  }
+  return { members, activeThisWeek };
+}
+
+// Staging demo roster (?demo=1): six obviously-fake members in the platform's
+// documented order (creator first, so the owner chip lands on
+// staging-demo-user), covering both chips, joined dates, vote and accepted
+// counts, and the active/inactive split (four active within the last seven
+// days, two not). Request-time injection, staging only; the field spellings
+// match the platform's, so the demo rows go through the same normalizer the
+// live response does.
+function demoMemberRows(now) {
+  const ago = (days) => new Date(now.getTime() - days * 24 * 3600 * 1000).toISOString();
+  return [
+    { id: 900001, username: 'staging-demo-user', joined_at: ago(120), votes_cast: 14, proposals_accepted: 3, last_active_at: ago(0.25) },
+    { id: 900002, username: 'staging-demo-maya', joined_at: ago(95), votes_cast: 9, proposals_accepted: 2, last_active_at: ago(1) },
+    { id: 900003, username: 'staging-demo-omar', joined_at: ago(80), votes_cast: 6, proposals_accepted: 1, last_active_at: ago(3) },
+    { id: 900004, username: 'staging-demo-priya', joined_at: ago(60), votes_cast: 4, proposals_accepted: 1, last_active_at: ago(6) },
+    { id: 900005, username: 'staging-demo-quinn', joined_at: ago(45), votes_cast: 2, proposals_accepted: 0, last_active_at: ago(9) },
+    { id: 900006, username: 'staging-demo-raul', joined_at: ago(30), votes_cast: 1, proposals_accepted: 0, last_active_at: ago(21) },
+  ];
+}
+
+function demoMembersPayload(req) {
+  return { demo: true, ...membersPayload(demoMemberRows(req.now), req.now, { demo: true }) };
+}
+
+app.get('/api/members', async (req, res) => {
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      return res.json(demoMembersPayload(req));
+    }
+    if (!PLATFORM_API_BASE) {
+      // A staging container without the platform API only exists under a
+      // plain local launch; keep the screen reviewable there with fixtures.
+      if (IS_STAGING) return res.json(demoMembersPayload(req));
+      return res.status(500).json({ error: 'Platform API is not configured' });
+    }
+    const headers = { 'x-usernode-user-token': userTokenFrom(req) };
+    if (APP_TOKEN) headers['x-usernode-app-token'] = APP_TOKEN;
+    const r = await fetch(PLATFORM_API_BASE + '/members?limit=200', {
+      headers,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (r.status === 403) {
+      // Only members of the project get the roster. Everyone else gets an
+      // explicit flag so the screen can show why it is empty.
+      return res.json({ demo: false, notMember: true, members: [], activeThisWeek: 0 });
+    }
+    if (!r.ok) {
+      return res.status(502).json({ error: 'Could not load the member list from the platform' });
+    }
+    const data = await r.json().catch(() => null);
+    const list = Array.isArray(data) ? data
+      : data && Array.isArray(data.members) ? data.members : null;
+    if (!list) {
+      return res.status(502).json({ error: 'Unexpected member list response' });
+    }
+    // Votes cast through this app, aggregated per member — the app's own
+    // recorded history, not a guess. A query failure just leaves the counts
+    // off the rows (the optional-field contract), never fails the roster.
+    let stats = new Map();
+    try {
+      const { rows } = await pool.query(
+        `SELECT username, COUNT(*)::int AS votes, MAX(created_at) AS last_vote
+         FROM my_votes GROUP BY username`);
+      stats = new Map(rows.map((s) => [String(s.username).toLowerCase(), s]));
+    } catch {}
+    const payload = membersPayload(list, req.now, {
+      extra: (raw) => {
+        const username = (typeof raw === 'string' ? raw
+          : raw && typeof raw.username === 'string' ? raw.username : '').trim();
+        const s = stats.get(username.toLowerCase());
+        if (!s) return null;
+        return {
+          votesCast: s.votes,
+          lastActiveAt: s.last_vote ? new Date(s.last_vote).toISOString() : null,
+        };
+      },
+    });
+    return res.json({ demo: false, ...payload });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
