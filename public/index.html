@@ -296,6 +296,15 @@
     // only; the tap is one-shot. Unknown ids do nothing.
     var EXPAND_SUMMARY = DEMO ? (params.get('expand-summary') || '') : '';
     var TAP_SUMMARY = DEMO ? (params.get('tap-summary') || '') : '';
+    // Impact-panel hooks (demo only): the detail screen's impact panel
+    // collapses on small screens behind a Show details toggle.
+    // ?impact-mobile=1 forces that collapsed presentation at any viewport
+    // width so a check can reach it deterministically, and
+    // ?tap-impact-toggle=1 taps the open detail's toggle once it has
+    // rendered — the real button, through the real delegated click handler.
+    // Demo only; the tap is one-shot.
+    var IMPACT_MOBILE = DEMO && params.get('impact-mobile') === '1';
+    var TAP_IMPACT_TOGGLE = DEMO ? (params.get('tap-impact-toggle') || '') : '';
     // Bulk-triage hooks (demo only), one URL per check behaviour:
     // ?selectmode=1 turns select mode on with nothing selected;
     // ?select=<ids> / ?deselect=<ids> tick and untick cards through the same
@@ -444,6 +453,11 @@
       // re-render keeps them open, a reload starts closed again. Not
       // persisted.
       expandedSummaries: {},
+      // Proposal details whose impact panel the user expanded with the
+      // Show details toggle (small screens only). Keyed by session id and
+      // remembered like expandedSummaries: a re-render keeps them open, a
+      // reload starts collapsed again. Not persisted.
+      impactOpen: {},
       // Bulk triage: select mode (checkbox on each votable card) and the
       // selected session ids. Selection is in-memory only and keyed by
       // session id, so it survives filter, search and sort changes —
@@ -2540,6 +2554,113 @@
       return heading + html + commentFormHtml();
     }
 
+    // ------------------------------------------------------------------
+    // Proposal impact preview: what the change touches (apps, members,
+    // target release), the automated checks it runs and a plain-language
+    // summary of what changes for users, when the platform sent an impact
+    // record. Anything missing shows an "Unknown" label instead of blank,
+    // and the panel renders for merged proposals too, as a read-only
+    // record. On small screens the body collapses behind a Show details
+    // toggle; ?impact-mobile=1 (demo checks) forces that collapsed
+    // presentation at any viewport width.
+    // ------------------------------------------------------------------
+
+    var IMPACT_TOGGLE_CLASS = 'rounded-full border border-zinc-300 px-2.5 py-1 text-xs font-semibold text-zinc-600 transition-colors hover:text-zinc-800 dark:border-zinc-600 dark:text-zinc-300 dark:hover:text-zinc-100';
+    var IMPACT_LABEL_CLASS = 'text-xs text-zinc-500 dark:text-zinc-400';
+    var IMPACT_VALUE_CLASS = 'min-w-0 text-right text-xs font-medium text-zinc-800 dark:text-zinc-100';
+    var IMPACT_UNKNOWN_CLASS = ' min-w-0 text-right text-xs font-medium text-zinc-400 dark:text-zinc-500';
+    // The body's display classes per state: open shows it everywhere;
+    // closed collapses it on small screens and reveals it from Tailwind's
+    // sm breakpoint up; the ?impact-mobile=1 demo hook collapses it at
+    // every width so the toggle is reachable by checks at any viewport.
+    function impactBodyClass(open) {
+      if (open) return 'flex flex-col gap-2';
+      return IMPACT_MOBILE ? 'hidden' : 'hidden flex-col gap-2 sm:flex';
+    }
+
+    function impactRow(label, attr, value) {
+      return '<div class="flex items-baseline justify-between gap-3">'
+        + '<dt class="shrink-0 ' + IMPACT_LABEL_CLASS + '">' + label + '</dt>'
+        + '<dd' + (attr ? ' ' + attr : '')
+        + ' class="' + (value ? IMPACT_VALUE_CLASS : IMPACT_UNKNOWN_CLASS) + '">'
+        + (value ? esc(value) : 'Unknown') + '</dd></div>';
+    }
+
+    function impactCheckRow(c) {
+      var mark;
+      if (c.state === 'passed') {
+        mark = '<span data-check-passed class="shrink-0 text-xs font-semibold text-emerald-600 dark:text-emerald-400" aria-label="Passed">✓</span>';
+      } else if (c.state === 'failed') {
+        mark = '<span data-check-failed class="shrink-0 text-xs font-semibold text-red-500 dark:text-red-400" aria-label="Failed">✗</span>';
+      } else {
+        mark = '<span class="shrink-0 text-xs text-zinc-300 dark:text-zinc-600" aria-label="Result not known yet">·</span>';
+      }
+      return '<li class="flex items-baseline gap-1.5 text-xs text-zinc-700 dark:text-zinc-200">'
+        + mark
+        + '<span class="min-w-0">' + esc(c.name) + '</span></li>';
+    }
+
+    function impactPanel(p) {
+      var imp = (p && p.impact) || {};
+      var open = !!state.impactOpen[p.sessionId];
+      var apps = Array.isArray(imp.apps) && imp.apps.length
+        ? imp.apps.join(', ')
+        : (typeof imp.appsCount === 'number' ? String(imp.appsCount) : null);
+      var members = typeof imp.members === 'number'
+        ? imp.members + (imp.members === 1 ? ' member' : ' members') : null;
+      var release = typeof imp.targetRelease === 'string' && imp.targetRelease
+        ? imp.targetRelease : null;
+      var checks = Array.isArray(imp.checks) && imp.checks.length ? imp.checks : null;
+      var summary = typeof imp.summary === 'string' && imp.summary ? imp.summary : null;
+      return '<section data-impact-panel data-session-id="' + esc(p.sessionId) + '"'
+        + ' aria-label="Impact of this change"'
+        + ' class="flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/70">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Impact</h3>'
+        + '<button data-impact-toggle data-session="' + esc(p.sessionId) + '"'
+        + ' aria-expanded="' + (open ? 'true' : 'false') + '"'
+        + ' class="' + IMPACT_TOGGLE_CLASS + (IMPACT_MOBILE ? '' : ' sm:hidden') + '">'
+        + (open ? 'Hide details' : 'Show details') + '</button>'
+        + '</div>'
+        + '<div data-impact-body class="' + impactBodyClass(open) + '">'
+        + '<dl class="flex flex-col gap-1">'
+        + impactRow('Apps touched', 'data-impact-apps', apps)
+        + impactRow('Members affected', 'data-impact-members', members)
+        + impactRow('Target release', 'data-impact-release', release)
+        + '</dl>'
+        + '<div data-impact-checks class="flex flex-col gap-1">'
+        + '<span class="' + IMPACT_LABEL_CLASS + '">Automated checks</span>'
+        + (checks
+          ? '<ul class="flex flex-col gap-1">' + checks.map(impactCheckRow).join('') + '</ul>'
+          : '<p class="' + IMPACT_UNKNOWN_CLASS + '">Unknown</p>')
+        + '</div>'
+        + '<div class="flex flex-col gap-1">'
+        + '<span class="' + IMPACT_LABEL_CLASS + '">What changes</span>'
+        + (summary
+          ? '<p data-impact-summary class="text-xs leading-snug text-zinc-700 dark:text-zinc-300">' + esc(summary) + '</p>'
+          : '<p class="' + IMPACT_UNKNOWN_CLASS + '">Unknown</p>')
+        + '</div>'
+        + '</div>'
+        + '</section>';
+    }
+
+    // The toggle's tap flips the panel's remembered open state and the
+    // body's classes in place, the way toggleSummary flips a card's
+    // summary line, so no re-render is needed.
+    function toggleImpact(btn) {
+      var sessionId = btn.getAttribute('data-session');
+      if (!sessionId) return;
+      var open = !!state.impactOpen[sessionId];
+      if (open) delete state.impactOpen[sessionId];
+      else state.impactOpen[sessionId] = true;
+      open = !open;
+      var panel = btn.closest('[data-impact-panel]');
+      var body = panel ? panel.querySelector('[data-impact-body]') : null;
+      if (body) body.className = impactBodyClass(open);
+      btn.textContent = open ? 'Hide details' : 'Show details';
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
     function renderDetail() {
       var p = findProposal(state.detail);
       if (!p) return '';
@@ -2569,6 +2690,7 @@
         + statusProgress(p)
         + proposalActions(p)
         + '</article>'
+        + impactPanel(p)
         + '<section data-thread class="flex flex-col gap-2">' + renderThread() + '</section>'
         + '</div>';
     }
@@ -3783,6 +3905,7 @@
           maybeTapUnsnooze();
           maybeTapSummary();
           maybeTapSearch();
+          maybeTapImpactToggle();
           maybeAutoComment();
           maybeAutoReply();
           // A ?proposal= deep link lands on the inbox first; once the list
@@ -4461,6 +4584,21 @@
       btn.click();
     }
 
+    // Staging demo hook: ?demo=1&tap-impact-toggle=1 clicks the open
+    // proposal detail's impact-panel toggle once it has rendered — the real
+    // button, through the real delegated click handler — so expansion (and,
+    // paired with ?impact-mobile=1 keeping the panel collapsed, the toggle
+    // itself) runs through the real tap path. Demo only; one-shot.
+    var tapImpactDone = false;
+    function maybeTapImpactToggle() {
+      if (!DEMO || !TAP_IMPACT_TOGGLE || tapImpactDone) return;
+      var btn = document.querySelector(
+        '[data-proposal-detail] [data-impact-toggle]');
+      if (!btn) return;
+      tapImpactDone = true;
+      btn.click();
+    }
+
     // Staging demo hook: ?demo=1&tap-no=1 clicks the demo-4 card's "No"
     // button once the demo inbox has rendered — the real button, through the
     // real delegated click handler — so the confirm-before-No dialog is
@@ -4900,6 +5038,11 @@
       var summaryBtn = target.closest ? target.closest('[data-summary-toggle]') : null;
       if (summaryBtn) {
         toggleSummary(summaryBtn);
+        return;
+      }
+      var impactBtn = target.closest ? target.closest('[data-impact-toggle]') : null;
+      if (impactBtn) {
+        toggleImpact(impactBtn);
         return;
       }
       var selToggle = target.closest ? target.closest('[data-select-toggle]') : null;
