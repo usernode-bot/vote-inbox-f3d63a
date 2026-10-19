@@ -116,10 +116,15 @@
         <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Members</span>
       </button>
+      <button id="menu-btn" aria-label="Menu" aria-haspopup="menu" aria-expanded="false" type="button"
+        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+      </button>
       <button id="refresh-btn" aria-label="Refresh" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
         <svg id="refresh-icon" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
       </button>
     </header>
+    <div id="menu-panel" hidden class="fixed z-40 min-w-40 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"></div>
     <p id="inbox-updated" class="-mt-1.5 pb-1 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="inbox-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="votes-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
@@ -242,6 +247,8 @@
           class="min-h-11 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition-transform active:scale-95 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Clear</button>
       </div>
     </div>
+
+    <div id="tour-slot"></div>
 
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
 
@@ -413,6 +420,28 @@
     // filtered-list and no-match states are reachable by checks. Demo only.
     var MEMBER_QUERY = DEMO ? (params.get('member-query') || '') : '';
 
+    // Onboarding tour hooks (staging demo only). The tour itself is plain
+    // product UI: it shows on a first visit, advances with Next, dismisses
+    // with Skip, and once finished or skipped never shows again (a flag in
+    // localStorage). The hooks give the checks deterministic entry points
+    // through the real buttons: ?tour=1 forces the tour up even when the
+    // flag is set; ?tour-reset=1 clears the flag so the load is a "first
+    // visit" again; ?tap-tour-next=<n> taps Next n times after render;
+    // ?tap-tour-skip=1 taps Skip (after the Next taps, so skipping mid-tour
+    // is reachable); ?finish-tour=1 / ?skip-tour=1 drive the tour to done
+    // through the real buttons and then reload a clean ?tour-done=1 marker
+    // URL, so a check sees the persisted "never again" state; and
+    // ?tap-tour-open=1 marks the tour done first, then taps the header
+    // menu's "Show the tour" item, so the reopen path is what brings it up.
+    // None of these are ever sent without demo data.
+    var TOUR_FORCE = DEMO && params.get('tour') === '1';
+    var TOUR_RESET = DEMO && params.get('tour-reset') === '1';
+    var TAP_TOUR_NEXT = DEMO ? (parseInt(params.get('tap-tour-next') || '0', 10) || 0) : 0;
+    var TAP_TOUR_SKIP = DEMO && params.get('tap-tour-skip') === '1';
+    var FINISH_TOUR = DEMO && params.get('finish-tour') === '1';
+    var SKIP_TOUR = DEMO && params.get('skip-tour') === '1';
+    var TAP_TOUR_OPEN = DEMO && params.get('tap-tour-open') === '1';
+
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes'
         : params.get('tab') === 'watchlist' ? 'watchlist' : 'inbox',
@@ -427,6 +456,13 @@
       // validated there, so a stale storage entry falls back to ''.
       tagFilter: '',
       search: '',
+      // Onboarding tour: the step being shown (0 to 2) and whether the
+      // tour is open from the header menu's "Show the tour" item. Neither
+      // is persisted; whether the tour was finished or skipped lives in
+      // localStorage (see TOUR_KEY).
+      tourStep: 0,
+      tourOpen: false,
+      tourClosed: false,
       hideVoted: false,
       // "One vote away" chip: on when ?one-away=1 (a real deep link, also
       // how the staging checks activate it). Not persisted, unlike
@@ -1319,6 +1355,102 @@
         location.replace(location.pathname + (restQ ? '?' + restQ : '') + location.hash);
       }
     }
+
+    // ------------------------------------------------------------------
+    // Onboarding tour check hooks (demo only, see the TOUR_* params up
+    // top). All of them drive the real buttons through the real delegated
+    // handler; the run happens once at boot, after the first render, so
+    // the panel is in the DOM. ?finish-tour=1 and ?skip-tour=1 end by
+    // reloading a clean ?tour-done=1 marker URL (every tour parameter
+    // dropped, the rest kept), where the persisted "never show again"
+    // state is what a check observes.
+    // ------------------------------------------------------------------
+
+    var tourHooksRun = false;
+
+    function reloadTourMarker() {
+      var remaining = new URLSearchParams(params);
+      ['tour', 'tour-reset', 'finish-tour', 'skip-tour', 'tap-tour-next',
+        'tap-tour-skip', 'tap-tour-open'].forEach(function (k) { remaining.delete(k); });
+      remaining.set('tour-done', '1');
+      location.replace(location.pathname + '?' + remaining.toString() + location.hash);
+    }
+
+    function runTourHooks() {
+      if (!DEMO || tourHooksRun) return;
+      tourHooksRun = true;
+      // ?tour-reset=1: clear the done flag, so this load is a first visit
+      // again no matter what earlier check runs left in localStorage.
+      if (TOUR_RESET) {
+        try { localStorage.removeItem(TOUR_KEY); } catch (e) {}
+        render();
+      }
+      // ?finish-tour=1 / ?skip-tour=1: force the tour up, drive it to done
+      // through the real buttons (three Next taps, or one Skip tap), then
+      // reload the marker URL so the check sees the later visits.
+      if (FINISH_TOUR || SKIP_TOUR) {
+        state.tourOpen = true;
+        state.tourStep = 0;
+        render();
+        var actionName = SKIP_TOUR ? 'tour-skip' : 'tour-next';
+        var targetTaps = SKIP_TOUR ? 1 : 3;
+        var taps = 0;
+        var driver = setInterval(function () {
+          var btn = document.querySelector('[data-action="' + actionName + '"]');
+          if (!btn) { clearInterval(driver); reloadTourMarker(); return; }
+          btn.click();
+          if (++taps >= targetTaps) {
+            clearInterval(driver);
+            setTimeout(reloadTourMarker, 150);
+          }
+        }, 120);
+        return;
+      }
+      // ?tap-tour-open=1: mark the tour done first (so the menu path is
+      // the only thing that can bring it back), then tap the header menu
+      // and its "Show the tour" item.
+      if (TAP_TOUR_OPEN) {
+        markTourDone();
+        state.tourOpen = false;
+        render();
+        var menuBtn = document.getElementById('menu-btn');
+        if (menuBtn) {
+          menuBtn.click();
+          var tries = 0;
+          var finder = setInterval(function () {
+            var item = findButtonByText('Show the tour');
+            if (item) {
+              clearInterval(finder);
+              item.click();
+            } else if (++tries > 40) {
+              clearInterval(finder);
+            }
+          }, 100);
+        }
+        return;
+      }
+      // ?tap-tour-next=<n> then optionally ?tap-tour-skip=1: taps in
+      // sequence, each waiting for the previous tap's re-render.
+      if (TAP_TOUR_NEXT || TAP_TOUR_SKIP) {
+        var left = TAP_TOUR_NEXT;
+        var stepper = function () {
+          if (left > 0) {
+            var next = document.querySelector('[data-action="tour-next"]');
+            if (!next) return;
+            next.click();
+            left--;
+            setTimeout(stepper, 120);
+            return;
+          }
+          if (TAP_TOUR_SKIP) {
+            var skip = document.querySelector('[data-action="tour-skip"]');
+            if (skip) skip.click();
+          }
+        };
+        stepper();
+      }
+    }
+
 
     // ------------------------------------------------------------------
     // Saved searches: chips under the search box. Each holds a search text
@@ -2915,7 +3047,6 @@
         + '</div>';
     }
 
-    var REFRESH_CTA = '<button data-action="refresh" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Refresh</button>';
     var CLEAR_FILTER_CTA = '<button data-action="clear-filter" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all apps</button>';
     var CLEAR_ONE_AWAY_CTA = '<button data-action="clear-one-away" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all proposals</button>';
     var CLEAR_TAG_CTA = '<button data-action="clear-tag" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all tags</button>';
@@ -2925,6 +3056,147 @@
     var SHOW_SNOOZED_CTA = '<button data-action="show-snoozed" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">See snoozed</button>';
     var BACK_TO_INBOX_CTA = '<button data-action="clear-snooze-view" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Back to the inbox</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
+    var BROWSE_APPS_CTA = '<button data-action="browse-apps" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse apps</button>';
+
+    // ------------------------------------------------------------------
+    // Onboarding tour: a three-step intro for first-time visitors, rendered
+    // as a panel above the inbox cards (never an overlay, so the first
+    // card's vote buttons stay tappable the whole time). Next advances,
+    // Skip dismisses at any step, and both mark the tour done in
+    // localStorage so it never shows again on a later visit. The header
+    // menu's "Show the tour" item brings it back on demand.
+    // ------------------------------------------------------------------
+
+    var TOUR_KEY = 'vote-inbox:tour-done';
+
+    var TOUR_STEPS = [
+      {
+        title: 'What a proposal is',
+        body: 'Each card is a change an app wants to make, up for a group vote. The counts show how the vote is trending.',
+      },
+      {
+        title: 'How to vote',
+        body: 'Tap Yes or No on a card to cast your vote. The card updates as the counts come in.',
+      },
+      {
+        title: 'Where your votes live',
+        body: 'Every vote you cast is kept under the My Votes tab, with each proposal’s outcome.',
+      },
+    ];
+
+    function tourDone() {
+      try {
+        return localStorage.getItem(TOUR_KEY) === '1';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function markTourDone() {
+      try {
+        localStorage.setItem(TOUR_KEY, '1');
+      } catch (e) { /* storage unavailable; the tour just reappears */ }
+    }
+
+    // The tour shows on the inbox when it has not been finished or skipped.
+    // ?tour=1 (demo only) forces it up even when the flag is set, so checks
+    // can reach every step from a stable URL.
+    function tourVisible() {
+      if (state.tourOpen) return true;
+      // Closed this load (skipped or finished) stays closed, forced URL or
+      // not: the skip-any-step check observes the dismissal on ?tour=1.
+      if (state.tourClosed) return false;
+      if (TOUR_FORCE) return true;
+      return !tourDone();
+    }
+
+    function tourHtml() {
+      var step = TOUR_STEPS[state.tourStep] || TOUR_STEPS[0];
+      var last = state.tourStep === TOUR_STEPS.length - 1;
+      return '<div data-tour class="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-500/40 dark:bg-violet-500/10">'
+        + '<p class="text-xs font-semibold text-violet-700 dark:text-violet-300">'
+        + (state.tourStep + 1) + ' of ' + TOUR_STEPS.length + '</p>'
+        + '<p class="mt-0.5 text-sm font-semibold text-zinc-800 dark:text-zinc-100">' + esc(step.title) + '</p>'
+        + '<p class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">' + esc(step.body) + '</p>'
+        + '<div class="mt-3 flex items-center gap-2">'
+        + '<button data-action="tour-next" class="rounded-full bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">'
+        + (last ? 'Done' : 'Next') + '</button>'
+        + '<button data-action="tour-skip" class="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">Skip tour</button>'
+        + '</div>'
+        + '</div>';
+    }
+
+    function tourNext() {
+      if (state.tourStep < TOUR_STEPS.length - 1) {
+        state.tourStep++;
+        render();
+        return;
+      }
+      markTourDone();
+      state.tourOpen = false;
+      state.tourClosed = true;
+      render();
+    }
+
+    function tourSkip() {
+      markTourDone();
+      state.tourOpen = false;
+      state.tourClosed = true;
+      render();
+    }
+
+    // Reopen from the header menu: restart at step 1 on the inbox tab. The
+    // done flag stays set, so skipping or finishing the replay does not
+    // change anything for later visits.
+    function reopenTour() {
+      state.tourOpen = true;
+      state.tourStep = 0;
+      if (state.membersView) closeMembers();
+      if (state.tab !== 'inbox') {
+        state.tab = 'inbox';
+        var url = new URL(location.href);
+        url.searchParams.set('tab', 'inbox');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+      }
+      render();
+      window.scrollTo(0, 0);
+    }
+
+    // The header's overflow menu. One item today ("Show the tour"); the
+    // hosted kit renders it as a menu, with a small fallback panel when the
+    // kit is unavailable (standalone).
+    function openHeaderMenu() {
+      var btn = document.getElementById('menu-btn');
+      if (!btn) return;
+      if (window.unNative && unNative.menu) {
+        try {
+          // menu() resolves the chosen item (or null on dismiss); the
+          // action is taken on the resolution, so the behaviour does not
+          // depend on whether the kit runs item handlers itself.
+          unNative.menu({
+            anchorEl: btn,
+            items: [{ label: 'Show the tour' }],
+          }).then(function (item) {
+            btn.setAttribute('aria-expanded', 'false');
+            if (item && item.label === 'Show the tour') reopenTour();
+          });
+          btn.setAttribute('aria-expanded', 'true');
+          return;
+        } catch (e) { /* fall through to the plain panel */ }
+      }
+      var panel = document.getElementById('menu-panel');
+      if (!panel) return;
+      var showing = !panel.hidden;
+      panel.hidden = true;
+      if (showing) return;
+      var rect = btn.getBoundingClientRect();
+      panel.style.top = (rect.bottom + 6) + 'px';
+      panel.style.right = (window.innerWidth - rect.right) + 'px';
+      panel.innerHTML = '<button data-menu-item="tour" class="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">Show the tour</button>';
+      panel.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+    }
+
 
     function errorHtml(message) {
       return '<div class="flex flex-col items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/5 px-6 py-10 text-center">'
@@ -3190,12 +3462,20 @@
             'No open proposal carries the "' + esc(state.tagFilter) + '" tag right now. Clear the tag filter to see everything.',
             CLEAR_TAG_CTA);
         }
+        if (proposals.length) {
+          return emptyHtml(
+            'Nothing from this app',
+            'No open proposals for this app right now.',
+            CLEAR_FILTER_CTA);
+        }
+        // The genuinely empty inbox: zero loaded proposals, no filter in
+        // the way. It explains the next action (browse the apps the inbox
+        // knows about) instead of just offering a refresh, and the header
+        // summary above it keeps counting at zero.
         return emptyHtml(
-          proposals.length ? 'Nothing from this app' : "You're all caught up",
-          proposals.length
-            ? 'No open proposals for this app right now.'
-            : 'No open proposals to vote on. New ones show up here.',
-          proposals.length ? CLEAR_FILTER_CTA : REFRESH_CTA);
+          'Nothing to vote on yet',
+          'No open proposals right now. New ones show up here as apps propose changes.',
+          BROWSE_APPS_CTA);
       }
       // Controversy ranks the whole loaded inbox, tightest race first, so
       // it renders one flat list: the age-group headers would cut the
@@ -3418,7 +3698,12 @@
       if (!el) return;
       var proposals = state.inbox && state.inbox.proposals;
       var open = proposals ? proposals.length : 0;
-      if (state.tab !== 'inbox' || state.membersView || state.errorInbox || !open || state.compareView) {
+      // The line shows as soon as the inbox has loaded, including at zero:
+      // an empty inbox is a real state (see the empty-inbox empty state),
+      // and "0 open, 0 votes needed" is the header keeping count of it
+      // rather than pretending the line does not apply.
+      if (state.tab !== 'inbox' || state.membersView || state.errorInbox
+        || !state.inbox || state.compareView) {
         el.hidden = true;
         return;
       }
@@ -3440,7 +3725,11 @@
       if (!el) return;
       var votes = state.votes && state.votes.votes;
       var total = votes ? votes.length : 0;
-      if (state.tab !== 'votes' || state.membersView || state.errorVotes || !total) {
+      // Same zero rule as the inbox summary: once the history has loaded,
+      // "0 voted, 0 merged" is shown, not hidden (see emptyHtml's My Votes
+      // empty state next to it).
+      if (state.tab !== 'votes' || state.membersView || state.errorVotes
+        || !state.votes) {
         el.hidden = true;
         return;
       }
@@ -3460,7 +3749,9 @@
       if (!el) return;
       var rows = state.watchlist && state.watchlist.rows;
       var total = rows ? rows.length : 0;
-      if (state.tab !== 'watchlist' || state.membersView || state.errorWatchlist || !total) {
+      // Same zero rule as the inbox and votes summaries.
+      if (state.tab !== 'watchlist' || state.membersView || state.errorWatchlist
+        || !state.watchlist) {
         el.hidden = true;
         return;
       }
@@ -3552,6 +3843,19 @@
         viewHtml = renderWatchlist();
       }
       document.getElementById('view').innerHTML = viewHtml;
+      // The tour leads the inbox in its own slot above #view (never the
+      // detail or compare views, and never another tab): it is not an
+      // overlay, so the first card's vote buttons stay tappable underneath
+      // it the whole time. Kept out of #view so the list's own structure
+      // (first card, group containers) is untouched.
+      var tourSlot = document.getElementById('tour-slot');
+      if (tourSlot) {
+        tourSlot.innerHTML = state.tab === 'inbox' && !state.membersView
+          && !state.compareView && !(state.detail && findProposal(state.detail))
+          && tourVisible()
+          ? tourHtml()
+          : '';
+      }
       enhanceTitles();
     }
 
@@ -4165,6 +4469,10 @@
       var query = [];
       if (DEMO) query.push('demo=1');
       if (ALL_VOTED) query.push('allvoted=1');
+      // ?empty=1 (demo only) asks the demo inbox for zero proposals — the
+      // genuinely empty inbox behind the new empty state and its zero
+      // header counts. Never sent without demo data.
+      if (DEMO && params.get('empty') === '1') query.push('empty=1');
       if (ALL_MERGED) query.push('allmerged=1');
       // Check-fixture variant on the hook's reload; see TURNOUT_REFRESH.
       if (turnoutAltNext) query.push('turnoutalt=1');
@@ -4241,7 +4549,12 @@
       state.errorVotes = null;
       if (force) state.votes = null;
       render();
-      return api('/api/my-votes' + (DEMO ? '?demo=1' : ''))
+      // ?votes-empty=1 (demo only) asks the demo route for an empty
+      // history, so the tab's empty state and its zero summary are
+      // reachable by checks. Never sent without demo data.
+      return api('/api/my-votes' + (DEMO
+        ? '?demo=1' + (params.get('votes-empty') === '1' ? '&votes-empty=1' : '')
+        : ''))
         .then(function (data) { state.votes = data; })
         .catch(function (err) {
           state.errorVotes = err.message || 'Could not load your votes.';
@@ -5340,6 +5653,16 @@
     // Events
     // ------------------------------------------------------------------
 
+    // The tour lives in #tour-slot, outside #view, so its two buttons get
+    // their own tiny delegation (the same data-action convention).
+    document.getElementById('tour-slot').addEventListener('click', function (event) {
+      var actionEl = event.target.closest ? event.target.closest('[data-action]') : null;
+      if (!actionEl) return;
+      var action = actionEl.getAttribute('data-action');
+      if (action === 'tour-next') tourNext();
+      else if (action === 'tour-skip') tourSkip();
+    });
+
     document.getElementById('view').addEventListener('click', function (event) {
       var target = event.target;
       var actionEl = target.closest ? target.closest('[data-action]') : null;
@@ -5373,6 +5696,14 @@
           var box = document.getElementById('inbox-search');
           if (box) box.value = '';
           render();
+        } else if (action === 'browse-apps') {
+          // Empty-inbox call to action: open the app filter dropdown, the
+          // place where this app's loaded apps are browsed.
+          openAppFilter();
+        } else if (action === 'tour-next') {
+          tourNext();
+        } else if (action === 'tour-skip') {
+          tourSkip();
         } else if (action === 'go-inbox') {
           state.tab = 'inbox';
           render();
@@ -5612,6 +5943,27 @@
       else openMembers();
     });
 
+    // Header menu (fallback panel path: dismiss on an outside tap or
+    // Escape; the kit's menu handles its own dismissal).
+    document.getElementById('menu-btn').addEventListener('click', function () {
+      openHeaderMenu();
+    });
+    document.addEventListener('click', function (event) {
+      var panel = document.getElementById('menu-panel');
+      if (!panel || panel.hidden) return;
+      if (panel.contains(event.target) || event.target.closest('#menu-btn')) return;
+      panel.hidden = true;
+      document.getElementById('menu-btn').setAttribute('aria-expanded', 'false');
+    });
+    document.getElementById('menu-panel').addEventListener('click', function (event) {
+      var item = event.target.closest('[data-menu-item]');
+      if (!item) return;
+      var panel = document.getElementById('menu-panel');
+      panel.hidden = true;
+      document.getElementById('menu-btn').setAttribute('aria-expanded', 'false');
+      if (item.getAttribute('data-menu-item') === 'tour') reopenTour();
+    });
+
     var sortButtons = document.querySelectorAll('#sort-row [data-sort]');
     for (var si = 0; si < sortButtons.length; si++) {
       sortButtons[si].addEventListener('click', function (event) {
@@ -5684,6 +6036,9 @@
         maybeTapSearch();
       });
     render();
+    // Tour check hooks need the first render's DOM (the tour panel), so
+    // they run right after it, before the tab data fetch starts.
+    runTourHooks();
     var hideVotedBox = document.getElementById('hide-voted');
     if (hideVotedBox) hideVotedBox.checked = state.hideVoted;
     var hideMergedBox = document.getElementById('hide-merged');

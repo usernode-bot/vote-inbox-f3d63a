@@ -176,6 +176,33 @@ user's vote history.
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- Onboarding tour: a three-step panel (what a proposal is, how to vote,
+  where My Votes lives) shown to first-time visitors. It renders in its own
+  `#tour-slot` above `#view` (never inside the list, so the cards'
+  structure, the `#view > …:first-child` selectors and the first card's
+  vote buttons are untouched), advances with Next, and Skip dismisses it at
+  any step. Finishing OR skipping sets `vote-inbox:tour-done` in
+  localStorage, so it never shows again on a later visit; the header menu
+  button's "Show the tour" item reopens it (restarts at step 1 on the
+  inbox tab; the flag stays set). Tour hooks (staging + `?demo=1` only,
+  all through the real buttons): `?tour=1` forces the tour up past the
+  flag; `?tour-reset=1` clears the flag so the load is a first visit
+  again; `?tap-tour-next=<n>` taps Next n times after render;
+  `?tap-tour-skip=1` taps Skip after those taps (skipping mid-tour);
+  `?finish-tour=1` / `?skip-tour=1` drive the tour to done through the
+  real buttons then reload a clean `?tour-done=1` marker URL, so what a
+  check sees is the persisted state; `?tap-tour-open=1` marks the tour
+  done first, then taps the header menu and its item, so the reopen path
+  is what brings it back.
+- Real empty states: the genuinely empty inbox (zero loaded proposals, no
+  filter active) shows "Nothing to vote on yet" with a Browse apps button
+  that opens the app filter dropdown (the empty fixture keeps its app list
+  so the dropdown is populated). Header summaries now show at zero once a
+  tab's data has loaded instead of hiding: "0 open, 0 votes needed",
+  "0 voted, 0 merged", "0 starred, 0 updated". Demo knobs (staging +
+  `?demo=1` only): `?empty=1` (forwarded to /api/inbox) empties the inbox
+  fixture's proposals; `?votes-empty=1` (forwarded to /api/my-votes)
+  empties the My Votes fixture.
 - Bulk triage hooks (demo only) drive select mode and the bulk actions
   through the real code paths for checks: `?selectmode=1`,
   `?select=<ids>`, `?deselect=<ids>`, `?clearsel=1`, `?exitsel=1`,
