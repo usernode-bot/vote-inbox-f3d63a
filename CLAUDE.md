@@ -213,6 +213,33 @@ user's vote history.
   reload. Demo fixtures: bug 2, feature 2, copy 1, ux 1 open (demo-1 is
   voted, demo-5 merged, demo-3 untagged — those three are the absence and
   hidden-count assertions).
+- Notification center: the header bell opens it (also `?notis=1`, a real
+  deep link that works in production). Rows are the user's own notifications
+  from the `notifications` table (`staging:private`: one person's events),
+  written by `detectNotifications`, which runs on every inbox load: when a
+  proposal the user voted on reaches its threshold or merges, their own
+  proposal gets its first yes, or a proposal they voted yes on (or authored)
+  is one yes vote away, one row is inserted per (user, session, kind) — an
+  event is announced once, never again. Detection must never break the inbox
+  load that noticed the events, so its writes are best-effort. Rows older
+  than 30 days are dropped from the list (not deleted) on read; the unread
+  count feeds the bell badge and persists because it is read back from the
+  table. Each row links into the proposal detail (reusing the card's detail
+  view); "Mark all as read" stamps `read_at` on every unread row. The
+  Voted/Mine/All filter reads each row's `audience` (comma-joined), which
+  records who the event concerns.
+- Notification demo hooks (staging + `?demo=1` only): `?seed-notis=<default|none>`
+  replaces the caller's rows with the `NOTIFICATION_SEEDS` fixtures (five
+  rows: merged 2h, threshold 1d, first_yes 2d, one_vote_away 3d read, and a
+  35-day-old row the 30-day window drops; `none` empties the list) so every
+  check run starts from a known list; `?noti-filter=<voted|mine|all>` presets
+  the filter; `?tap-bell=1`, `?tap-readall=1` and `?tap-noti=<id>` click the
+  real controls once they have rendered; `?noti-reload=1` reloads a clean
+  URL after the seed, so the check sees the persisted state. Detection
+  scenarios are driven through demo-inbox params forwarded to `/api/inbox`:
+  `?noti-detect=1` runs detection on the demo payload, `?noti-vote=<ids>`
+  marks those fixtures voted and `?noti-mine=<ids>` marks them authored by
+  the caller, both in memory only (the fixture's own `myVote`s still apply).
 - `?turnout-refresh=1` (demo only) reloads the inbox through the real
   refresh path with the fetch carrying `?turnoutalt=1`, which the server
   answers with a variant fixture (two more proposals merged), so the app
