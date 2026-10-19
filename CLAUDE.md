@@ -144,6 +144,16 @@ user's vote history.
   the per-member check sees the caller's list without it. `set-bookmark`,
   `tap-bookmark` and `saved-other` all reset the caller's fixture rows
   first, so repeated check runs start clean.
+- Filter sheet: the Hide voted / Hide merged / Hide read switches live in
+  a bottom sheet (`unNative.presentSheet`) behind the Filter button next to
+  All tags; the button takes the active chip look and a count badge
+  (`data-filter-count`) while any are on. The switches never leave the
+  document: the sheet adopts `#filter-sheet-content` and hands it back to
+  the hidden `#filter-sheet-home` on dismiss, so `#hide-*` hooks keep
+  working. Save view only shows when a filter, chip or search is on, or the
+  sort is not the default (`viewWorthSaving`); with no saved views either,
+  the whole views row collapses (`data-save-view-visible` on the row).
+  Demo hook: `?tap-filter-sheet=1` taps the Filter button after render.
 - Read tracking: opening a proposal (Discuss, or a `?proposal=` deep link)
   marks it read for the signed-in account only — an append-only row in
   `proposal_reads`, so read state survives reloads, follows the account and
