@@ -220,6 +220,10 @@
         <button data-votes-order="oldest" type="button" role="radio" aria-checked="false"
           class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Oldest first</button>
       </div>
+      <!-- Merged-this-week filter: the chip the celebration card's
+           "See what merged" link turns on; ?votes-merged=1 deep links to it. -->
+      <button data-votes-merged-chip type="button" aria-pressed="false"
+        class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Merged this week</button>
     </div>
 
     <!-- Bulk triage bar: shown only in select mode on the Inbox tab. The
@@ -244,6 +248,11 @@
     </div>
 
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
+
+    <!-- Polite announcement for merge celebration cards: filled once per
+         inbox load with one line per card, read by screen readers when the
+         cards appear. Kept outside #view so re-renders never clear it. -->
+    <div data-celebration-live aria-live="polite" class="sr-only"></div>
 
   </main>
 
@@ -423,6 +432,38 @@
     // Demo-inbox params forwarded to /api/inbox so the server can stamp the
     // caller's persisted snoozes (and the snooze check fixtures) on demand.
     var SNOOZE_PARAMS = ['snooze', 'snooze-past', 'snooze-other'];
+    // Merge-celebration hooks (staging + ?demo=1 only). Celebrations only
+    // render and only get recorded when the load opts in with ?celeb=1 —
+    // the marker the celebration checks' pages and their reloaded marker
+    // pages carry, mirroring ?snooze=1 — so a plain ?demo=1 load stays
+    // deterministic:
+    //   ?celebvote=<ids>        marks those fixture proposals voted by the
+    //                           caller and merged, so the real detection path
+    //                           sees them; the caller's rows for them are
+    //                           re-armed (unseen) on every such load
+    //   ?celeb-clear=1          empties the caller's celebration rows first
+    //   ?celeb-reload=1         once the cards have rendered and been marked
+    //                           shown, reloads a clean ?demo=1&celeb=1 URL,
+    //                           so a check can observe that a shown
+    //                           celebration does not come back
+    //   ?celeb-tap-dismiss=<id> taps that card's Dismiss button after render
+    //   ?celeb-tap-see=1        taps the card's "See what merged" link after
+    //                           render, so a check walks the real path to the
+    //                           My Votes "merged this week" filter
+    //   ?celeb-motion=reduced   forces the reduced-motion presentation, the
+    //                           way ?impact-mobile=1 forces the small-screen
+    //                           impact panel
+    // ?votes-merged=1 is not a fixture: it is the My Votes "merged this
+    // week" filter's deep link, and works in production too (the celebration
+    // card's See-what-merged link lands on it).
+    var CELEB = DEMO && params.get('celeb') === '1';
+    var CELEBVOTE = DEMO ? (params.get('celebvote') || '') : '';
+    var CELEB_CLEAR = DEMO && params.get('celeb-clear') === '1';
+    var CELEB_RELOAD = DEMO && params.get('celeb-reload') === '1';
+    var CELEB_TAP_DISMISS = DEMO ? (params.get('celeb-tap-dismiss') || '') : '';
+    var CELEB_TAP_SEE = DEMO && params.get('celeb-tap-see') === '1';
+    var CELEB_MOTION = DEMO && params.get('celeb-motion') === 'reduced'
+      ? 'reduced' : '';
     // Members directory. ?members=1 is a real deep link (the way ?proposal=
     // is), not a demo hook: it opens the directory over the current tab in
     // every environment. ?member-query= presets the directory's search box
@@ -436,6 +477,16 @@
       inbox: null,
       votes: null,
       watchlist: null,
+      // Pending merge celebrations, from the inbox payload (one row per
+      // merged proposal the user voted on). Each card is rendered once and
+      // then marked shown server-side, so the next load no longer returns
+      // it; dismissing marks it dismissed. The two promises remember the
+      // shown/dismiss POSTs in flight so the demo reload hooks can wait for
+      // them to land before reloading their marker pages.
+      celebrations: [],
+      celebShownPending: false,
+      celebShownPromise: null,
+      celebDismissPromise: null,
       inboxLoadedAt: null,
       filter: '',
       filterName: '',
@@ -464,6 +515,11 @@
       // ?votes-order= param is a one-load override, the same pattern as
       // ?sort= (the staging checks use it to reach the reversed order).
       votesOrder: params.get('votes-order') === 'oldest' ? 'oldest' : 'newest',
+      // My Votes "merged this week" filter: on when ?votes-merged=1 (a real
+      // deep link — the celebration card's See-what-merged link lands on
+      // it), toggled by the chip on the tab. Not persisted, like the order:
+      // a fresh load starts unfiltered.
+      votesMergedWeek: params.get('votes-merged') === '1',
       loadingInbox: false,
       loadingVotes: false,
       loadingWatchlist: false,
@@ -3068,6 +3124,173 @@
         + '</article>';
     }
 
+    // ------------------------------------------------------------------
+    // Merge celebrations. When a proposal the user voted on merges, a
+    // one-time card appears at the top of the inbox: what merged, where,
+    // and that the user's vote was on the winning side. The cards come
+    // from the server's pending list; each is rendered once and then
+    // marked shown (or dismissed), so it never comes back on a later
+    // load. Multiple merges stack as separate cards, newest first.
+    // ------------------------------------------------------------------
+
+    // Effective motion for the cards' entrance animation: reduced when the
+    // viewer asked the device for reduced motion, or when a demo check
+    // forces it (?celeb-motion=reduced, the way ?impact-mobile=1 forces the
+    // small-screen impact panel). The stylesheet animates only the 'full'
+    // presentation and also guards with prefers-reduced-motion itself.
+    function celebrationMotion() {
+      if (CELEB_MOTION) return 'reduced';
+      try {
+        if (window.matchMedia
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          return 'reduced';
+        }
+      } catch (e) { /* treat as full motion */ }
+      return 'full';
+    }
+
+    function celebrationCardHtml(c) {
+      var choice = c.choice === 'no' ? 'no' : 'yes';
+      return '<article data-celebration data-session-id="' + esc(c.sessionId) + '"'
+        + ' data-celebration-choice="' + choice + '"'
+        + ' class="celebration-card flex flex-col gap-1.5 rounded-2xl border border-violet-500/40 bg-violet-600/10 p-4 shadow-sm">'
+        + '<div class="flex items-start justify-between gap-2">'
+        + '<p class="text-xs font-semibold text-violet-700 dark:text-violet-300">Merged</p>'
+        + '<button data-action="dismiss-celebration" data-session="' + esc(c.sessionId) + '"'
+        + ' aria-label="Dismiss celebration for ' + esc(c.title) + '"'
+        + ' class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>'
+        + '</button></div>'
+        + '<h2 data-celebration-title class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(c.title) + '</h2>'
+        + '<p class="text-xs text-zinc-500 dark:text-zinc-400"><span data-celebration-app>'
+        + esc(c.appName || c.appSlug) + '</span> · <span data-celebration-choice>You voted '
+        + choice + '</span></p>'
+        + '<div class="mt-1"><button data-action="see-merged" data-session="' + esc(c.sessionId) + '"'
+        + ' class="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">See what merged</button></div>'
+        + '</article>';
+    }
+
+    function celebrationCardsHtml() {
+      if (!state.celebrations.length) return '';
+      return '<div data-celebrations data-motion="' + celebrationMotion() + '"'
+        + ' class="flex flex-col gap-3" aria-label="Merge celebrations">'
+        + state.celebrations.map(celebrationCardHtml).join('') + '</div>';
+    }
+
+    // Mark the rendered cards shown so each proposal's celebration is a
+    // one-time card: the next inbox load no longer returns them. The POST's
+    // promise is kept so the ?celeb-reload=1 hook can wait for it to land
+    // before reloading its marker page.
+    function markCelebrationsShown() {
+      if (!state.celebrations.length || state.celebShownPending) return;
+      var ids = state.celebrations.map(function (c) { return c.sessionId; });
+      state.celebShownPending = true;
+      state.celebShownPromise = api('/api/celebrations/shown', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: ids }),
+      }).catch(function () {
+        // Leave the cards pending: the next load shows them again.
+        state.celebShownPending = false;
+      });
+    }
+
+    // Polite announcement for the celebration cards, read by screen readers
+    // when the set of cards changes (the region is aria-live="polite").
+    function announceCelebrations() {
+      var el = document.querySelector('[data-celebration-live]');
+      if (!el) return;
+      if (!state.celebrations.length) {
+        if (el.textContent) el.textContent = '';
+        return;
+      }
+      var text = state.celebrations.map(function (c) {
+        return c.title + ' on ' + (c.appName || c.appSlug) + ' merged. You voted '
+          + (c.choice === 'no' ? 'no' : 'yes') + '.';
+      }).join(' ');
+      if (el.textContent !== text) el.textContent = text;
+    }
+
+    // Dismiss one celebration card: it leaves the inbox at once and the row
+    // is marked dismissed server-side, so the proposal never celebrates
+    // again. A failed POST (an offline device) puts the card back.
+    function dismissCelebration(sessionId) {
+      var kept = state.celebrations;
+      state.celebrations = kept.filter(function (c) {
+        return String(c.sessionId) !== String(sessionId);
+      });
+      render();
+      state.celebDismissPromise = api('/api/celebrations/dismiss', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionId }),
+      }).catch(function () {
+        state.celebrations = kept;
+        render();
+        toast('Could not dismiss. Try again.');
+      });
+      return state.celebDismissPromise;
+    }
+
+    // The celebration card's "See what merged" link: My Votes, filtered to
+    // proposals that merged this week — the same seven-day span the cards
+    // celebrate. The filter is a real deep link (?votes-merged=1), so the
+    // state lands in the URL and a reload keeps it.
+    function seeWhatMerged() {
+      state.tab = 'votes';
+      state.votesMergedWeek = true;
+      state.compareView = false;
+      var url = new URL(location.href);
+      url.searchParams.set('tab', 'votes');
+      url.searchParams.set('votes-merged', '1');
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+      render();
+      window.scrollTo(0, 0);
+      loadVotes(!state.votes);
+    }
+
+    // ?celeb-reload=1: once the cards have rendered and the shown-mark has
+    // landed, reload a clean ?demo=1&celeb=1 URL so a check can observe that
+    // a shown celebration does not come back.
+    function maybeCelebrationReload() {
+      if (!DEMO || !CELEB_RELOAD) return;
+      var settle = function () {
+        var url = new URL(location.href);
+        // The marker page reads the persisted state back: drop the fixture
+        // knobs (including celeb-clear, so the reload cannot wipe the very
+        // rows it is checking) and keep only the ?celeb=1 opt-in.
+        url.searchParams.delete('celebvote');
+        url.searchParams.delete('celeb-clear');
+        url.searchParams.delete('celeb-reload');
+        location.replace(url.toString());
+      };
+      Promise.resolve(state.celebShownPromise).then(settle, settle);
+    }
+
+    // ?celeb-tap-dismiss=<id>: tap that card's Dismiss button once it has
+    // rendered (the real button, through the real delegated click handler).
+    var celebDismissDone = false;
+    function maybeCelebrationDismiss() {
+      if (!DEMO || !CELEB_TAP_DISMISS || celebDismissDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      waitFor(
+        '[data-celebration][data-session-id="' + CELEB_TAP_DISMISS + '"]'
+        + ' [data-action="dismiss-celebration"]',
+        function (btn) {
+          celebDismissDone = true;
+          btn.click();
+        });
+    }
+
+    // ?celeb-tap-see=1: tap the celebration card's "See what merged" link
+    // once it has rendered, so the check walks the real path to the My
+    // Votes "merged this week" filter.
+    function maybeCelebrationSeeMerged() {
+      if (!DEMO || !CELEB_TAP_SEE) return;
+      if (state.errorInbox || !state.inbox) return;
+      waitFor('[data-action="see-merged"]', function (btn) { btn.click(); });
+    }
+
     // One Watchlist row: the app name, the proposal title, the row's current
     // status pill and — when the status differs from the one recorded at the
     // last look — an amber "New: <status>" change badge. The star button is
@@ -3146,6 +3369,7 @@
     var SHOW_SNOOZED_CTA = '<button data-action="show-snoozed" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">See snoozed</button>';
     var BACK_TO_INBOX_CTA = '<button data-action="clear-snooze-view" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Back to the inbox</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
+    var SHOW_ALL_VOTES_CTA = '<button data-action="show-all-votes" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show all votes</button>';
 
     function errorHtml(message) {
       return '<div class="flex flex-col items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/5 px-6 py-10 text-center">'
@@ -3236,7 +3460,8 @@
     }
 
     // My Votes order pill: same treatment as the Inbox sort pill, driven
-    // by state.votesOrder.
+    // by state.votesOrder. The row also carries the merged-this-week chip,
+    // an on/off toggle like the Inbox filter chips (aria-pressed).
     function renderVotesOrder() {
       var buttons = document.querySelectorAll('#votes-order-row [data-votes-order]');
       for (var i = 0; i < buttons.length; i++) {
@@ -3245,6 +3470,12 @@
         btn.className = 'rounded-full px-3 py-1 text-xs font-semibold transition-colors '
           + (on ? TAB_ACTIVE : TAB_IDLE);
         btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
+      var chip = document.querySelector('[data-votes-merged-chip]');
+      if (chip) {
+        chip.className = 'rounded-full px-3 py-1 text-xs font-semibold transition-colors '
+          + (state.votesMergedWeek ? TAB_ACTIVE : TAB_IDLE);
+        chip.setAttribute('aria-pressed', state.votesMergedWeek ? 'true' : 'false');
       }
     }
 
@@ -3505,9 +3736,52 @@
           return ta - tb;
         });
       }
+      // The "Merged this week" filter, the screen the celebration card's
+      // See what merged link opens (and ?votes-merged=1 deep-links to):
+      // keep rows whose proposal merged within the last seven calendar
+      // days, the same span the cards celebrate. Uses the row's recorded
+      // merged_at, falling back to updated_at (the refresh that first saw
+      // the merge), the same stand-in the merged date pill uses.
+      if (state.votesMergedWeek) {
+        votes = votes.filter(voteMergedThisWeek);
+        if (!votes.length) {
+          return emptyHtml(
+            'No merges this week',
+            'No proposal you voted on merged in the last seven days. Show all votes to see everything.',
+            SHOW_ALL_VOTES_CTA);
+        }
+      }
       var html = '';
       for (var i = 0; i < votes.length; i++) html += voteRow(votes[i]);
       return html;
+    }
+
+    // The seven-calendar-day span, in the viewer's own days, shared with
+    // the inbox's mergedThisWeek helper: 0 = today, 1..6 = the week.
+    function voteMergedThisWeek(v) {
+      if (!v || v.status !== 'merged') return false;
+      var stamp = v.merged_at || v.updated_at;
+      var t = stamp ? Date.parse(stamp) : NaN;
+      if (isNaN(t)) return false;
+      var now = new Date();
+      var d = new Date(t);
+      var startOfDay = function (x) {
+        return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      };
+      var daysBack = Math.floor((startOfDay(now) - startOfDay(d)) / (24 * 3600 * 1000));
+      return daysBack >= 0 && daysBack <= 6;
+    }
+
+    // The chip toggle and the filtered empty state's link back: the filter
+    // follows the URL (?votes-merged=1), so a reload keeps what is on
+    // screen and the deep link works.
+    function setVotesMergedWeek(on) {
+      state.votesMergedWeek = on;
+      var url = new URL(location.href);
+      if (on) url.searchParams.set('votes-merged', '1');
+      else url.searchParams.delete('votes-merged');
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+      render();
     }
 
     function renderWatchlist() {
@@ -3766,6 +4040,12 @@
         // yields to the compare view itself once that is on screen.
         if (state.compare.length && !state.compareView) {
           viewHtml = compareBarHtml() + viewHtml;
+        }
+        // Celebration cards ride above the list (and its empty states), on
+        // the plain inbox list only — not the Snoozed view, the detail or
+        // the compare view.
+        if (!state.snoozeView && !state.detail && !state.compareView) {
+          viewHtml = celebrationCardsHtml() + viewHtml;
         }
       } else if (state.tab === 'votes') {
         viewHtml = renderVotes();
@@ -4411,10 +4691,22 @@
           if (sv) query.push(SNOOZE_PARAMS[si] + '=' + encodeURIComponent(sv));
         }
         if (SNOOZE_SET) query.push('snooze=1');
+        // Celebration fixture knobs (the ?celeb=1 opt-in marker itself
+        // plus its ?celebvote= / ?celeb-clear=1 knobs), so the server runs
+        // the real detection pass on those loads and returns the caller's
+        // pending celebration cards. Never sent without demo data.
+        if (CELEB) query.push('celeb=1');
+        if (CELEBVOTE) query.push('celebvote=' + encodeURIComponent(CELEBVOTE));
+        if (CELEB_CLEAR) query.push('celeb-clear=1');
       }
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
           state.inbox = data;
+          // Pending celebration cards the server recorded (only sent on a
+          // ?celeb=1 demo load, or always in production). A payload without
+          // the field just means "none" — the same optional-field contract
+          // the change summary uses.
+          state.celebrations = Array.isArray(data.celebrations) ? data.celebrations : [];
           if (data.demo) reanchorDemo(data);
           resolveCompareSelection();
           state.inboxLoadedAt = new Date().toISOString();
@@ -4443,6 +4735,11 @@
           maybeTapSnooze();
           maybeSetSnooze();
           maybeTapUnsnooze();
+          markCelebrationsShown();
+          announceCelebrations();
+          maybeCelebrationReload();
+          maybeCelebrationDismiss();
+          maybeCelebrationSeeMerged();
           maybeTapSummary();
           maybeTapSearch();
           maybeTapImpactToggle();
@@ -5677,6 +5974,12 @@
         } else if (action === 'reload-comments') {
           state.commentsKey = '';
           loadDetailComments();
+        } else if (action === 'dismiss-celebration') {
+          dismissCelebration(actionEl.getAttribute('data-session'));
+        } else if (action === 'see-merged') {
+          seeWhatMerged();
+        } else if (action === 'show-all-votes') {
+          setVotesMergedWeek(false);
         }
         return;
       }
@@ -5928,6 +6231,15 @@
     for (var vo = 0; vo < votesOrderButtons.length; vo++) {
       votesOrderButtons[vo].addEventListener('click', function (event) {
         setVotesOrder(event.currentTarget.getAttribute('data-votes-order'));
+      });
+    }
+
+    // The merged-this-week chip on the My Votes tab (same row as the vote
+    // order pill).
+    var votesMergedChip = document.querySelector('[data-votes-merged-chip]');
+    if (votesMergedChip) {
+      votesMergedChip.addEventListener('click', function () {
+        setVotesMergedWeek(!state.votesMergedWeek);
       });
     }
 
