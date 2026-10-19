@@ -86,6 +86,19 @@
       ]
     },
     {
+      "id": "header.sr-only-title",
+      "name": "The app header keeps only a screen-reader title",
+      "path": "/?demo=1&tour-done=1",
+      "expectSelector": "h1[data-app-title].sr-only",
+      "expectText": "Vote Inbox"
+    },
+    {
+      "id": "tabs.scroll-row",
+      "name": "The tab row scrolls sideways with padded tabs",
+      "path": "/?demo=1&tour-done=1",
+      "expectSelector": "[data-tab-scroll] .tab-btn"
+    },
+    {
       "id": "inbox.summary-line",
       "name": "Inbox header shows open and votes-needed summary",
       "path": "/?demo=1",

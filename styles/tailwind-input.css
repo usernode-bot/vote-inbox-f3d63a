@@ -30,3 +30,14 @@
     animation: none;
   }
 }
+
+/* The tab row scrolls sideways on narrow phones, but the scrollbar itself
+ * stays hidden: swiping and trackpad scrolling still work, and the bar
+ * keeps the same rounded look as before.
+ */
+[data-tab-scroll] {
+  scrollbar-width: none;
+}
+[data-tab-scroll]::-webkit-scrollbar {
+  display: none;
+}
