@@ -467,6 +467,28 @@ async function migrate() {
     );
     COMMENT ON TABLE watchlist IS 'staging:private';
   `);
+  // Snoozed proposals: one person's "hide this from my inbox until <date>"
+  // marks. Like my_votes and watchlist this is per-user tracking data, so it
+  // is staging:private. No foreign keys; proposal content stays on the
+  // platform. A row is the snooze itself: unsnoozing deletes it, and a row
+  // whose wake time has passed is dropped on the next read, which is what
+  // makes a snoozed proposal reappear automatically.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS snoozes (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      wake_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE snoozes IS 'staging:private';
+  `);
 }
 
 async function seedStaging() {
@@ -548,6 +570,42 @@ async function withMyStars(proposals, userId, req) {
     : [];
   for (const p of proposals) {
     p.myStar = mine.has(p.sessionId) || preset.includes(p.sessionId) || p.myStar === true;
+  }
+  return proposals;
+}
+
+// ---------------------------------------------------------------------------
+// Snoozes: proposals the user tucked away until a wake date. Rows are per
+// user (staging:private, same reasoning as watchlist). Snoozing is purely a
+// view concern: it never touches votes or the platform's merge state, so the
+// row keeps only enough to render the Snoozed filter and re-find the app.
+// ---------------------------------------------------------------------------
+
+// The caller's active snoozes, session id -> wake time. A wake time that has
+// already passed no longer holds the proposal, so those rows are deleted on
+// read: the next inbox load simply lists the proposal again, which is the
+// "reappears automatically after the wake date" rule — no sweeper needed.
+async function snoozeMapFor(userId) {
+  try {
+    await pool.query(
+      'DELETE FROM snoozes WHERE user_id = $1 AND wake_at <= NOW()', [userId]);
+    const { rows } = await pool.query(
+      'SELECT session_id, wake_at FROM snoozes WHERE user_id = $1', [userId]);
+    const map = new Map();
+    for (const r of rows) map.set(r.session_id, r.wake_at);
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+// Stamp each proposal with the caller's own snooze wake time (ISO string)
+// when one is still ahead. Expired rows were already dropped by the read.
+async function withMySnoozes(proposals, userId) {
+  const mine = await snoozeMapFor(userId);
+  for (const p of proposals) {
+    const wake = mine.get(p.sessionId);
+    p.mySnooze = wake ? new Date(wake).toISOString() : null;
   }
   return proposals;
 }
@@ -835,6 +893,46 @@ function applyQueueScenario(proposals, req) {
   }
 }
 
+// Snooze check fixtures (staging demo only), applied to a demo inbox load
+// before the caller's own snooze rows are stamped on:
+//   ?snooze-past=<id>  records an already-expired snooze row for the caller
+//                      on that fixture proposal, so the auto-reappear rule
+//                      (an expired wake no longer holds the proposal) is
+//                      observable by a check. The next read cleans the row
+//                      up, exactly as it would for a real yesterday-snooze.
+//   ?snooze-other=1    records an ACTIVE snooze on demo-3 for a fake member
+//                      (staging-demo-user), so the per-user rule is
+//                      observable: another member's snooze never hides a
+//                      proposal from the caller.
+// Both write only fake or check-fixture rows and only under ?demo=1.
+async function applyDemoSnoozeFixtures(req) {
+  const past = String(req.query['snooze-past'] || '').trim();
+  if (past) {
+    const p = demoInbox().proposals.find((x) => x.sessionId === past);
+    if (p) {
+      await pool.query(
+        'DELETE FROM snoozes WHERE user_id = $1 AND session_id = $2',
+        [req.user.id, past]);
+      await pool.query(`
+        INSERT INTO snoozes
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title, wake_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() - INTERVAL '1 hour')`,
+        [req.user.id, req.user.username, p.appSlug, p.appName, past, p.proposalId, p.title]);
+    }
+  }
+  if (req.query['snooze-other'] === '1') {
+    const p = demoInbox().proposals.find((x) => x.sessionId === 'demo-3');
+    if (p) {
+      await pool.query(`
+        INSERT INTO snoozes
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title, wake_at)
+        VALUES (900002, 'staging-demo-user', $1, $2, $3, $4, $5, NOW() + INTERVAL '7 days')
+        ON CONFLICT (user_id, session_id) DO UPDATE SET wake_at = EXCLUDED.wake_at`,
+        [p.appSlug, p.appName, p.sessionId, p.proposalId, p.title]);
+    }
+  }
+}
+
 function demoVoteRows() {
   const row = (sessionId, appSlug, appName, title, choice, status, yes, no,
                required, at, mergedAt) => ({
@@ -981,9 +1079,15 @@ app.get('/api/inbox', async (req, res) => {
     // rows are deliberately NOT overlaid here (they surface on the plain
     // My Votes route instead). Overlaying them made every load answer
     // differently depending on what a previous load had cast — one check's
-    // cast vote hid another check's vote buttons.
+    // cast vote hid another check's vote buttons. The caller's persisted
+    // snooze rows follow the same rule: they are only overlaid when the load
+    // opts in with ?snooze=1 (the marker the snooze checks' reloaded pages
+    // carry), so a leftover snooze from one check can never reach another
+    // check's plain ?demo=1 load. Production always stamps.
     if (req.query.demo === '1' && IS_STAGING) {
       const demo = demoInboxPayload(req);
+      await applyDemoSnoozeFixtures(req);
+      if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
       await withMyStars(demo.proposals, req.user.id, req);
       return res.json(demo);
     }
@@ -992,6 +1096,8 @@ app.get('/api/inbox', async (req, res) => {
       // plain local launch; keep the screen reviewable there with fixtures.
       if (IS_STAGING) {
         const demo = demoInboxPayload(req);
+        await applyDemoSnoozeFixtures(req);
+        if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
         await withMyStars(demo.proposals, req.user.id, req);
         return res.json(demo);
       }
@@ -1021,6 +1127,7 @@ app.get('/api/inbox', async (req, res) => {
     });
 
     await withMyVotes(proposals, req.user.id);
+    await withMySnoozes(proposals, req.user.id);
     await withMyStars(proposals, req.user.id, req);
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
@@ -1371,6 +1478,72 @@ app.post('/api/watchlist/seen', async (req, res) => {
         [req.user.id, String(s.sessionId), s.status]);
     }
     res.json({ ok: true, marked: statuses.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Snooze a proposal for N days: the card leaves the caller's inbox until the
+// wake date, then reappears (the read drops expired rows). Re-snoozing the
+// same proposal moves the wake date. Demo bodies (staging only) carry just
+// the session id and days, and take their metadata from the demo fixture, so
+// a check URL can snooze a known proposal; real snoozes carry what the card
+// showed. Snoozing is per user and never touches the vote or merge state.
+app.post('/api/snooze', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  const days = Number(body.days);
+  if (!Number.isFinite(days) || days < 1 || days > 365) {
+    return res.status(400).json({ error: 'Snooze length must be between 1 and 365 days' });
+  }
+  try {
+    let meta = body;
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo snoozing is staging-only' });
+      const p = demoInbox().proposals.find((x) => x.sessionId === sessionId);
+      if (!p) return res.status(400).json({ error: 'Unknown demo proposal' });
+      meta = {
+        appSlug: p.appSlug,
+        appName: p.appName,
+        proposalId: p.proposalId,
+        title: p.title,
+      };
+    }
+    await pool.query(`
+      INSERT INTO snoozes
+        (user_id, username, app_slug, app_name, session_id, proposal_id, title, wake_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + make_interval(days => $8::int))
+      ON CONFLICT (user_id, session_id) DO UPDATE
+        SET wake_at = EXCLUDED.wake_at,
+            title = EXCLUDED.title,
+            app_slug = EXCLUDED.app_slug,
+            app_name = EXCLUDED.app_name,
+            proposal_id = EXCLUDED.proposal_id
+    `, [req.user.id, req.user.username, meta.appSlug || '', meta.appName || '',
+        sessionId, meta.proposalId || null, meta.title || 'Untitled proposal',
+        Math.round(days)]);
+    res.json({ ok: true, demo: body.demo === true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Unsnooze: remove this user's row for one session, so the proposal is back
+// in the inbox on the very next render.
+app.post('/api/unsnooze', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM snoozes WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, removed: rowCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
