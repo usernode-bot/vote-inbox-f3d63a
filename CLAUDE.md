@@ -134,6 +134,14 @@ user's vote history.
 - Proposal detail view: the Discuss button on a card opens it, and
   `?proposal=<sessionId>` deep-links to it. Both work in production;
   the detail reuses the card's vote buttons via shared `proposalActions`.
+- Members directory: the header Members button toggles it over the
+  current tab, and `?members=1` deep-links to it (works in production).
+  Data comes from the platform `/members` API (creator first = owner
+  chip) enriched server-side with per-username vote counts aggregated
+  from `my_votes`; joined date and accepted-proposal count pass through
+  whatever the platform supplies and stay absent otherwise (no
+  placeholder). `?member-query=<text>` (staging demo only) presets the
+  search box so the filter and no-match states are check-reachable.
 - Demo thread hooks (staging demo only): `?comment=<text>` posts a
   top-level comment, `?reply-to=<id>&reply=<text>` posts a reply, both
   through the real form. Demo-4 carries fixture comments (negative ids
