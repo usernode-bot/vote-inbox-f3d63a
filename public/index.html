@@ -157,6 +157,8 @@
             class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Select</button>
           <button id="one-away-chip" data-one-away-chip type="button" aria-pressed="false"
             class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">One vote away</button>
+          <button id="snoozed-chip" data-snoozed-chip type="button" aria-pressed="false"
+            class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Snoozed</button>
           <label for="hide-voted" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
             <span>Hide voted</span>
             <input id="hide-voted" type="checkbox" class="un-switch">
@@ -346,6 +348,36 @@
     var TAP_CLEAR = DEMO && params.get('tap-clear') === '1';
     var TAP_COMPARE_ADD = DEMO ? (params.get('tap-compare-add') || '') : '';
     var TAP_NO_COMPARE = DEMO ? (params.get('tap-no-compare') || '') : '';
+    // Snooze hooks (demo only), driven through the real controls the way
+    // ?tap-no= and ?tap-star= are:
+    //   ?tap-snooze=<id>              opens that card's snooze menu (the real
+    //                                 Snooze button, through the delegated
+    //                                 click handler), so a check can assert
+    //                                 the menu offers 1 day and 1 week
+    //   ?set-snooze=<id>&snooze-days=1|7
+    //                                 opens the menu and taps the item, then
+    //                                 reloads once the snooze is recorded,
+    //                                 landing on ?snooze-set=<id> — what the
+    //                                 check sees is therefore the persisted
+    //                                 state, which is what survives a reload
+    //   ?tap-unsnooze=<id>            taps a snoozed card's Unsnooze button
+    //                                 once it has rendered. Skipped on a load
+    //                                 that is itself about to snooze-and-
+    //                                 reload, so the tap lands on the
+    //                                 persisted state, not the optimistic one.
+    // ?snoozed=1 is not a fixture: it is the Snoozed filter's deep link, and
+    // works in production too.
+    var SNOOZED_VIEW = params.get('snoozed') === '1';
+    var TAP_SNOOZE = DEMO ? (params.get('tap-snooze') || '') : '';
+    var SET_SNOOZE = DEMO ? (params.get('set-snooze') || '') : '';
+    var SET_SNOOZE_DAYS = DEMO ? (params.get('snooze-days') || '1') : '';
+    // The reloaded ?snooze-set= page must ask the demo inbox for the caller's
+    // persisted snoozes (the ?snooze=1 overlay; see /api/inbox on the server).
+    var SNOOZE_SET = DEMO ? (params.get('snooze-set') || '') : '';
+    var TAP_UNSNOOZE = DEMO ? (params.get('tap-unsnooze') || '') : '';
+    // Demo-inbox params forwarded to /api/inbox so the server can stamp the
+    // caller's persisted snoozes (and the snooze check fixtures) on demand.
+    var SNOOZE_PARAMS = ['snooze', 'snooze-past', 'snooze-other'];
     // Members directory. ?members=1 is a real deep link (the way ?proposal=
     // is), not a demo hook: it opens the directory over the current tab in
     // every environment. ?member-query= presets the directory's search box
@@ -368,6 +400,14 @@
       // how the staging checks activate it). Not persisted, unlike
       // hideVoted: it starts off on every fresh load.
       oneAway: params.get('one-away') === '1',
+      // Snoozed filter: on when ?snoozed=1 (a real deep link, also how the
+      // staging checks open it). Not persisted, like oneAway: a fresh load
+      // starts on the main inbox. The snoozed cards live in the same loaded
+      // payload, so the header summary keeps counting them.
+      snoozeView: SNOOZED_VIEW,
+      // The card whose snooze menu is open (one at a time). Transient, like
+      // the reply form: a re-render or a reload closes it.
+      snoozeMenu: null,
       hideMerged: false,
       // Inbox order: 'needed' | 'newest' | 'controversy'.
       sort: 'needed',
@@ -1502,6 +1542,57 @@
         + (starred ? STAR_FILLED_HTML : STAR_OUTLINE_HTML) + '</button>';
     }
 
+    // Snooze: a quiet ghost button on each open proposal card (not on cards
+    // already snoozed; those carry Unsnooze instead). Tapping it opens the
+    // card's inline snooze menu.
+    var SNOOZE_IDLE_CLASS = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
+    var SNOOZE_ICON_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
+    // The menu's choice rows and the wake line: whole literals for the
+    // Tailwind compiler.
+    var SNOOZE_CHOICE_CLASS = 'flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-100 active:scale-95 dark:text-zinc-100 dark:hover:bg-zinc-800';
+    var SNOOZE_LINE_CLASS = 'flex items-center justify-between gap-2 rounded-xl bg-violet-600/10 px-3 py-2';
+
+    function snoozeToggleButton(sessionId) {
+      return '<button data-snooze-toggle data-session="' + esc(sessionId) + '"'
+        + ' aria-expanded="false"'
+        + ' aria-label="Snooze this proposal"'
+        + ' class="' + SNOOZE_IDLE_CLASS + '">' + SNOOZE_ICON_HTML + '<span>Snooze</span></button>';
+    }
+
+    // The card's inline snooze menu: two fixed choices (one day, one week),
+    // each showing the wake date it would set. Rendered inside the card,
+    // under the button row, only while it is open (state.snoozeMenu).
+    function snoozeMenuHtml(p) {
+      if (state.snoozeMenu !== p.sessionId) return '';
+      var now = Date.now();
+      return '<div data-snooze-menu class="flex flex-col gap-1 rounded-xl border border-zinc-200 bg-white p-1.5 dark:border-zinc-800 dark:bg-zinc-900">'
+        + '<p class="px-2 pt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Remind me in</p>'
+        + snoozeChoice(p, 1, now)
+        + snoozeChoice(p, 7, now)
+        + '</div>';
+    }
+
+    function snoozeChoice(p, days, now) {
+      var label = days === 1 ? 'Snooze 1 day' : 'Snooze 1 week';
+      return '<button data-snooze-choose data-days="' + days + '" data-session="' + esc(p.sessionId) + '"'
+        + ' class="' + SNOOZE_CHOICE_CLASS + '">'
+        + '<span>' + label + '</span>'
+        + '<span class="text-xs font-normal text-zinc-500 dark:text-zinc-400">until '
+        + esc(wakeDateLabel(now + days * 86400000)) + '</span>'
+        + '</button>';
+    }
+
+    // The wake line on a snoozed card: when it comes back, plus Unsnooze.
+    function snoozeLine(p) {
+      return '<div class="' + SNOOZE_LINE_CLASS + '">'
+        + '<p data-wake-date class="text-xs font-medium text-violet-700 dark:text-violet-300">Wake '
+        + esc(wakeDateLabel(p.mySnooze)) + '</p>'
+        + '<button data-unsnooze data-session="' + esc(p.sessionId) + '"'
+        + ' aria-label="Unsnooze this proposal"'
+        + ' class="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-400 dark:hover:text-violet-300">Unsnooze</button>'
+        + '</div>';
+    }
+
     // Copy mode is the fallback everywhere the native sheet is unavailable
     // (desktop, or the app frame without the web-share grant). The demo-only
     // ?share= param wins so the checks can pin either label deterministically.
@@ -1892,8 +1983,12 @@
       // data-contested marks whether both sides hold at least one vote, the
       // split property the controversy sort ranks on.
       var contested = splitContested(p);
+      // A snoozed card keeps everything a card has (votes stay votable) and
+      // adds its wake line; its Snooze button yields to that line's Unsnooze.
+      var snoozed = wakeActive(p);
       return '<article data-proposal-card data-session-id="' + esc(p.sessionId) + '"'
         + (p.needed != null ? ' data-needed="' + p.needed + '"' : '')
+        + (snoozed ? ' data-snoozed="1"' : '')
         + (state.selectMode && !voted
           ? ' data-selected="' + (isSelected ? 'true' : 'false') + '"' : '')
         + ' data-contested="' + (contested ? 'true' : 'false') + '"'
@@ -1918,11 +2013,14 @@
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
         + '<div class="flex shrink-0 items-center gap-0.5">'
         + starToggleButton(p.sessionId, !!p.myStar, !!state.starPending['star:' + p.sessionId])
+        + (!snoozed ? snoozeToggleButton(p.sessionId) : '')
         + discussButton(p)
         + compareButton(p)
         + (p.url ? shareLinkButton(p) : '')
         + '</div>'
         + '</div>'
+        + (snoozed ? snoozeLine(p) : '')
+        + snoozeMenuHtml(p)
         + statusProgress(p)
         + proposalActions(p)
         + '</article>';
@@ -2376,6 +2474,8 @@
     var SHOW_VOTED_CTA = '<button data-action="show-voted" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show voted proposals</button>';
     var SHOW_MERGED_CTA = '<button data-action="show-merged" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Show merged proposals</button>';
     var CLEAR_SEARCH_CTA = '<button data-action="clear-search" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Clear search</button>';
+    var SHOW_SNOOZED_CTA = '<button data-action="show-snoozed" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">See snoozed</button>';
+    var BACK_TO_INBOX_CTA = '<button data-action="clear-snooze-view" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Back to the inbox</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
 
     function errorHtml(message) {
@@ -2517,9 +2617,31 @@
       if (state.errorInbox) return errorHtml(state.errorInbox);
       if (!state.inbox || state.loadingInbox && !state.inbox.proposals) return skeletons();
       var proposals = state.inbox.proposals || [];
+      // Split snoozed cards off before every other filter: a snoozed
+      // proposal leaves the main inbox until its wake date. The summary
+      // counts still read the whole loaded list, so snoozing never moves
+      // the header totals.
+      var snoozed = [];
+      var visible = [];
+      for (var sp = 0; sp < proposals.length; sp++) {
+        (wakeActive(proposals[sp]) ? snoozed : visible).push(proposals[sp]);
+      }
+      // The Snoozed filter: its own view over just the snoozed cards, one
+      // flat list (each row already carries its wake date and Unsnooze).
+      if (state.snoozeView) {
+        if (!snoozed.length) {
+          return emptyHtml(
+            'Nothing snoozed',
+            'Snoozed proposals wait here until their wake date, then return to the inbox.',
+            BACK_TO_INBOX_CTA);
+        }
+        var snoozedHtml = '';
+        for (var sv = 0; sv < snoozed.length; sv++) snoozedHtml += proposalCard(snoozed[sv]);
+        return snoozedHtml;
+      }
       var filtered = state.filter
-        ? proposals.filter(function (p) { return p.appSlug === state.filter; })
-        : proposals;
+        ? visible.filter(function (p) { return p.appSlug === state.filter; })
+        : visible;
       if (state.hideVoted) {
         filtered = filtered.filter(function (p) { return !isVoted(p); });
       }
@@ -2563,6 +2685,15 @@
         filtered = filtered.filter(function (p) { return p.needed === 1; });
       }
       if (!filtered.length) {
+        // Everything the inbox loaded is asleep: point at the Snoozed
+        // filter rather than a caught-up message that hides where the
+        // cards went.
+        if (proposals.length && snoozed.length === proposals.length) {
+          return emptyHtml(
+            'Everything here is snoozed',
+            'Snoozed proposals wait until their wake date, then return to the inbox.',
+            SHOW_SNOOZED_CTA);
+        }
         // The chip is the most specific filter, so its empty state wins over
         // the others when it is on.
         if (proposals.length && state.oneAway) {
@@ -2915,6 +3046,7 @@
     function render() {
       syncFilter();
       syncOneAway();
+      syncSnoozedChip();
       syncSelectMode();
       renderSelectBar();
       renderTabs();
@@ -3130,6 +3262,16 @@
       if (!oneAwayChip) return;
       oneAwayChip.className = state.oneAway ? ONE_AWAY_ACTIVE : ONE_AWAY_IDLE;
       oneAwayChip.setAttribute('aria-pressed', state.oneAway ? 'true' : 'false');
+    }
+
+    // The Snoozed chip toggles the Snoozed filter view. Same idle/active
+    // colours as the other chips; aria-pressed is what the checks read.
+    var snoozedChip = document.getElementById('snoozed-chip');
+
+    function syncSnoozedChip() {
+      if (!snoozedChip) return;
+      snoozedChip.className = state.snoozeView ? ONE_AWAY_ACTIVE : ONE_AWAY_IDLE;
+      snoozedChip.setAttribute('aria-pressed', state.snoozeView ? 'true' : 'false');
     }
 
     // Keep the Select chip and the bulk bar in step with select mode. The
@@ -3381,6 +3523,13 @@
           var qv = params.get(QUEUE_PARAMS[qi]);
           if (qv) query.push(QUEUE_PARAMS[qi] + '=' + encodeURIComponent(qv));
         }
+        // Snooze fixture knobs, plus the snooze-set marker page: that one
+        // forwards ?snooze=1 so the reload reads the persisted state back.
+        for (var si = 0; si < SNOOZE_PARAMS.length; si++) {
+          var sv = params.get(SNOOZE_PARAMS[si]);
+          if (sv) query.push(SNOOZE_PARAMS[si] + '=' + encodeURIComponent(sv));
+        }
+        if (SNOOZE_SET) query.push('snooze=1');
       }
       return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
         .then(function (data) {
@@ -3407,6 +3556,9 @@
           maybeTapShare();
           maybeApplyBulkHooks();
           maybeTapStar();
+          maybeTapSnooze();
+          maybeSetSnooze();
+          maybeTapUnsnooze();
           maybeTapSummary();
           maybeTapImpactToggle();
           maybeAutoComment();
@@ -3877,6 +4029,93 @@
       });
     }
 
+    // ------------------------------------------------------------------
+    // Snooze: tuck a proposal away until a wake date. The wake stamp is per
+    // user and purely a view concern — it never touches the vote or the
+    // merge state, so a snoozed card stays votable and the header summary
+    // keeps counting it. An expired wake no longer holds the card, so
+    // snoozed proposals reappear on their own; the frontend also ignores any
+    // stale wake stamp it is handed, in case a row outlived its cleanup.
+    // ------------------------------------------------------------------
+
+    // "Mon, Oct 20" label for a wake time (or any timestamp).
+    function wakeDateLabel(t) {
+      var d = new Date(t);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    // Is this proposal actively snoozed? A wake time still ahead holds it.
+    function wakeActive(p) {
+      var t = p && p.mySnooze ? Date.parse(p.mySnooze) : NaN;
+      return !isNaN(t) && t > Date.now();
+    }
+
+    function anySnoozed(exceptSessionId) {
+      var list = (state.inbox && state.inbox.proposals) || [];
+      for (var i = 0; i < list.length; i++) {
+        var q = list[i];
+        if (q.sessionId !== exceptSessionId && wakeActive(q)) return true;
+      }
+      return false;
+    }
+
+    function snoozePayload(sessionId, days, p) {
+      return {
+        sessionId: sessionId,
+        days: days,
+        appSlug: p.appSlug || '',
+        appName: p.appName || '',
+        proposalId: p.proposalId || null,
+        title: p.title || 'Untitled proposal',
+        demo: !!(state.inbox && state.inbox.demo),
+      };
+    }
+
+    function snoozeProposal(sessionId, days) {
+      var p = findProposal(sessionId);
+      if (!p || state.pending['snooze:' + sessionId]) return;
+      state.pending['snooze:' + sessionId] = true;
+      api('/api/snooze', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify(snoozePayload(sessionId, days, p)),
+      }).then(function () {
+        p.mySnooze = new Date(Date.now() + days * 86400000).toISOString();
+        state.snoozeMenu = null;
+        toast('Snoozed until ' + wakeDateLabel(p.mySnooze));
+      }).catch(function (err) {
+        toast('Could not snooze: ' + (err.message || 'try again'));
+      }).then(function () {
+        delete state.pending['snooze:' + sessionId];
+        render();
+      });
+    }
+
+    function unsnoozeProposal(sessionId) {
+      var p = findProposal(sessionId);
+      if (!p || state.pending['snooze:' + sessionId]) return;
+      state.pending['snooze:' + sessionId] = true;
+      api('/api/unsnooze', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ sessionId: sessionId }),
+      }).then(function () {
+        p.mySnooze = null;
+        state.snoozeMenu = null;
+        // Unsnoozing the last snoozed proposal empties the Snoozed filter;
+        // return to the main inbox so the proposal that just came back is
+        // what the user sees. With rows left, stay in the filter.
+        if (state.snoozeView && !anySnoozed(sessionId)) state.snoozeView = false;
+        toast('Snooze removed');
+      }).catch(function (err) {
+        toast('Could not unsnooze: ' + (err.message || 'try again'));
+      }).then(function () {
+        delete state.pending['snooze:' + sessionId];
+        render();
+      });
+    }
+
     // Confirm before a No vote: rejecting is the direction worth a second
     // look (it can sink a proposal), so the card's "No" button opens a small
     // confirm first; "Yes" stays one-tap. The native kit's alert carries the
@@ -4243,6 +4482,88 @@
       });
     }
 
+    // Staging demo hooks for the snooze flow, all demo-only and driven
+    // through the REAL controls (the delegated click handler), the way
+    // ?tap-star= and ?tap-compare-add= work:
+    //   ?tap-snooze=<id>  clicks that card's Snooze button so the menu with
+    //                     the one day and one week choices is on screen
+    //   ?set-snooze=<id>&snooze-days=<n>
+    //                     snoozes that proposal for real: forces the menu
+    //                     open, clicks the matching choice, waits for the
+    //                     card to leave the list, then reloads at a
+    //                     snooze-set marker URL (the reloaded fetch carries
+    //                     ?snooze=1 so the server reads the persisted row
+    //                     back, which is what makes persistence checkable)
+    //   ?tap-unsnooze=<id>  on the marker page, clicks that row's Unsnooze
+    //                     button; skipped while a set-snooze is still
+    //                     pending so it cannot remove the row too early
+    var tapSnoozeDone = false;
+    function maybeTapSnooze() {
+      if (!DEMO || !TAP_SNOOZE || tapSnoozeDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      waitFor(
+        '[data-proposal-card][data-session-id="' + TAP_SNOOZE + '"] [data-snooze-toggle]',
+        function (btn) {
+          tapSnoozeDone = true;
+          btn.click();
+        });
+    }
+
+    function tapSnoozeItem(sessionId, days) {
+      // The Snoozed view only holds already-snoozed cards, so a set-snooze
+      // that arrives with ?snoozed=1 steps back to the inbox first; the
+      // reload keeps snoozed=1 either way.
+      if (state.snoozeView) {
+        state.snoozeView = false;
+        render();
+      }
+      waitFor(
+        '[data-proposal-card][data-session-id="' + sessionId + '"] [data-snooze-toggle]',
+        function (btn) {
+          btn.click();
+          waitFor(
+            '[data-proposal-card][data-session-id="' + sessionId + '"] '
+            + '[data-snooze-choose][data-days="' + days + '"]',
+            function (item) {
+              item.click();
+            });
+        });
+    }
+
+    var setSnoozeDone = false;
+    function maybeSetSnooze() {
+      if (!DEMO || !SET_SNOOZE || setSnoozeDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      setSnoozeDone = true;
+      tapSnoozeItem(SET_SNOOZE, SET_SNOOZE_DAYS);
+      // The optimistic re-render drops the card the moment the POST lands;
+      // waiting for that (rather than a fixed delay) keeps repeated check
+      // runs from reloading before the row exists.
+      var tries = 0;
+      var timer = setInterval(function () {
+        var gone = !document.querySelector(
+          '[data-proposal-card][data-session-id="' + SET_SNOOZE + '"]');
+        if (gone) {
+          clearInterval(timer);
+          var marker = new URL(location.href);
+          marker.searchParams.delete('set-snooze');
+          marker.searchParams.delete('snooze-days');
+          marker.searchParams.set('snooze-set', SET_SNOOZE);
+          marker.searchParams.set('snooze-days', String(SET_SNOOZE_DAYS));
+          location.replace(marker.toString());
+        } else if (++tries > 50) {
+          clearInterval(timer);
+        }
+      }, 100);
+    }
+
+    function maybeTapUnsnooze() {
+      if (!DEMO || !TAP_UNSNOOZE || params.get('set-snooze')) return;
+      waitFor('[data-unsnooze][data-session="' + TAP_UNSNOOZE + '"]', function (btn) {
+        btn.click();
+      });
+    }
+
     // Staging demo hooks for the compare flow, all demo-only, one-shot and
     // driven through the REAL controls (the delegated click handler), the
     // way ?tap-no=1 and ?tap-share= work:
@@ -4336,6 +4657,12 @@
           setHideVoted(false);
         } else if (action === 'show-merged') {
           setHideMerged(false);
+        } else if (action === 'show-snoozed') {
+          state.snoozeView = true;
+          render();
+        } else if (action === 'clear-snooze-view') {
+          state.snoozeView = false;
+          render();
         } else if (action === 'clear-search') {
           state.search = '';
           var box = document.getElementById('inbox-search');
@@ -4381,6 +4708,27 @@
       var starBtn = target.closest ? target.closest('[data-star-toggle]') : null;
       if (starBtn) {
         toggleStar(starBtn.getAttribute('data-session'));
+        return;
+      }
+      // The Snooze button opens (or closes) the little inline menu with the
+      // one day and one week choices.
+      var snoozeBtn = target.closest ? target.closest('[data-snooze-toggle]') : null;
+      if (snoozeBtn) {
+        var snoozeSession = snoozeBtn.getAttribute('data-session');
+        state.snoozeMenu = state.snoozeMenu === snoozeSession ? null : snoozeSession;
+        render();
+        return;
+      }
+      var snoozeChoose = target.closest ? target.closest('[data-snooze-choose]') : null;
+      if (snoozeChoose) {
+        snoozeProposal(
+          snoozeChoose.getAttribute('data-session'),
+          Number(snoozeChoose.getAttribute('data-days')));
+        return;
+      }
+      var unsnoozeBtn = target.closest ? target.closest('[data-unsnooze]') : null;
+      if (unsnoozeBtn) {
+        unsnoozeProposal(unsnoozeBtn.getAttribute('data-session'));
         return;
       }
       var discussBtn = target.closest ? target.closest('[data-open-detail]') : null;
@@ -4468,6 +4816,13 @@
     if (oneAwayChip) {
       oneAwayChip.addEventListener('click', function () {
         state.oneAway = !state.oneAway;
+        render();
+      });
+    }
+
+    if (snoozedChip) {
+      snoozedChip.addEventListener('click', function () {
+        state.snoozeView = !state.snoozeView;
         render();
       });
     }

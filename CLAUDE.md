@@ -103,7 +103,29 @@ user's vote history.
   `watchlist` (one person's starred proposals, plus the status each row
   was last seen in) are both marked `staging:private` (per-person data).
   Proposal data stays on the platform — with one exception: the
-  discussion thread.
+  discussion thread. `snoozes` (one person's snoozed proposals and their
+  wake dates) is a fourth table, also `staging:private`.
+- Snooze: each person can snooze a proposal for one day or one week from
+  the card's Snooze button, so it leaves their inbox until its wake date
+  and reappears automatically after it (expiry is lazy: rows whose wake
+  date has passed are deleted on read, no sweeper). Snooze is purely a
+  per-user inbox-view concern — it never touches votes, stars or merge
+  behaviour, and the header totals keep counting snoozed proposals. The
+  Snoozed chip/filter (`?snoozed=1` deep links to it, works in
+  production) lists snoozed rows with their wake dates and an Unsnooze
+  button that returns the proposal immediately; unsnoozing the last one
+  returns to the inbox, and an all-snoozed inbox gets its own empty
+  state pointing at the filter.
+- Snooze demo hooks (staging + `?demo=1` only): `?tap-snooze=<id>` opens
+  that card's snooze menu; `?set-snooze=<id>&snooze-days=1|7` snoozes for
+  real (a DB row for the signed-in account) then reloads at a
+  `?snooze-set=<id>` marker URL, so what a check sees is the persisted
+  state; `?tap-unsnooze=<id>` taps a snoozed row's Unsnooze button;
+  `?snooze-past=<id>` inserts an already-expired row for the caller on
+  that fixture (the auto-reappear path); `?snooze-other=1` inserts an
+  active row for a fake user on demo-3 (the per-user path); `?snooze=1`
+  opts the demo inbox into overlaying the caller's persisted rows
+  (mirrors the my_votes precedent — the default demo stays deterministic).
 - `proposal_comments` holds the discussion thread. It is PUBLIC (on
   purpose): comments are in-app content visible to every signed-in
   member, so a stranger seeing every row is fine. Nesting is one level
