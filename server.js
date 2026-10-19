@@ -1674,14 +1674,16 @@ app.get('/api/my-votes', async (req, res) => {
       // summary line and the declared checks ("3 voted, 1 merged") are
       // deterministic run to run. The caller's real history, including rows
       // the ?cast= demo hook persists for the vote → Undo check, is served
-      // by the plain route below, not mixed in here.
+      // by the plain route below, not mixed in here. ?no-votes=1 empties the
+      // fixture so the share-image empty-history card is reachable by checks.
       const digestKind = req.query.digest;
       if (digestKind === 'week' || digestKind === 'quiet') {
         // Weekly-digest fixture variant (see demoDigestRows): rows spread
         // across known weeks so the digest card's numbers are checkable.
-        return res.json({ demo: true, votes: demoDigestRows(digestKind) });
+        return res.json({ demo: true, username: req.user.username, votes: demoDigestRows(digestKind) });
       }
-      return res.json({ demo: true, votes: demoVoteRows() });
+      const votes = req.query['no-votes'] === '1' ? [] : demoVoteRows();
+      return res.json({ demo: true, username: req.user.username, votes });
     }
 
     const { rows } = await pool.query(select, [req.user.id]);
@@ -1723,11 +1725,11 @@ app.get('/api/my-votes', async (req, res) => {
             [id, status, yes, no, mergedAt]);
         }
         const { rows: fresh } = await pool.query(select, [req.user.id]);
-        return res.json({ demo: false, votes: fresh });
+        return res.json({ demo: false, username: req.user.username, votes: fresh });
       }
     }
 
-    res.json({ demo: false, votes: rows });
+    res.json({ demo: false, username: req.user.username, votes: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

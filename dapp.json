@@ -2978,11 +2978,36 @@
       ]
     },
     {
+      "id": "my-votes.shareimg-button",
+      "name": "My Votes offers Share as image",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "#votes-order-row [data-shareimg-open]",
+      "expectText": "Share as image",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "leaderboard.tab",
       "name": "Leaderboard tab opens with its range toggle",
       "path": "/?demo=1&tab=leaderboard",
       "expectSelector": "[data-tab='leaderboard'][aria-selected='true']",
       "expectText": "This week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-handle",
+      "name": "The generated card shows my handle",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-handle]:not([data-handle='']) [data-shareimg-preview]",
+      "expectText": "@",
+      "visual": true,
       "impact": [
         "public/index.html",
         "server.js",
@@ -3003,11 +3028,35 @@
       ]
     },
     {
+      "id": "my-votes.shareimg-week",
+      "name": "The card shows my votes this week",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-week='2']",
+      "expectText": "2 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "detail.card-tap",
       "name": "Card tap opens the detail view",
       "path": "/?demo=1&tap-card=1",
       "expectSelector": "[data-proposal-detail][data-session-id='demo-2']",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-merged",
+      "name": "The card shows my merged count",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-merged='1']",
+      "expectText": "1 merged",
       "impact": [
         "public/index.html",
         "server.js",
@@ -3027,6 +3076,18 @@
       ]
     },
     {
+      "id": "my-votes.shareimg-apps",
+      "name": "The card lists the top apps",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-apps='Staging Demo App,Staging Demo Notes']",
+      "expectText": "Top apps: Staging Demo App, Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "leaderboard.merged",
       "name": "Rows show a merged-vote count",
       "path": "/?demo=1&tab=leaderboard",
@@ -3039,11 +3100,35 @@
       ]
     },
     {
+      "id": "my-votes.shareimg-theme",
+      "name": "The card follows the current theme",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&shareimg-theme=dark&tap-shareimg=1",
+      "expectSelector": "html.dark [data-share-card][data-theme='dark']",
+      "expectText": "Share as image",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "leaderboard.range-toggle",
       "name": "All time toggle re-ranks the board",
       "path": "/?demo=1&tab=leaderboard&lb-range=all",
       "expectSelector": "[data-lb-rank='4'] [data-lb-handle='@staging-demo-priya']",
       "expectText": "All time",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-sheet",
+      "name": "Share opens the native share sheet when available",
+      "path": "/?tab=votes&demo=1&shareimg=sheet&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-share-state='sheet'] [data-shareimg-share]",
+      "expectText": "Share",
       "impact": [
         "public/index.html",
         "server.js",
@@ -3064,11 +3149,35 @@
       ]
     },
     {
+      "id": "my-votes.shareimg-download",
+      "name": "A Download fallback saves the image",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=download",
+      "expectSelector": "[data-share-card][data-share-state='downloaded']",
+      "expectText": "Image saved",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "celebrate.appears",
       "name": "A merge celebration card appears for a voted proposal that merged",
       "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
       "expectSelector": "[data-celebration][data-session-id='demo-3']",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-copy",
+      "name": "A Copy link fallback copies a link when sharing is unavailable",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=copy",
+      "expectSelector": "[data-share-card] [data-shareimg-copy]",
+      "expectText": "Copied!",
       "impact": [
         "public/index.html",
         "server.js",
@@ -3088,6 +3197,17 @@
       ]
     },
     {
+      "id": "my-votes.shareimg-size",
+      "name": "The image has a fixed pixel size that fits a chat preview",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-width='1200'][data-height='630']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "leaderboard.cap",
       "name": "Board caps at 50 rows with a cap note",
       "path": "/?demo=1&tab=leaderboard&lb-many=1",
@@ -3100,11 +3220,35 @@
       ]
     },
     {
+      "id": "my-votes.shareimg-error",
+      "name": "An error while rendering shows a friendly message",
+      "path": "/?tab=votes&demo=1&shareimg=error&tap-shareimg=1",
+      "expectSelector": "#shareimg-panel [data-shareimg-error]",
+      "expectText": "Could not make the image",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "leaderboard.tie",
       "name": "Tied votes rank by merged votes first",
       "path": "/?demo=1&tab=leaderboard&lb-tie=1",
       "expectSelector": "[data-lb-rank='1'] [data-lb-handle='@staging-demo-tie-b']",
       "expectText": "2 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-no-votes",
+      "name": "The card omits apps when there were no votes",
+      "path": "/?tab=votes&demo=1&no-votes=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-week='0']:not([data-apps])",
+      "expectText": "0 votes this week",
       "impact": [
         "public/index.html",
         "server.js",

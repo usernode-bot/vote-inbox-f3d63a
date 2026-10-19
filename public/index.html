@@ -229,6 +229,8 @@
            "See what merged" link turns on; ?votes-merged=1 deep links to it. -->
       <button data-votes-merged-chip type="button" aria-pressed="false"
         class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Merged this week</button>
+      <button data-shareimg-open type="button"
+        class="ml-auto inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-white px-2.5 py-1 text-xs font-semibold text-violet-600 dark:bg-zinc-900 dark:text-violet-400">Share as image</button>
     </div>
 
     <!-- Leaderboard range pill: shown only on the Leaderboard tab, the same
@@ -242,6 +244,12 @@
           class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">All time</button>
       </div>
     </div>
+
+    <!-- Share-as-image preview: a card drawn by openShareImage() from the
+         loaded My Votes rows, shown above the vote list on the votes tab
+         only. Filled and hidden by renderShareImagePanel(); nothing here is
+         persisted and the drawn picture reads the current theme colours. -->
+    <div id="shareimg-panel" hidden></div>
 
     <!-- Bulk triage bar: shown only in select mode on the Inbox tab. The
          counter counts every ticked card, including ones a filter is
@@ -323,6 +331,30 @@
     // ?tap-share=<sessionId> (demo only) taps that card's share button once
     // the inbox has rendered, the way ?tap-no=1 taps a vote button.
     var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
+    // Share-as-image hooks (demo only), one URL per check behaviour:
+    // ?shareimg=sheet|fallback|error forces which path the share-image card
+    // uses (error makes the draw throw, through the real error path);
+    // ?tap-shareimg=1|share|download|copy taps the open button, then that
+    // panel action once the preview has rendered; ?shareimg-theme=dark|light
+    // pins the theme for the draw; ?no-votes=1 empties the demo votes fixture
+    // so the empty-history card is reachable. Production never reads these.
+    var SHAREIMG_MODE = DEMO && (params.get('shareimg') === 'sheet'
+      || params.get('shareimg') === 'fallback' || params.get('shareimg') === 'error')
+      ? params.get('shareimg') : '';
+    var TAP_SHAREIMG = DEMO ? (params.get('tap-shareimg') || '') : '';
+    var SHAREIMG_THEME = DEMO && (params.get('shareimg-theme') === 'dark'
+      || params.get('shareimg-theme') === 'light') ? params.get('shareimg-theme') : '';
+    var NO_VOTES = DEMO && params.get('no-votes') === '1';
+    // The theme pin re-applies on the bridge's theme event too, so a check's
+    // page keeps the forced look if the platform re-announces its theme.
+    if (SHAREIMG_THEME) {
+      var applyShareImgTheme = function () {
+        document.documentElement.classList.toggle('dark', SHAREIMG_THEME === 'dark');
+        document.documentElement.style.colorScheme = SHAREIMG_THEME;
+      };
+      applyShareImgTheme();
+      window.addEventListener('usernode:theme-changed', applyShareImgTheme);
+    }
     // Change-summary hooks (demo only): ?expand-summary=<sessionId> presets
     // that card's summary open before the first demo render (the way
     // ?expand= opens a clamped title), and ?tap-summary=<sessionId> taps the
@@ -583,6 +615,10 @@
       loadingWatchlist: false,
       errorInbox: null,
       errorVotes: null,
+      // Share-as-image preview on My Votes: the drawn card record
+      // { stats, dataUrl, blob, file, mode, error, status, width, height }.
+      // Frontend memory only; Close or a reload clears it.
+      shareImage: null,
       errorWatchlist: null,
       pending: {},
       // Star toggles in flight, per session and per watchlist row.
@@ -2233,7 +2269,7 @@
       // confirmation without touching the clipboard, and keep it up (no
       // revert timer) so a check polling the page always finds it. Real
       // taps outside the demo keep the genuine clipboard flow below.
-      var demoForced = DEMO && SHARE_MODE === 'copy';
+      var demoForced = DEMO && (SHARE_MODE === 'copy' || SHAREIMG_MODE === 'fallback');
       var done = function () {
         btn.innerHTML = COPY_DONE_HTML;
         if (btn._copyTimer) clearTimeout(btn._copyTimer);
@@ -4188,6 +4224,349 @@
     }
 
     // ------------------------------------------------------------------
+    // Share as image. Draws a fixed-size summary card (handle, votes this
+    // week, merged count, top apps) onto a canvas from the already-loaded
+    // My Votes rows, shows a preview above the list, and hands the PNG to
+    // the native share sheet when the Web Share API can take files, with
+    // Download and Copy link as the fallback. Nothing is persisted.
+    // ------------------------------------------------------------------
+
+    var SHARE_CARD_W = 1200;
+    var SHARE_CARD_H = 630;
+    var SHARE_CARD_FILE = 'vote-inbox-my-votes.png';
+    var SHAREIMG_ERROR_TEXT = 'Could not make the image. Please try again.';
+
+    // Stats from the loaded rows: votes cast in the last seven days (rows
+    // without a parseable date don't count toward the week but still count
+    // toward merged and top apps), merged count by the status each row was
+    // last seen in, and up to three apps ranked by vote count (ties by name).
+    function shareCardStats(votes) {
+      votes = votes || (state.votes && state.votes.votes) || [];
+      var cutoff = Date.now() - 7 * 86400000;
+      var week = 0;
+      var merged = 0;
+      var byApp = {};
+      for (var i = 0; i < votes.length; i++) {
+        var v = votes[i] || {};
+        var at = Date.parse(v.created_at);
+        if (!isNaN(at) && at >= cutoff) week++;
+        if (v.status === 'merged') merged++;
+        var app = v.app_name || v.app_slug;
+        if (app) byApp[app] = (byApp[app] || 0) + 1;
+      }
+      var apps = Object.keys(byApp).map(function (name) {
+        return { name: name, count: byApp[name] };
+      }).sort(function (a, b) {
+        return b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+      }).slice(0, 3);
+      return {
+        handle: (state.votes && state.votes.username) || '',
+        week: week,
+        merged: merged,
+        apps: apps
+      };
+    }
+
+    // Theme colours read at draw time, so the card follows light and dark.
+    // Tile surface and border come from a hidden probe carrying the same
+    // card classes the app renders with.
+    function shareCardColors() {
+      var bodyStyle = getComputedStyle(document.body);
+      var summary = document.getElementById('votes-summary');
+      var probe = document.createElement('div');
+      probe.className = CARD_CLASS;
+      probe.style.position = 'fixed';
+      probe.style.visibility = 'hidden';
+      probe.style.pointerEvents = 'none';
+      document.body.appendChild(probe);
+      var probeStyle = getComputedStyle(probe);
+      var colors = {
+        bg: bodyStyle.backgroundColor,
+        text: bodyStyle.color,
+        muted: summary ? getComputedStyle(summary).color : bodyStyle.color,
+        tileBg: probeStyle.backgroundColor,
+        tileBorder: probeStyle.borderColor,
+        accent: '#7c3aed'
+      };
+      document.body.removeChild(probe);
+      return colors;
+    }
+
+    function roundRectPath(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function ellipsizeText(ctx, text, maxWidth) {
+      if (ctx.measureText(text).width <= maxWidth) return text;
+      while (text.length > 1 && ctx.measureText(text + '…').width > maxWidth) {
+        text = text.slice(0, -1);
+      }
+      return text + '…';
+    }
+
+    // The draw itself. Throws on any failure (the demo ?shareimg=error hook
+    // throws here on purpose, through the real error path); openShareImage
+    // catches and shows the friendly message.
+    function drawShareCard(stats) {
+      if (SHAREIMG_MODE === 'error') {
+        throw new Error('shareimg demo: forced render failure');
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = SHARE_CARD_W;
+      canvas.height = SHARE_CARD_H;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('canvas 2d context unavailable');
+      var col = shareCardColors();
+      var pad = 72;
+      var innerW = SHARE_CARD_W - pad * 2;
+      ctx.fillStyle = col.bg;
+      ctx.fillRect(0, 0, SHARE_CARD_W, SHARE_CARD_H);
+      ctx.textBaseline = 'alphabetic';
+      // Violet mark + wordmark, top left.
+      roundRectPath(ctx, pad, 64, 48, 48, 12);
+      ctx.fillStyle = col.accent;
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pad + 13, 88 + 1);
+      ctx.lineTo(pad + 22, 97);
+      ctx.lineTo(pad + 35, 79);
+      ctx.stroke();
+      ctx.fillStyle = col.accent;
+      ctx.font = '700 30px system-ui, sans-serif';
+      ctx.fillText('Vote Inbox', pad + 66, 97);
+      // Handle, large; ellipsised to the content width.
+      ctx.fillStyle = col.text;
+      ctx.font = '700 72px system-ui, sans-serif';
+      if (stats.handle) {
+        ctx.fillText(ellipsizeText(ctx, '@' + stats.handle, innerW), pad, 214);
+      }
+      // Two stat tiles: votes this week and merged.
+      var tileW = (innerW - 24) / 2;
+      var tileY = 250;
+      var tileH = 140;
+      ctx.font = '700 96px system-ui, sans-serif';
+      var numW = Math.min(ctx.measureText(String(stats.week)).width + 56, tileW);
+      var numW2 = Math.min(ctx.measureText(String(stats.merged)).width + 56, tileW);
+      roundRectPath(ctx, pad, tileY, tileW, tileH, 16);
+      ctx.fillStyle = col.tileBg;
+      ctx.fill();
+      ctx.strokeStyle = col.tileBorder;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      roundRectPath(ctx, pad + tileW + 24, tileY, tileW, tileH, 16);
+      ctx.fillStyle = col.tileBg;
+      ctx.fill();
+      ctx.strokeStyle = col.tileBorder;
+      ctx.stroke();
+      ctx.fillStyle = col.text;
+      ctx.fillText(String(stats.week), pad + 28, tileY + 86);
+      ctx.fillText(String(stats.merged), pad + tileW + 52, tileY + 86);
+      ctx.fillStyle = col.muted;
+      ctx.font = '500 26px system-ui, sans-serif';
+      ctx.fillText('Votes this week', pad + 28, tileY + 122);
+      ctx.fillText('Merged', pad + tileW + 52, tileY + 122);
+      // Top apps: up to three lines, only when there are votes at all.
+      if (stats.apps.length) {
+        ctx.fillStyle = col.text;
+        ctx.font = '700 28px system-ui, sans-serif';
+        ctx.fillText('Top apps', pad, 462);
+        ctx.fillStyle = col.muted;
+        ctx.font = '400 26px system-ui, sans-serif';
+        for (var i = 0; i < stats.apps.length; i++) {
+          var line = stats.apps[i].name + ' · ' + stats.apps[i].count
+            + (stats.apps[i].count === 1 ? ' vote' : ' votes');
+          ctx.fillText(ellipsizeText(ctx, line, innerW), pad, 496 + i * 32);
+        }
+      }
+      ctx.fillStyle = col.muted;
+      ctx.font = '400 24px system-ui, sans-serif';
+      ctx.fillText('My Votes on Homeroom', pad, SHARE_CARD_H - 40);
+      return canvas;
+    }
+
+    // Sheet when the Web Share API can take this file; the demo ?shareimg=
+    // param wins so the checks can pin either path. Keys off the API, never
+    // device sniffing, the way resolveShareMode does.
+    function resolveShareImageMode(file) {
+      if (SHAREIMG_MODE && SHAREIMG_MODE !== 'error') return SHAREIMG_MODE;
+      if (typeof navigator.share !== 'function') return 'fallback';
+      if (typeof navigator.canShare === 'function'
+        && !navigator.canShare({ files: [file] })) return 'fallback';
+      return 'sheet';
+    }
+
+    function shareImageUrl() {
+      return location.origin + location.pathname + '?tab=votes';
+    }
+
+    function shareCardCaption(stats) {
+      var parts = [];
+      if (stats.handle) parts.push('@' + stats.handle);
+      parts.push(stats.week + (stats.week === 1 ? ' vote' : ' votes') + ' this week');
+      parts.push(stats.merged + ' merged');
+      if (stats.apps.length) {
+        parts.push('Top apps: ' + stats.apps.map(function (a) { return a.name; }).join(', '));
+      }
+      return parts.join(' · ');
+    }
+
+    function renderShareImagePanel() {
+      var panel = document.getElementById('shareimg-panel');
+      if (!panel) return;
+      var record = state.shareImage;
+      var show = record && state.tab === 'votes' && !state.membersView;
+      panel.hidden = !show;
+      if (!show) { panel.innerHTML = ''; return; }
+      if (record.error) {
+        panel.innerHTML = '<p data-shareimg-error class="text-sm font-medium text-red-700 dark:text-red-300">'
+          + esc(SHAREIMG_ERROR_TEXT) + '</p>';
+        return;
+      }
+      var stats = record.stats;
+      var caption = shareCardCaption(stats);
+      var actions;
+      if (record.mode === 'sheet') {
+        actions = '<button data-shareimg-share type="button"'
+          + ' class="min-h-10 flex-1 rounded-xl bg-violet-600 py-2 text-sm font-semibold text-white shadow-sm transition-transform hover:bg-violet-500 active:scale-95">Share</button>';
+      } else {
+        actions = '<button data-shareimg-download type="button"'
+          + ' class="min-h-10 flex-1 rounded-xl bg-violet-600 py-2 text-sm font-semibold text-white shadow-sm transition-transform hover:bg-violet-500 active:scale-95">Download</button>'
+          + '<button data-shareimg-copy type="button" data-url="' + esc(shareImageUrl()) + '"'
+          + ' class="min-h-10 flex-1 rounded-xl border border-zinc-300 bg-white py-2 text-sm font-semibold text-zinc-700 transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">'
+          + COPY_IDLE_HTML + '</button>';
+      }
+      var status = record.status === 'downloaded'
+        ? '<span class="self-center text-xs font-medium text-emerald-700 dark:text-emerald-300">Image saved</span>'
+        : '';
+      panel.innerHTML = '<section data-share-card data-share-state="' + esc(record.status) + '"'
+        + ' data-handle="' + esc(stats.handle) + '"'
+        + ' data-week="' + stats.week + '" data-merged="' + stats.merged + '"'
+        + ' data-theme="' + (document.documentElement.classList.contains('dark') ? 'dark' : 'light') + '"'
+        + ' data-width="' + record.width + '" data-height="' + record.height + '"'
+        + (stats.apps.length ? ' data-apps="' + esc(stats.apps.map(function (a) { return a.name; }).join(',')) + '"' : '')
+        + ' class="' + CARD_CLASS + '">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<h2 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Share as image</h2>'
+        + '<button data-shareimg-close type="button" class="rounded-full px-2 py-0.5 text-xs font-semibold text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">Close</button>'
+        + '</div>'
+        + '<img data-shareimg-preview src="' + record.dataUrl + '" alt="' + esc(caption) + '"'
+        + ' class="w-full rounded-xl border border-zinc-200 dark:border-zinc-800">'
+        + '<p data-shareimg-caption class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(caption) + '</p>'
+        + '<div class="flex gap-2">' + actions + status + '</div>'
+        + '</section>';
+    }
+
+    function openShareImage() {
+      var stats = shareCardStats(state.votes && state.votes.votes);
+      var record = {
+        stats: stats, dataUrl: '', blob: null, file: null,
+        mode: 'fallback', error: null, status: 'ready',
+        width: SHARE_CARD_W, height: SHARE_CARD_H
+      };
+      state.shareImage = record;
+      var canvas;
+      try {
+        canvas = drawShareCard(stats);
+        record.dataUrl = canvas.toDataURL('image/png');
+        record.width = canvas.width;
+        record.height = canvas.height;
+      } catch (err) {
+        record.error = (err && err.message) || 'render failed';
+        console.warn('Share-as-image render failed:', record.error);
+        renderShareImagePanel();
+        return;
+      }
+      if (!canvas.toBlob) {
+        record.error = 'toBlob unavailable';
+        console.warn('Share-as-image render failed:', record.error);
+        renderShareImagePanel();
+        return;
+      }
+      canvas.toBlob(function (blob) {
+        if (!blob) {
+          record.error = 'canvas produced no image';
+          console.warn('Share-as-image render failed:', record.error);
+          renderShareImagePanel();
+          return;
+        }
+        record.blob = blob;
+        try {
+          record.file = new File([blob], SHARE_CARD_FILE, { type: 'image/png' });
+        } catch (err) {
+          record.error = (err && err.message) || 'could not build file';
+          console.warn('Share-as-image render failed:', record.error);
+          renderShareImagePanel();
+          return;
+        }
+        record.mode = resolveShareImageMode(record.file);
+        renderShareImagePanel();
+        if (record.mode === 'sheet') startShareImageSheet();
+      }, 'image/png');
+    }
+
+    // Native share sheet, called inside the tap's user activation. The demo
+    // ?shareimg=sheet pin marks the sheet state even where navigator.share
+    // is absent (headless checks), the way ?share=copy fakes its confirm.
+    function startShareImageSheet() {
+      var record = state.shareImage;
+      if (!record || !record.file) return;
+      record.status = 'sheet';
+      renderShareImagePanel();
+      if (typeof navigator.share !== 'function') return;
+      navigator.share({ files: [record.file], title: 'My votes on Vote Inbox' })
+        .catch(function (err) {
+          // Dismissing the sheet is the user's choice: say nothing.
+          if (err && err.name === 'AbortError') return;
+          record.mode = 'fallback';
+          record.status = 'ready';
+          renderShareImagePanel();
+        });
+    }
+
+    function downloadShareImage() {
+      var record = state.shareImage;
+      if (!record || !record.blob) return;
+      var url = URL.createObjectURL(record.blob);
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = SHARE_CARD_FILE;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+      record.status = 'downloaded';
+      renderShareImagePanel();
+    }
+
+    // Staging demo hook: ?tap-shareimg=1|share|download|copy taps the
+    // Share-as-image button once the votes tab has rendered, then that panel
+    // action once the preview has rendered — the real controls, through the
+    // real delegated click handler. Demo only; one-shot.
+    var tapShareImgDone = false;
+    function maybeTapShareImage() {
+      if (!DEMO || !TAP_SHAREIMG || tapShareImgDone) return;
+      if (!state.votes) return;
+      tapShareImgDone = true;
+      var openBtn = document.querySelector('[data-shareimg-open]');
+      if (!openBtn) return;
+      openBtn.click();
+      if (TAP_SHAREIMG === '1') return;
+      waitFor('[data-share-card] [data-shareimg-' + TAP_SHAREIMG + ']', function (btn) {
+        btn.click();
+      });
+    }
+
+    // ------------------------------------------------------------------
     // Weekly digest. Worked out in the browser from the same loaded vote
     // history the list below shows (state.votes.votes), so the numbers can
     // never disagree with the list and follow the viewer's own time zone.
@@ -4434,6 +4813,7 @@
       renderSummary();
       renderUpdated();
       renderVotesSummary();
+      renderShareImagePanel();
       renderDigest();
       renderWatchlistSummary();
       renderMembersSummary();
@@ -5222,7 +5602,9 @@
       state.errorVotes = null;
       if (force) state.votes = null;
       render();
-      return api('/api/my-votes' + (DEMO ? '?demo=1' + (DIGEST ? '&digest=' + encodeURIComponent(DIGEST) : '') : ''))
+      return api('/api/my-votes' + (DEMO ? '?demo=1'
+        + (NO_VOTES ? '&no-votes=1' : '')
+        + (DIGEST ? '&digest=' + encodeURIComponent(DIGEST) : '') : ''))
         .then(function (data) {
           state.votes = data;
           if (data.demo) reanchorDigestDemo(data);
@@ -5233,6 +5615,7 @@
         .then(function () {
           state.loadingVotes = false;
           render();
+          maybeTapShareImage();
           maybeTapDigestDetails();
           maybeDigestVote();
           if (state.queuedVotes) {
@@ -6705,6 +7088,30 @@
         openDetail(cardEl.getAttribute('data-session-id') || '');
       }
     });
+
+    // Share-as-image: the open button and the preview panel sit above #view,
+    // so they get their own listeners (the panel delegates, since its inner
+    // HTML is re-rendered on every state change). The action buttons reuse
+    // the same fallback pattern as the card share: sheet, download, copy.
+    var shareImgOpenBtn = document.querySelector('[data-shareimg-open]');
+    if (shareImgOpenBtn) shareImgOpenBtn.addEventListener('click', openShareImage);
+    var shareImgPanel = document.getElementById('shareimg-panel');
+    if (shareImgPanel) {
+      shareImgPanel.addEventListener('click', function (event) {
+        var target = event.target;
+        if (target.closest && target.closest('[data-shareimg-close]')) {
+          state.shareImage = null;
+          renderShareImagePanel();
+          return;
+        }
+        var shareBtn = target.closest ? target.closest('[data-shareimg-share]') : null;
+        if (shareBtn) { startShareImageSheet(); return; }
+        var downloadBtn = target.closest ? target.closest('[data-shareimg-download]') : null;
+        if (downloadBtn) { downloadShareImage(); return; }
+        var copyBtn = target.closest ? target.closest('[data-shareimg-copy]') : null;
+        if (copyBtn) copyProposalLink(copyBtn);
+      });
+    }
 
     filterTrigger.addEventListener('click', function () {
       if (openFilter) closeFilter(); else openAppFilter();
