@@ -528,6 +528,10 @@
     //   ?tap-hide-read=1    clicks the Hide read switch once after render;
     //                       skipped while a set-read reload is still pending.
     // ?read-other=1 is server-side only (see applyDemoReadFixtures).
+    // ?newbadge=1 (demo only) replaces the remembered-newest baseline with
+    // demo-6 (1 day old), so the New badge is check-reachable; the
+    // comparison and the write-back are the real code. Client-only.
+    var NEWBADGE = DEMO && params.get('newbadge') === '1';
     var TAP_OPEN = DEMO ? (params.get('tap-open') || '') : '';
     var SET_READ = DEMO ? (params.get('set-read') || '') : '';
     var READ_SET = DEMO ? (params.get('read-set') || '') : '';
@@ -676,6 +680,9 @@
       // Hide-read switch, loaded from localStorage right below (same shape
       // as hideVoted/hideMerged). Not part of saved views or saved searches.
       hideRead: false,
+      // Baseline (ms) for the "New since last visit" badges, established on
+      // each successful inbox load; null means first visit or no storage.
+      newSinceMs: null,
       // Inbox order: 'needed' | 'newest' | 'controversy'.
       sort: 'needed',
       // My Votes order: 'newest' | 'oldest'. Not persisted; the
@@ -961,6 +968,71 @@
     // caller's persisted read set onto every inbox payload).
     function isRead(p) {
       return p.read === true;
+    }
+
+    // ------------------------------------------------------------------
+    // "New since last visit". After every successful inbox load the page
+    // remembers the newest proposal it saw ({ id, at }) in localStorage;
+    // proposals proposed strictly later than the remembered one get a New
+    // badge until the next fetch. Per device (like Hide voted), not per
+    // account. Storage can be refused in an iframe — then no badges show
+    // and nothing is remembered.
+    // ------------------------------------------------------------------
+
+    var NEWEST_SEEN_KEY = 'vote-inbox:newest-seen';
+
+    function loadNewestSeen() {
+      try {
+        var raw = localStorage.getItem(NEWEST_SEEN_KEY);
+        if (!raw) return null;
+        var rec = JSON.parse(raw);
+        if (!rec || typeof rec !== 'object' || !rec.id) return null;
+        return rec;
+      } catch (e) { return null; }
+    }
+
+    function saveNewestSeen(rec) {
+      try { localStorage.setItem(NEWEST_SEEN_KEY, JSON.stringify(rec)); } catch (e) { /* not persistable here */ }
+    }
+
+    // Established once per successful load (not on re-renders), so the
+    // badges survive voting, filtering and tab switches until the next
+    // fetch. The baseline is the loaded proposal the stored id names (its
+    // just-reanchored time, which keeps plain demo loads deterministic);
+    // a proposal that has left the inbox falls back to the stored date.
+    function applyNewSince(data) {
+      var baseline = loadNewestSeen();
+      if (NEWBADGE) baseline = { id: 'demo-6' };
+      var baselineMs = NaN;
+      var proposals = (data && data.proposals) || [];
+      if (baseline && baseline.id) {
+        var seen = null;
+        for (var i = 0; i < proposals.length; i++) {
+          if (proposals[i].sessionId === baseline.id) { seen = proposals[i]; break; }
+        }
+        if (seen) baselineMs = seen.proposedAt ? Date.parse(seen.proposedAt) : NaN;
+        else baselineMs = baseline.at ? Date.parse(baseline.at) : NaN;
+      }
+      state.newSinceMs = isNaN(baselineMs) ? null : baselineMs;
+
+      // Remember the newest loaded proposal, whatever the filters hide:
+      // the whole payload counts, so filtering never makes anything look
+      // new later. An empty inbox leaves the previous baseline alone.
+      var newest = null;
+      var newestMs = NaN;
+      for (var j = 0; j < proposals.length; j++) {
+        var t = proposals[j].proposedAt ? Date.parse(proposals[j].proposedAt) : NaN;
+        if (isNaN(t)) continue;
+        if (isNaN(newestMs) || t > newestMs) { newestMs = t; newest = proposals[j]; }
+      }
+      if (newest) saveNewestSeen({ id: newest.sessionId, at: newest.proposedAt });
+    }
+
+    function isNewSince(p) {
+      if (state.newSinceMs == null) return false;
+      if (!p.proposedAt) return false;
+      var t = Date.parse(p.proposedAt);
+      return !isNaN(t) && t > state.newSinceMs;
     }
 
     // ------------------------------------------------------------------
@@ -2060,6 +2132,7 @@
     var TAG_TRIGGER_ACTIVE = 'flex shrink-0 items-center justify-between gap-2 whitespace-nowrap rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
     var TAG_CHIP = 'inline-block whitespace-nowrap rounded-full bg-zinc-200/70 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
     var TAG_CHIP_COUNT = 'font-normal tabular-nums text-zinc-500 dark:text-zinc-400';
+    var NEW_BADGE = 'mr-1.5 inline-block whitespace-nowrap rounded-full bg-violet-100 px-1.5 py-px align-middle text-[11px] font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300';
     var FILTER_CHECK = '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
     var FILTER_ALL_ICON = '<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400" aria-hidden="true">'
       + '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'
@@ -2853,6 +2926,11 @@
         // this account has never opened. Read cards render the title alone.
         + (isRead(p) ? ''
           : '<span data-unread-dot aria-label="Unread" class="mr-1.5 inline-block h-2 w-2 rounded-full bg-violet-600 align-middle dark:bg-violet-400"></span>')
+        // New badge: proposed since the last inbox load (established once
+        // per load by applyNewSince), a label only.
+        + (isNewSince(p)
+          ? '<span data-new-badge aria-label="New since your last visit" class="' + NEW_BADGE + '">New</span>'
+          : '')
         + esc(p.title) + '</h2>'
         + tagChipsRow(p)
         + changeSummaryRow(p)
@@ -6049,6 +6127,7 @@
           // the change summary uses.
           state.celebrations = Array.isArray(data.celebrations) ? data.celebrations : [];
           if (data.demo) reanchorDemo(data);
+          applyNewSince(data);
           resolveCompareSelection();
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
