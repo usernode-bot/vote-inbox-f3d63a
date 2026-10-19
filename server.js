@@ -616,6 +616,32 @@ async function migrate() {
     );
     COMMENT ON TABLE snoozes IS 'staging:private';
   `);
+  // Merge celebrations: one row per (user, proposal) the app should
+  // celebrate having merged. Like my_votes and snoozes this is one
+  // person's own tracking data, so it is staging:private, and it carries
+  // only what the card renders (title, app, the caller's choice) — the
+  // proposal itself stays on the platform. `shown` is set once the card
+  // has rendered (a celebration is a one-time card per proposal);
+  // `dismissed` is set when the user dismisses it. Both persist.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS merge_celebrations (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      choice VARCHAR(4) NOT NULL DEFAULT 'yes',
+      merged_at TIMESTAMPTZ,
+      shown BOOLEAN NOT NULL DEFAULT FALSE,
+      dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE merge_celebrations IS 'staging:private';
+  `);
 }
 
 async function seedStaging() {
@@ -735,6 +761,66 @@ async function withMySnoozes(proposals, userId) {
     p.mySnooze = wake ? new Date(wake).toISOString() : null;
   }
   return proposals;
+}
+
+// ---------------------------------------------------------------------------
+// Merge celebrations. When a proposal the caller voted on (through this app)
+// is now reported merged, a one-time celebration card shows at the top of
+// their inbox: the title, the app, and "you voted yes". Detection happens
+// wherever the caller's recorded votes meet the merge state (the inbox load,
+// and the demo fixtures behind ?celeb=1); `merged` must be recent, since a
+// merge first seen weeks later is history, not news. One row per (user,
+// proposal), created only once in production — the `reset` demo mode re-arms
+// the caller's rows so every check run starts from unseen cards.
+// ---------------------------------------------------------------------------
+
+const CELEBRATION_MERGE_WINDOW_MS = 7 * 24 * 3600 * 1000;
+
+async function syncMergeCelebrations(proposals, user, opts) {
+  const now = Date.now();
+  for (const p of proposals) {
+    if (!p.myVote || p.status !== 'merged' || !p.mergedAt) continue;
+    const merged = Date.parse(p.mergedAt);
+    if (!isFinite(merged) || now - merged > CELEBRATION_MERGE_WINDOW_MS) continue;
+    const conflict = opts && opts.reset
+      ? 'DO UPDATE SET shown = FALSE, dismissed = FALSE, choice = EXCLUDED.choice,'
+        + ' merged_at = EXCLUDED.merged_at, title = EXCLUDED.title'
+      : 'DO NOTHING';
+    try {
+      await pool.query(`
+        INSERT INTO merge_celebrations
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title, choice, merged_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (user_id, session_id) ${conflict}
+      `, [user.id, user.username, p.appSlug || '', p.appName || '', p.sessionId,
+          p.proposalId || null, p.title, p.myVote, p.mergedAt]);
+    } catch {
+      // Celebration bookkeeping never blocks the inbox.
+    }
+  }
+}
+
+// The caller's pending celebrations: not yet shown and not dismissed,
+// newest recorded first (so several merges stack newest on top).
+async function pendingCelebrations(userId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT app_slug, app_name, session_id, proposal_id, title, choice, merged_at
+       FROM merge_celebrations
+       WHERE user_id = $1 AND shown = FALSE AND dismissed = FALSE
+       ORDER BY id DESC`, [userId]);
+    return rows.map((r) => ({
+      sessionId: r.session_id,
+      proposalId: r.proposal_id,
+      appSlug: r.app_slug,
+      appName: r.app_name || r.app_slug,
+      title: r.title,
+      choice: r.choice,
+      mergedAt: r.merged_at,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 // Status a row is on now, for the "since last look" badge. Current status
@@ -1133,6 +1219,55 @@ async function applyDemoSnoozeFixtures(req) {
   }
 }
 
+// Celebration check fixtures (staging demo only), applied to a demo inbox
+// load only when the load opts in with ?celeb=1 — the marker the celebration
+// checks' pages and their reloaded marker pages carry, mirroring ?snooze=1 —
+// so a plain ?demo=1 load never shows or creates celebration cards:
+//   ?celebvote=<ids>  marks those fixture proposals as voted by the caller
+//                     (the fixture's own choice stands; unvoted ones become
+//                     yes) and merged, so the real detection path sees them;
+//                     the caller's rows for them are re-armed too, so every
+//                     check run starts from unseen cards no matter what an
+//                     earlier run left behind.
+//   ?celeb-clear=1    empties the caller's celebration rows first, so the
+//                     "absent for proposals the caller did not vote on"
+//                     check never sees leftovers from other checks.
+async function applyDemoCelebrationFixtures(req, proposals) {
+  if (req.query['celeb-clear'] === '1') {
+    await pool.query('DELETE FROM merge_celebrations WHERE user_id = $1', [req.user.id]);
+  }
+  const ids = String(req.query.celebvote || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!ids.length) return;
+  const byId = new Map(proposals.map((p) => [p.sessionId, p]));
+  for (const id of ids) {
+    const p = byId.get(id);
+    if (!p) continue;
+    if (!p.myVote) p.myVote = 'yes';
+    if (p.status !== 'merged') {
+      p.status = 'merged';
+      p.eta = null;
+      delete p.queuePos;
+      p.mergedAt = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    }
+  }
+}
+
+// Shared tail of both demo inbox branches: the caller's stars, plus — behind
+// the ?celeb=1 opt-in — the celebration fixtures, the real detection pass and
+// the caller's pending celebration cards. Without the opt-in the payload
+// stays celebration-free, the same determinism rule the snooze fixtures use.
+async function finishDemoInbox(req, demo) {
+  if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
+  await withMyStars(demo.proposals, req.user.id, req);
+  demo.celebrations = [];
+  if (req.query.celeb === '1') {
+    await applyDemoCelebrationFixtures(req, demo.proposals);
+    await syncMergeCelebrations(demo.proposals, req.user, { reset: true });
+    demo.celebrations = await pendingCelebrations(req.user.id);
+  }
+  return demo;
+}
+
 function demoVoteRows() {
   const row = (sessionId, appSlug, appName, title, choice, status, yes, no,
                required, at, mergedAt) => ({
@@ -1287,8 +1422,7 @@ app.get('/api/inbox', async (req, res) => {
     if (req.query.demo === '1' && IS_STAGING) {
       const demo = demoInboxPayload(req);
       await applyDemoSnoozeFixtures(req);
-      if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
-      await withMyStars(demo.proposals, req.user.id, req);
+      await finishDemoInbox(req, demo);
       return res.json(demo);
     }
     if (!PLATFORM_ORIGIN) {
@@ -1297,8 +1431,7 @@ app.get('/api/inbox', async (req, res) => {
       if (IS_STAGING) {
         const demo = demoInboxPayload(req);
         await applyDemoSnoozeFixtures(req);
-        if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
-        await withMyStars(demo.proposals, req.user.id, req);
+        await finishDemoInbox(req, demo);
         return res.json(demo);
       }
       return res.status(500).json({ error: 'Platform origin is not configured' });
@@ -1337,6 +1470,11 @@ app.get('/api/inbox', async (req, res) => {
     // next to merge); voting and merged proposals are left unstamped.
     stampQueuePositions(proposals);
 
+    // Celebrations for proposals the caller voted on that are now merged:
+    // record the new ones (once), then return the caller's pending cards.
+    await syncMergeCelebrations(proposals, req.user);
+    const celebrations = await pendingCelebrations(req.user.id);
+
     const filterApps = [];
     const seen = new Set();
     for (const p of proposals) {
@@ -1350,6 +1488,7 @@ app.get('/api/inbox', async (req, res) => {
       demo: false,
       apps: filterApps,
       proposals,
+      celebrations,
       failures,
       totalApps: apps.length,
     });
@@ -1895,6 +2034,43 @@ app.post('/api/unsnooze', async (req, res) => {
       'DELETE FROM snoozes WHERE user_id = $1 AND session_id = $2',
       [req.user.id, sessionId]);
     res.json({ ok: true, removed: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark celebration cards shown. The frontend calls this right after the
+// cards render, so each proposal's celebration is a one-time card: the next
+// inbox load no longer returns it. Only the caller's own rows are touched.
+app.post('/api/celebrations/shown', async (req, res) => {
+  const body = req.body || {};
+  const ids = Array.isArray(body.ids)
+    ? body.ids.map((s) => String(s)).filter(Boolean)
+    : [];
+  if (!ids.length) return res.json({ ok: true, updated: 0 });
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE merge_celebrations SET shown = TRUE WHERE user_id = $1 AND session_id = ANY($2)',
+      [req.user.id, ids]);
+    res.json({ ok: true, updated: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Dismiss one celebration: the card leaves the inbox now and the row is
+// marked dismissed, so the proposal never celebrates again.
+app.post('/api/celebrations/dismiss', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE merge_celebrations SET dismissed = TRUE, shown = TRUE WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, updated: rowCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
