@@ -197,6 +197,152 @@
       ]
     },
     {
+      "id": "my-votes.digest-card",
+      "name": "My Votes shows a weekly digest card at the top",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "body:has(#votes-digest:not([hidden]) ~ #view > [data-vote-row]) [data-weekly-digest]",
+      "expectText": "Weekly digest",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-week-count",
+      "name": "The digest shows the number of votes cast this week",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-weekly-digest] [data-digest-week-count='6']",
+      "expectText": "6 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-merged",
+      "name": "The digest shows how many of this week's votes merged",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-weekly-digest] [data-digest-merged='2']",
+      "expectText": "2 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-streak",
+      "name": "The digest shows a week streak count",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-weekly-digest] [data-digest-streak='3']",
+      "expectText": "3-week streak",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-top-apps",
+      "name": "The digest lists up to three top apps by votes this week",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-digest-apps]:not(:has([data-digest-app='staging-demo-extras'])) [data-digest-app='staging-demo-app']:first-of-type ~ [data-digest-app='staging-demo-archive']:last-child",
+      "expectText": "Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-compare",
+      "name": "The digest shows a comparison line versus last week",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-weekly-digest] [data-digest-compare]",
+      "expectText": "Up from 4 last week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-details",
+      "name": "View details expands a seven day bar chart",
+      "path": "/?tab=votes&demo=1&digest=week&digest-details=1",
+      "expectSelector": "[data-weekly-digest]:has([data-digest-toggle][aria-expanded='true']) [data-digest-chart]",
+      "expectText": "Hide details",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-seven-bars",
+      "name": "The bar chart has one bar per day of the current week",
+      "path": "/?tab=votes&demo=1&digest=week&digest-details=1",
+      "expectSelector": "[data-digest-chart] > [data-digest-day='6']:nth-child(7):last-child [data-digest-bar]",
+      "expectText": "Sun",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-zero-bars",
+      "name": "Days with no votes render as zero-height bars",
+      "path": "/?tab=votes&demo=1&digest=quiet&digest-details=1",
+      "expectSelector": "[data-digest-chart]:not(:has([data-digest-bar]:not([data-count='0']))) [data-digest-day='0'] [data-digest-bar][data-count='0']",
+      "expectText": "Mon",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-no-streak",
+      "name": "The card hides the streak when it is zero",
+      "path": "/?tab=votes&demo=1&digest=quiet",
+      "expectSelector": "[data-weekly-digest]:not(:has([data-digest-streak])) [data-digest-week-count='0']",
+      "expectText": "0 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-matches-list",
+      "name": "The digest matches the votes shown in the list below",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "body:has([data-digest-week-count='6']):not(:has(#view > [data-vote-row]:nth-child(-n+6):not([data-this-week]))):not(:has(#view > [data-vote-row]:nth-child(n+7)[data-this-week])) #view > [data-vote-row]:nth-child(12):last-child",
+      "expectText": "Weekly digest",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-live-update",
+      "name": "The digest updates after a new vote without a reload",
+      "path": "/?tab=votes&demo=1&digest=week&digest-vote=demo-2:yes",
+      "expectSelector": "body:has(#view > [data-vote-row][data-session-id='demo-2'][data-this-week]:first-child) [data-digest-week-count='7']",
+      "expectText": "7 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "inbox.voter-avatars",
       "name": "Yes-voter avatar circles render on cards with yes votes",
       "path": "/?demo=1",

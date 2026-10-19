@@ -1155,6 +1155,79 @@ function demoVoteRows() {
 }
 
 // ---------------------------------------------------------------------------
+// Weekly-digest fixtures (?demo=1&digest=week|quiet), staging only. Rows
+// carry a demo_anchor { weeksAgo, weekday } the frontend re-stamps to local
+// noon of that weekday (see reanchorDigestDemo), so the digest's week
+// buckets are deterministic relative to whenever the check runs. `week`
+// gives 6 votes this week (2 of them merged), 4 last week (1 merged), 1
+// two weeks ago and 1 four weeks ago: streak 3, "Up from 4 last week", and
+// top apps App, Notes, Archive (Extras loses the alphabetical tie at the
+// third slot). `quiet` gives nothing this week: streak 0 (the tile is left
+// out), "Down from 2 last week", every bar zero, "None merged yet". Without
+// ?digest= the default three demoVoteRows() are served, unchanged.
+// ---------------------------------------------------------------------------
+
+function demoDigestRows(kind) {
+  const row = (id, sessionId, appSlug, appName, title, choice, status,
+               yes, no, required, weeksAgo, weekday, merged) => ({
+    id,
+    app_slug: appSlug,
+    app_name: appName,
+    session_id: sessionId,
+    title,
+    choice,
+    status,
+    votes_for: yes,
+    votes_against: no,
+    votes_required: required,
+    created_at: new Date(0).toISOString(), // re-stamped client-side
+    updated_at: new Date(0).toISOString(),
+    merged_at: merged ? new Date(0).toISOString() : null,
+    demo_anchor: { weeksAgo, weekday },
+  });
+  if (kind === 'quiet') {
+    return [
+      row('dq-1', 'demo-q1', 'staging-demo-app', 'Staging Demo App',
+          'Staging demo proposal: digest quiet export', 'no', 'closed', 2, 3, 5, 1, 1),
+      row('dq-2', 'demo-q2', 'staging-demo-notes', 'Staging Demo Notes',
+          'Staging demo proposal: digest quiet themes', 'yes', 'voting', 4, 1, 5, 1, 3),
+      row('dq-3', 'demo-q3', 'staging-demo-archive', 'Staging Demo Archive',
+          'Staging demo proposal: digest quiet search', 'yes', 'closed', 5, 0, 5, 3, 2),
+    ];
+  }
+  return [
+    // This week: 6 votes, 2 merged (one in App, one in Notes).
+    row('dg-1', 'demo-w1', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest weekly recap', 'yes', 'voting', 3, 1, 5, 0, 0),
+    row('dg-2', 'demo-w2', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest custom themes', 'yes', 'merged', 6, 0, 5, 0, 1, true),
+    row('dg-3', 'demo-w3', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest pinned notes', 'yes', 'voting', 4, 2, 5, 0, 1),
+    row('dg-4', 'demo-w4', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest export button', 'yes', 'merged', 6, 0, 5, 0, 2, true),
+    row('dg-5', 'demo-w5', 'staging-demo-archive', 'Staging Demo Archive',
+        'Staging demo proposal: digest archive search', 'no', 'voting', 2, 3, 5, 0, 2),
+    row('dg-6', 'demo-w6', 'staging-demo-extras', 'Staging Demo Extras',
+        'Staging demo proposal: digest quiet hours', 'yes', 'voting', 4, 1, 5, 0, 3),
+    // Last week: 4 votes, 1 merged.
+    row('dg-7', 'demo-w7', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest rate limits', 'yes', 'voting', 3, 2, 5, 1, 1),
+    row('dg-8', 'demo-w8', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest inline comments', 'yes', 'merged', 6, 1, 5, 1, 2, true),
+    row('dg-9', 'demo-w9', 'staging-demo-archive', 'Staging Demo Archive',
+        'Staging demo proposal: digest bulk move', 'no', 'closed', 2, 4, 5, 1, 3),
+    row('dg-10', 'demo-w10', 'staging-demo-extras', 'Staging Demo Extras',
+        'Staging demo proposal: digest dark mode', 'yes', 'voting', 5, 1, 5, 1, 4),
+    // Two weeks ago: 1 vote. Three weeks ago: none, so the streak stops at 3.
+    row('dg-11', 'demo-w11', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest keyboard nav', 'yes', 'closed', 5, 0, 5, 2, 2),
+    // Four weeks ago: 1 vote.
+    row('dg-12', 'demo-w12', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest mobile layout', 'no', 'closed', 1, 4, 5, 4, 3),
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Watchlist demo data (?demo=1). Fixed fixture rows keyed to the demo inbox
 // proposals, so the Watchlist tab and its "since last look" badges are
 // deterministic in previews and checks. demo-5 (merged) and demo-3 (now
@@ -1450,6 +1523,12 @@ app.get('/api/my-votes', async (req, res) => {
       // deterministic run to run. The caller's real history, including rows
       // the ?cast= demo hook persists for the vote → Undo check, is served
       // by the plain route below, not mixed in here.
+      const digestKind = req.query.digest;
+      if (digestKind === 'week' || digestKind === 'quiet') {
+        // Weekly-digest fixture variant (see demoDigestRows): rows spread
+        // across known weeks so the digest card's numbers are checkable.
+        return res.json({ demo: true, votes: demoDigestRows(digestKind) });
+      }
       return res.json({ demo: true, votes: demoVoteRows() });
     }
 
