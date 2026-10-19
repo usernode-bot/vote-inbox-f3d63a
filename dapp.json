@@ -20,6 +20,18 @@
       ]
     },
     {
+      "id": "inbox.new-badge",
+      "name": "Proposals newer than the last seen one show a New badge",
+      "path": "/?demo=1&newbadge=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-new-badge]",
+      "expectText": "New",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "inbox.share-button",
       "name": "Proposal cards offer a share button",
       "path": "/?demo=1",
