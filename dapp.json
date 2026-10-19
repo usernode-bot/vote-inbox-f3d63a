@@ -2,7 +2,7 @@
   "description": "One inbox for all open proposals with vote counts. Vote fast, track mine.",
   "icon": {
     "image": "brand/icon.png",
-    "emoji": "\ud83d\udce5"
+    "emoji": "📥"
   },
   "secrets": [],
   "tests": [
@@ -538,7 +538,7 @@
       "name": "Proposal cards show proportional yes/no vote bar",
       "path": "/?demo=1",
       "expectSelector": "[data-vote-bar]",
-      "expectText": "Yes 1 \u00b7 No 0",
+      "expectText": "Yes 1 · No 0",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -1581,7 +1581,7 @@
       "id": "compare.counts",
       "name": "Compare columns show each proposal's vote counts",
       "path": "/?demo=1&compare=demo-1,demo-2",
-      "expectText": "Yes 3 \u00b7 No 1",
+      "expectText": "Yes 3 · No 1",
       "impact": [
         "public/index.html",
         "dapp.json"
@@ -2384,6 +2384,247 @@
         "dapp.json"
       ],
       "expectText": "12 files changed"
+    },
+    {
+      "id": "snooze.menu-day",
+      "name": "Card menu offers Snooze for one day",
+      "path": "/?demo=1&tap-snooze=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-snooze-choose][data-days='1']",
+      "expectText": "Snooze 1 day",
+      "visual": true,
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.header-link",
+      "name": "Header links to the members directory",
+      "path": "/?demo=1",
+      "expectSelector": "[data-members-link]",
+      "expectText": "Members",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "snooze.menu-week",
+      "name": "Card menu offers Snooze for one week",
+      "path": "/?demo=1&tap-snooze=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-snooze-choose][data-days='7']",
+      "expectText": "Snooze 1 week",
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.leaves-inbox",
+      "name": "Snoozed proposal leaves the main inbox",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'])) [data-proposal-card][data-session-id='demo-1']",
+      "visual": true,
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.filter-lists",
+      "name": "Snoozed filter lists snoozed proposals",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=7&snoozed=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'][data-snoozed='1']",
+      "visual": true,
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.wake-date",
+      "name": "Snoozed row shows its wake date",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=7&snoozed=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-wake-date]",
+      "expectText": "Wake"
+    },
+    {
+      "id": "snooze.unsnooze-returns",
+      "name": "Unsnooze returns the proposal to the inbox",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=1&snoozed=1&tap-unsnooze=demo-2",
+      "expectSelector": "body:not(:has([data-snoozed-chip][aria-pressed='true'])) [data-proposal-card][data-session-id='demo-2']",
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.reappears-after-wake",
+      "name": "Snoozed proposal reappears after its wake date",
+      "path": "/?demo=1&snooze-past=demo-6&snooze=1",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-6']):not(:has([data-proposal-card][data-session-id='demo-6'] [data-wake-date]))"
+    },
+    {
+      "id": "snooze.survives-reload",
+      "name": "Snooze choice survives a reload",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=7&snoozed=1",
+      "expectSelector": "body:has([data-snoozed-chip][aria-pressed='true']) [data-proposal-card][data-session-id='demo-2'][data-snoozed='1']",
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.counts-in-summary",
+      "name": "Snoozed proposal still counts in the header totals",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=1",
+      "expectSelector": "#inbox-summary",
+      "expectText": "6 open, 9 votes needed"
+    },
+    {
+      "id": "snooze.per-user",
+      "name": "Snooze is per user and leaves other members alone",
+      "path": "/?demo=1&snooze-other=1&snooze=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3']",
+      "expectText": "export to CSV"
+    },
+    {
+      "id": "members.roster",
+      "name": "Directory lists avatar and handle",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-avatar]",
+      "expectText": "@staging-demo-maya",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.role-chip",
+      "name": "Rows carry a role chip",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-role]",
+      "expectText": "Member",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.owner-chip",
+      "name": "The first member is the owner",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-role='owner']",
+      "expectText": "Owner",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.joined",
+      "name": "Rows show a joined date",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-joined]",
+      "expectText": "Joined",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.votes-cast",
+      "name": "Rows show votes cast",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-votes]",
+      "expectText": "votes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.accepted",
+      "name": "Rows show accepted-proposal count",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-accepted]",
+      "expectText": "accepted",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.search-filter",
+      "name": "Search filters by handle",
+      "path": "/?demo=1&members=1&member-query=priya",
+      "expectSelector": "[data-member-handle='@staging-demo-priya']",
+      "expectText": "1 of 6",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.profile-link",
+      "name": "Member rows link to the author profile",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "a[data-member-link][href*='/u/staging-demo-maya']",
+      "expectText": "@staging-demo-maya",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.summary-count",
+      "name": "Summary shows the member count",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-members-summary]",
+      "expectText": "6 members",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.active-week",
+      "name": "Summary shows the active-this-week count",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-members-summary]",
+      "expectText": "4 active this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.search-empty",
+      "name": "No-match search shows the empty state",
+      "path": "/?demo=1&members=1&member-query=zzz",
+      "expectSelector": "[data-members-empty]",
+      "expectText": "No members match",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     }
   ]
 }

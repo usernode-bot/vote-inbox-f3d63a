@@ -55,6 +55,20 @@ const PROMOTED_CONCURRENCY = 8;
 
 app.use(express.json());
 
+// "Now" for time-dependent answers (the members directory's active-this-week
+// window). A staging preview opened at a chosen moment carries the platform's
+// x-usernode-now header or un-now query; production always reads the clock,
+// so the code path is identical everywhere and only the value differs.
+const PREVIEW_NOW_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+app.use((req, _res, next) => {
+  const raw = IS_STAGING
+    ? (req.headers['x-usernode-now'] || req.query['un-now'])
+    : null;
+  req.now = typeof raw === 'string' && PREVIEW_NOW_RE.test(raw)
+    ? new Date(raw) : new Date();
+  next();
+});
+
 // The platform's three centrally hosted files — the bridge, the native UI
 // kit and the Tailwind runtime — are reachable at these paths on this app's
 // OWN origin, so index.html can load them with a RELATIVE path and never
@@ -487,6 +501,28 @@ async function migrate() {
       ON saved_searches (user_id, lower(name));
     COMMENT ON TABLE saved_searches IS 'staging:private';
   `);
+  // Snoozed proposals: one person's "hide this from my inbox until <date>"
+  // marks. Like my_votes and watchlist this is per-user tracking data, so it
+  // is staging:private. No foreign keys; proposal content stays on the
+  // platform. A row is the snooze itself: unsnoozing deletes it, and a row
+  // whose wake time has passed is dropped on the next read, which is what
+  // makes a snoozed proposal reappear automatically.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS snoozes (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      wake_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE snoozes IS 'staging:private';
+  `);
 }
 
 async function seedStaging() {
@@ -568,6 +604,42 @@ async function withMyStars(proposals, userId, req) {
     : [];
   for (const p of proposals) {
     p.myStar = mine.has(p.sessionId) || preset.includes(p.sessionId) || p.myStar === true;
+  }
+  return proposals;
+}
+
+// ---------------------------------------------------------------------------
+// Snoozes: proposals the user tucked away until a wake date. Rows are per
+// user (staging:private, same reasoning as watchlist). Snoozing is purely a
+// view concern: it never touches votes or the platform's merge state, so the
+// row keeps only enough to render the Snoozed filter and re-find the app.
+// ---------------------------------------------------------------------------
+
+// The caller's active snoozes, session id -> wake time. A wake time that has
+// already passed no longer holds the proposal, so those rows are deleted on
+// read: the next inbox load simply lists the proposal again, which is the
+// "reappears automatically after the wake date" rule — no sweeper needed.
+async function snoozeMapFor(userId) {
+  try {
+    await pool.query(
+      'DELETE FROM snoozes WHERE user_id = $1 AND wake_at <= NOW()', [userId]);
+    const { rows } = await pool.query(
+      'SELECT session_id, wake_at FROM snoozes WHERE user_id = $1', [userId]);
+    const map = new Map();
+    for (const r of rows) map.set(r.session_id, r.wake_at);
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+// Stamp each proposal with the caller's own snooze wake time (ISO string)
+// when one is still ahead. Expired rows were already dropped by the read.
+async function withMySnoozes(proposals, userId) {
+  const mine = await snoozeMapFor(userId);
+  for (const p of proposals) {
+    const wake = mine.get(p.sessionId);
+    p.mySnooze = wake ? new Date(wake).toISOString() : null;
   }
   return proposals;
 }
@@ -855,6 +927,46 @@ function applyQueueScenario(proposals, req) {
   }
 }
 
+// Snooze check fixtures (staging demo only), applied to a demo inbox load
+// before the caller's own snooze rows are stamped on:
+//   ?snooze-past=<id>  records an already-expired snooze row for the caller
+//                      on that fixture proposal, so the auto-reappear rule
+//                      (an expired wake no longer holds the proposal) is
+//                      observable by a check. The next read cleans the row
+//                      up, exactly as it would for a real yesterday-snooze.
+//   ?snooze-other=1    records an ACTIVE snooze on demo-3 for a fake member
+//                      (staging-demo-user), so the per-user rule is
+//                      observable: another member's snooze never hides a
+//                      proposal from the caller.
+// Both write only fake or check-fixture rows and only under ?demo=1.
+async function applyDemoSnoozeFixtures(req) {
+  const past = String(req.query['snooze-past'] || '').trim();
+  if (past) {
+    const p = demoInbox().proposals.find((x) => x.sessionId === past);
+    if (p) {
+      await pool.query(
+        'DELETE FROM snoozes WHERE user_id = $1 AND session_id = $2',
+        [req.user.id, past]);
+      await pool.query(`
+        INSERT INTO snoozes
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title, wake_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() - INTERVAL '1 hour')`,
+        [req.user.id, req.user.username, p.appSlug, p.appName, past, p.proposalId, p.title]);
+    }
+  }
+  if (req.query['snooze-other'] === '1') {
+    const p = demoInbox().proposals.find((x) => x.sessionId === 'demo-3');
+    if (p) {
+      await pool.query(`
+        INSERT INTO snoozes
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title, wake_at)
+        VALUES (900002, 'staging-demo-user', $1, $2, $3, $4, $5, NOW() + INTERVAL '7 days')
+        ON CONFLICT (user_id, session_id) DO UPDATE SET wake_at = EXCLUDED.wake_at`,
+        [p.appSlug, p.appName, p.sessionId, p.proposalId, p.title]);
+    }
+  }
+}
+
 function demoVoteRows() {
   const row = (sessionId, appSlug, appName, title, choice, status, yes, no,
                required, at, mergedAt) => ({
@@ -1001,9 +1113,15 @@ app.get('/api/inbox', async (req, res) => {
     // rows are deliberately NOT overlaid here (they surface on the plain
     // My Votes route instead). Overlaying them made every load answer
     // differently depending on what a previous load had cast — one check's
-    // cast vote hid another check's vote buttons.
+    // cast vote hid another check's vote buttons. The caller's persisted
+    // snooze rows follow the same rule: they are only overlaid when the load
+    // opts in with ?snooze=1 (the marker the snooze checks' reloaded pages
+    // carry), so a leftover snooze from one check can never reach another
+    // check's plain ?demo=1 load. Production always stamps.
     if (req.query.demo === '1' && IS_STAGING) {
       const demo = demoInboxPayload(req);
+      await applyDemoSnoozeFixtures(req);
+      if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
       await withMyStars(demo.proposals, req.user.id, req);
       return res.json(demo);
     }
@@ -1012,6 +1130,8 @@ app.get('/api/inbox', async (req, res) => {
       // plain local launch; keep the screen reviewable there with fixtures.
       if (IS_STAGING) {
         const demo = demoInboxPayload(req);
+        await applyDemoSnoozeFixtures(req);
+        if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
         await withMyStars(demo.proposals, req.user.id, req);
         return res.json(demo);
       }
@@ -1041,6 +1161,7 @@ app.get('/api/inbox', async (req, res) => {
     });
 
     await withMyVotes(proposals, req.user.id);
+    await withMySnoozes(proposals, req.user.id);
     await withMyStars(proposals, req.user.id, req);
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
@@ -1540,6 +1661,72 @@ app.post('/api/saved-searches/seed', async (req, res) => {
   }
 });
 
+// Snooze a proposal for N days: the card leaves the caller's inbox until the
+// wake date, then reappears (the read drops expired rows). Re-snoozing the
+// same proposal moves the wake date. Demo bodies (staging only) carry just
+// the session id and days, and take their metadata from the demo fixture, so
+// a check URL can snooze a known proposal; real snoozes carry what the card
+// showed. Snoozing is per user and never touches the vote or merge state.
+app.post('/api/snooze', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  const days = Number(body.days);
+  if (!Number.isFinite(days) || days < 1 || days > 365) {
+    return res.status(400).json({ error: 'Snooze length must be between 1 and 365 days' });
+  }
+  try {
+    let meta = body;
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo snoozing is staging-only' });
+      const p = demoInbox().proposals.find((x) => x.sessionId === sessionId);
+      if (!p) return res.status(400).json({ error: 'Unknown demo proposal' });
+      meta = {
+        appSlug: p.appSlug,
+        appName: p.appName,
+        proposalId: p.proposalId,
+        title: p.title,
+      };
+    }
+    await pool.query(`
+      INSERT INTO snoozes
+        (user_id, username, app_slug, app_name, session_id, proposal_id, title, wake_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + make_interval(days => $8::int))
+      ON CONFLICT (user_id, session_id) DO UPDATE
+        SET wake_at = EXCLUDED.wake_at,
+            title = EXCLUDED.title,
+            app_slug = EXCLUDED.app_slug,
+            app_name = EXCLUDED.app_name,
+            proposal_id = EXCLUDED.proposal_id
+    `, [req.user.id, req.user.username, meta.appSlug || '', meta.appName || '',
+        sessionId, meta.proposalId || null, meta.title || 'Untitled proposal',
+        Math.round(days)]);
+    res.json({ ok: true, demo: body.demo === true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Unsnooze: remove this user's row for one session, so the proposal is back
+// in the inbox on the very next render.
+app.post('/api/unsnooze', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM snoozes WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, removed: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/comments', async (req, res) => {
   const body = req.body || {};
   const appSlug = typeof body.appSlug === 'string' ? body.appSlug.trim().slice(0, 255) : '';
@@ -1598,6 +1785,173 @@ app.post('/api/comments', async (req, res) => {
        RETURNING id, parent_id, username, body, created_at`,
       [appSlug, sessionId, parentId, req.user.id, req.user.username, text]);
     return res.status(201).json({ ok: true, comment: normalizeComment(rows[0]) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Members directory
+//
+// The roster comes from the platform's own member list (GET /members on the
+// app-facing API), read with the caller's forwarded identity — the platform
+// answers only for actual members of the project, so a non-member (the check
+// runner, an admin looking in) gets an explicit notMember flag and the screen
+// explains itself instead of failing. Fields the platform does not document
+// per member (joined date, accepted-proposal count) are passed through under
+// any usual spelling when the response carries them and stay null when it
+// does not, so the row simply omits them — the same optional-field contract
+// normalizeProposal uses. Votes cast come from this app's own my_votes
+// history aggregated per username: counts only, the rows themselves stay
+// private (my_votes is staging:private).
+// ---------------------------------------------------------------------------
+
+const MEMBER_ACTIVE_WINDOW_MS = 7 * 24 * 3600 * 1000;
+
+function pickString(raw, keys) {
+  for (const k of keys) {
+    if (raw && typeof raw[k] === 'string' && raw[k]) return raw[k];
+  }
+  return null;
+}
+
+function pickInt(raw, keys) {
+  for (const k of keys) {
+    const v = raw && raw[k];
+    if (Number.isInteger(v) && v >= 0) return v;
+  }
+  return null;
+}
+
+// One member row in the shape the frontend renders. `extra` carries the
+// stats derived from this app's own data when the platform response itself
+// did not name them. The owner chip follows the platform's documented
+// /members order (the creator first, then oldest member first), so the
+// first listed member is the creator.
+function memberPayload(raw, extra) {
+  const username = typeof raw === 'string' ? raw.trim()
+    : raw && typeof raw.username === 'string' ? raw.username.trim() : '';
+  if (!username) return null;
+  const id = raw && typeof raw === 'object' && raw.id != null ? raw.id : null;
+  let profileUrl = null;
+  if (PLATFORM_ORIGIN) {
+    profileUrl = PLATFORM_ORIGIN + '/u/' + encodeURIComponent(username);
+  } else if (extra && extra.demo) {
+    // No platform origin at runtime (a bare local launch): the demo
+    // stand-in keeps the rows' profile links shaped like the real ones
+    // without naming a host that could go stale.
+    profileUrl = 'https://staging-demo.invalid/u/' + encodeURIComponent(username);
+  }
+  return {
+    id,
+    username,
+    role: extra && extra.owner ? 'owner' : 'member',
+    joinedAt: pickString(raw, ['joined_at', 'joinedAt', 'member_since', 'memberSince', 'created_at', 'createdAt']),
+    votesCast: pickInt(raw, ['votes_cast', 'votesCast']) != null
+      ? pickInt(raw, ['votes_cast', 'votesCast'])
+      : (extra && extra.votesCast != null ? extra.votesCast : null),
+    proposalsAccepted: pickInt(raw, ['proposals_accepted', 'proposalsAccepted', 'accepted_proposals', 'acceptedProposals', 'accepted_count']),
+    lastActiveAt: pickString(raw, ['last_active_at', 'lastActiveAt', 'last_seen_at', 'lastSeenAt']) != null
+      ? pickString(raw, ['last_active_at', 'lastActiveAt', 'last_seen_at', 'lastSeenAt'])
+      : (extra && extra.lastActiveAt != null ? extra.lastActiveAt : null),
+    profileUrl,
+  };
+}
+
+function membersPayload(rows, now, opts) {
+  const demo = !!(opts && opts.demo);
+  const members = [];
+  rows.forEach((raw, i) => {
+    const extra = opts && opts.extra ? opts.extra(raw, i) : null;
+    const m = memberPayload(raw, { owner: i === 0, demo, ...(extra || {}) });
+    if (m) members.push(m);
+  });
+  const cutoff = now.getTime() - MEMBER_ACTIVE_WINDOW_MS;
+  let activeThisWeek = 0;
+  for (const m of members) {
+    const t = m.lastActiveAt ? Date.parse(m.lastActiveAt) : NaN;
+    if (isFinite(t) && t >= cutoff) activeThisWeek++;
+  }
+  return { members, activeThisWeek };
+}
+
+// Staging demo roster (?demo=1): six obviously-fake members in the platform's
+// documented order (creator first, so the owner chip lands on
+// staging-demo-user), covering both chips, joined dates, vote and accepted
+// counts, and the active/inactive split (four active within the last seven
+// days, two not). Request-time injection, staging only; the field spellings
+// match the platform's, so the demo rows go through the same normalizer the
+// live response does.
+function demoMemberRows(now) {
+  const ago = (days) => new Date(now.getTime() - days * 24 * 3600 * 1000).toISOString();
+  return [
+    { id: 900001, username: 'staging-demo-user', joined_at: ago(120), votes_cast: 14, proposals_accepted: 3, last_active_at: ago(0.25) },
+    { id: 900002, username: 'staging-demo-maya', joined_at: ago(95), votes_cast: 9, proposals_accepted: 2, last_active_at: ago(1) },
+    { id: 900003, username: 'staging-demo-omar', joined_at: ago(80), votes_cast: 6, proposals_accepted: 1, last_active_at: ago(3) },
+    { id: 900004, username: 'staging-demo-priya', joined_at: ago(60), votes_cast: 4, proposals_accepted: 1, last_active_at: ago(6) },
+    { id: 900005, username: 'staging-demo-quinn', joined_at: ago(45), votes_cast: 2, proposals_accepted: 0, last_active_at: ago(9) },
+    { id: 900006, username: 'staging-demo-raul', joined_at: ago(30), votes_cast: 1, proposals_accepted: 0, last_active_at: ago(21) },
+  ];
+}
+
+function demoMembersPayload(req) {
+  return { demo: true, ...membersPayload(demoMemberRows(req.now), req.now, { demo: true }) };
+}
+
+app.get('/api/members', async (req, res) => {
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      return res.json(demoMembersPayload(req));
+    }
+    if (!PLATFORM_API_BASE) {
+      // A staging container without the platform API only exists under a
+      // plain local launch; keep the screen reviewable there with fixtures.
+      if (IS_STAGING) return res.json(demoMembersPayload(req));
+      return res.status(500).json({ error: 'Platform API is not configured' });
+    }
+    const headers = { 'x-usernode-user-token': userTokenFrom(req) };
+    if (APP_TOKEN) headers['x-usernode-app-token'] = APP_TOKEN;
+    const r = await fetch(PLATFORM_API_BASE + '/members?limit=200', {
+      headers,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (r.status === 403) {
+      // Only members of the project get the roster. Everyone else gets an
+      // explicit flag so the screen can show why it is empty.
+      return res.json({ demo: false, notMember: true, members: [], activeThisWeek: 0 });
+    }
+    if (!r.ok) {
+      return res.status(502).json({ error: 'Could not load the member list from the platform' });
+    }
+    const data = await r.json().catch(() => null);
+    const list = Array.isArray(data) ? data
+      : data && Array.isArray(data.members) ? data.members : null;
+    if (!list) {
+      return res.status(502).json({ error: 'Unexpected member list response' });
+    }
+    // Votes cast through this app, aggregated per member — the app's own
+    // recorded history, not a guess. A query failure just leaves the counts
+    // off the rows (the optional-field contract), never fails the roster.
+    let stats = new Map();
+    try {
+      const { rows } = await pool.query(
+        `SELECT username, COUNT(*)::int AS votes, MAX(created_at) AS last_vote
+         FROM my_votes GROUP BY username`);
+      stats = new Map(rows.map((s) => [String(s.username).toLowerCase(), s]));
+    } catch {}
+    const payload = membersPayload(list, req.now, {
+      extra: (raw) => {
+        const username = (typeof raw === 'string' ? raw
+          : raw && typeof raw.username === 'string' ? raw.username : '').trim();
+        const s = stats.get(username.toLowerCase());
+        if (!s) return null;
+        return {
+          votesCast: s.votes,
+          lastActiveAt: s.last_vote ? new Date(s.last_vote).toISOString() : null,
+        };
+      },
+    });
+    return res.json({ demo: false, ...payload });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
