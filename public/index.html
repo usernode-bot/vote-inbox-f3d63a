@@ -3967,6 +3967,217 @@
     var BACK_TO_INBOX_CTA = '<button data-action="clear-snooze-view" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Back to the inbox</button>';
     var BROWSE_CTA = '<button data-action="go-inbox" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse the Inbox</button>';
     var BROWSE_APPS_CTA = '<button data-action="browse-apps" class="mt-2 rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500 transition-transform active:scale-95">Browse apps</button>';
+    var EMPTY_SECONDARY_BTN = 'rounded-full border border-zinc-300 bg-white px-4 py-1.5 text-xs font-semibold text-zinc-600 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300';
+
+    // ------------------------------------------------------------------
+    // The genuinely empty inbox: a way in rather than a dead end. Besides
+    // Browse apps it offers the finished proposals (My Votes, where the
+    // outcomes live), in-app alerts for new proposals, and an estimate of
+    // when the next one is likely, from the server's nextEstimate (recent
+    // arrival times; see estimateNextProposal in server.js).
+    // ------------------------------------------------------------------
+
+    // "about 2 days" / "about 5 hours" / "under an hour".
+    function aboutDuration(ms) {
+      var H = 3600 * 1000;
+      if (ms < H) return 'under an hour';
+      if (ms < 36 * H) {
+        var h = Math.round(ms / H);
+        return 'about ' + h + (h === 1 ? ' hour' : ' hours');
+      }
+      var d = Math.round(ms / (24 * H));
+      return 'about ' + d + (d === 1 ? ' day' : ' days');
+    }
+
+    function nextEstimateHtml() {
+      var est = state.inbox && state.inbox.nextEstimate;
+      if (!est) return '';
+      var line;
+      var sub = '';
+      var kind;
+      if (!est.known) {
+        kind = 'unknown';
+        line = 'Not enough recent proposals to estimate when the next one arrives.';
+      } else {
+        var left = Date.parse(est.nextAt) - Date.now();
+        kind = left > 0 ? 'soon' : 'due';
+        line = left > 0
+          ? 'Next proposal likely in ' + aboutDuration(left)
+          : 'Next proposal could arrive any time now';
+        sub = 'Lately a new one has arrived every ' + aboutDuration(est.avgGapMs).replace(/^about /, '') + ' or so.';
+      }
+      return '<div data-next-estimate="' + kind + '" class="mt-1 flex flex-col items-center gap-0.5 text-xs text-zinc-500 dark:text-zinc-400">'
+        + '<span class="inline-flex items-center gap-1.5 font-semibold text-zinc-700 dark:text-zinc-200">'
+        + '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+        + esc(line) + '</span>'
+        + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</div>';
+    }
+
+    function alertsControlHtml() {
+      if (state.alertsOn) {
+        return '<span data-alerts-state="on" class="inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">'
+          + '<span class="font-semibold text-violet-600 dark:text-violet-400">Alerts on</span>'
+          + '<button data-action="toggle-alerts" class="rounded-full px-2 py-1 text-xs font-semibold text-zinc-500 underline active:scale-95 dark:text-zinc-400">Turn off</button>'
+          + '</span>';
+      }
+      return '<button data-action="toggle-alerts" data-alerts-state="off" class="' + EMPTY_SECONDARY_BTN + '">Turn on new proposal alerts</button>';
+    }
+
+    function emptyInboxHtml() {
+      var extra = nextEstimateHtml()
+        + BROWSE_APPS_CTA
+        + '<div class="mt-1 flex flex-wrap items-center justify-center gap-2">'
+        + '<button data-action="see-finished" class="' + EMPTY_SECONDARY_BTN + '">See finished proposals</button>'
+        + alertsControlHtml()
+        + '</div>'
+        + (state.alertsOn
+          ? '<p data-alerts-note class="text-xs text-zinc-500 dark:text-zinc-400">You will get a heads-up here when a new proposal arrives while Vote Inbox is open.</p>'
+          : '');
+      return emptyHtml(
+        'Nothing to vote on yet',
+        'No open proposals right now. New ones show up here as apps propose changes.',
+        extra);
+    }
+
+    // ------------------------------------------------------------------
+    // New proposal alerts. Homeroom gives apps no push notifications, so
+    // these are in-app: while the switch is on and Vote Inbox is open and
+    // visible, the inbox re-checks every ALERTS_POLL_MS and a toast names
+    // any proposal it has not seen before. The choice persists in
+    // localStorage like the hide toggles.
+    // ------------------------------------------------------------------
+
+    var ALERTS_KEY = 'vote-inbox:new-alerts';
+    var ALERTS_POLL_MS = 2 * 60 * 1000;
+
+    function loadAlertsOn() {
+      try { return localStorage.getItem(ALERTS_KEY) === '1'; } catch (e) { return false; }
+    }
+
+    function saveAlertsOn(on) {
+      try { localStorage.setItem(ALERTS_KEY, on ? '1' : '0'); } catch (e) { /* not persistable here */ }
+    }
+
+    state.alertsOn = loadAlertsOn();
+    // Session ids the inbox has already shown, so a poll can tell what is new.
+    var alertsKnownIds = null;
+    var alertsPolling = false;
+    var alertsHidden = false;
+    var alertsTimer = null;
+
+    function rememberInboxIds() {
+      var list = (state.inbox && state.inbox.proposals) || [];
+      alertsKnownIds = {};
+      for (var i = 0; i < list.length; i++) alertsKnownIds[list[i].sessionId] = true;
+    }
+
+    // Runs after a poll's load: toast the proposals that were not in the
+    // previous load. Merged or closed ones are not news.
+    function announceNewProposals() {
+      var list = (state.inbox && state.inbox.proposals) || [];
+      var fresh = [];
+      if (alertsKnownIds) {
+        for (var i = 0; i < list.length; i++) {
+          var p = list[i];
+          if (alertsKnownIds[p.sessionId] || p.status === 'merged' || p.status === 'closed') continue;
+          fresh.push(p);
+        }
+      }
+      rememberInboxIds();
+      if (!fresh.length) return;
+      document.body.setAttribute('data-alerts-new', String(fresh.length));
+      var msg = fresh.length === 1
+        ? 'New proposal: ' + fresh[0].title
+        : fresh.length + ' new proposals to vote on';
+      toast(msg, {
+        action: {
+          label: 'View',
+          handler: function () {
+            state.tab = 'inbox';
+            render();
+            window.scrollTo(0, 0);
+          },
+        },
+      });
+    }
+
+    function pollForNewProposals() {
+      if (!state.alertsOn || alertsHidden || document.hidden) return;
+      if (state.loadingInbox) return;
+      if (!alertsKnownIds) rememberInboxIds();
+      alertsPolling = true;
+      loadInbox(false);
+    }
+
+    function syncAlertsTimer() {
+      if (state.alertsOn && !alertsTimer) {
+        alertsTimer = setInterval(pollForNewProposals, ALERTS_POLL_MS);
+      } else if (!state.alertsOn && alertsTimer) {
+        clearInterval(alertsTimer);
+        alertsTimer = null;
+      }
+    }
+
+    function setAlertsOn(on) {
+      state.alertsOn = on;
+      saveAlertsOn(on);
+      if (on) rememberInboxIds();
+      syncAlertsTimer();
+      render();
+      toast(on ? 'Alerts on' : 'Alerts off');
+    }
+
+    syncAlertsTimer();
+
+    // Hidden by the shell (another app in front) or a background tab: no
+    // polling until the app is visible again.
+    window.addEventListener('usernode:visibility-changed', function (e) {
+      alertsHidden = !!(e && e.detail && e.detail.hidden);
+    });
+
+    // See finished proposals: My Votes, where proposals end up with their
+    // outcome (merged or closed). The plain tab, no filter.
+    function seeFinishedProposals() {
+      state.tab = 'votes';
+      state.votesMergedWeek = false;
+      state.compareView = false;
+      render();
+      window.scrollTo(0, 0);
+      loadVotes(!state.votes);
+    }
+
+    // Empty-inbox demo hooks (staging + ?demo=1 only, through the real
+    // buttons): ?tap-finished=1 taps See finished proposals;
+    // ?tap-alerts=1 clears the stored choice then taps the alerts button;
+    // ?alerts-arrive=1 (with ?tap-alerts=1) then runs one alerts poll whose
+    // fetch drops ?empty=1, so the full fixture "arrives" and the new
+    // proposal toast is observable (body[data-alerts-new]).
+    var TAP_FINISHED = DEMO && params.get('tap-finished') === '1';
+    var TAP_ALERTS = DEMO && params.get('tap-alerts') === '1';
+    var ALERTS_ARRIVE = DEMO && params.get('alerts-arrive') === '1';
+    var alertsArrived = false;
+    function maybeEmptyInboxHooks() {
+      if (!DEMO || state.errorInbox || !state.inbox) return;
+      if (TAP_FINISHED) {
+        TAP_FINISHED = false;
+        var fin = document.querySelector('[data-action="see-finished"]');
+        if (fin) fin.click();
+        return;
+      }
+      if (TAP_ALERTS) {
+        TAP_ALERTS = false;
+        state.alertsOn = false;
+        saveAlertsOn(false);
+        render();
+        var btn = document.querySelector('[data-action="toggle-alerts"]');
+        if (btn) btn.click();
+        if (ALERTS_ARRIVE) {
+          ALERTS_ARRIVE = false;
+          alertsArrived = true;
+          pollForNewProposals();
+        }
+      }
+    }
 
     // ------------------------------------------------------------------
     // Onboarding tour: a three-step intro for first-time visitors, rendered
@@ -4495,10 +4706,7 @@
         // the way. It explains the next action (browse the apps the inbox
         // knows about) instead of just offering a refresh, and the header
         // summary above it keeps counting at zero.
-        return emptyHtml(
-          'Nothing to vote on yet',
-          'No open proposals right now. New ones show up here as apps propose changes.',
-          BROWSE_APPS_CTA);
+        return emptyInboxHtml();
       }
       // Controversy ranks the whole loaded inbox, tightest race first, so
       // it renders one flat list: the age-group headers would cut the
@@ -6402,7 +6610,8 @@
       // ?empty=1 (demo only) asks the demo inbox for zero proposals — the
       // genuinely empty inbox behind the new empty state and its zero
       // header counts. Never sent without demo data.
-      if (DEMO && params.get('empty') === '1') query.push('empty=1');
+      if (DEMO && params.get('empty') === '1' && !alertsArrived) query.push('empty=1');
+      if (DEMO && params.get('estimate')) query.push('estimate=' + encodeURIComponent(params.get('estimate')));
       if (ALL_MERGED) query.push('allmerged=1');
       // Check-fixture variant on the hook's reload; see TURNOUT_REFRESH.
       if (turnoutAltNext) query.push('turnoutalt=1');
@@ -6458,14 +6667,21 @@
           maybeDigestVote();
           maybeAutoExpand();
           maybePresetSummary();
+          if (alertsPolling) announceNewProposals();
+          else if (state.alertsOn) rememberInboxIds();
         })
         .catch(function (err) {
+          // A background alerts poll that fails keeps the screen as it was;
+          // the next poll tries again.
+          if (alertsPolling) return;
           state.errorInbox = err.message || 'Could not load proposals.';
         })
         .then(function () {
           state.loadingInbox = false;
+          alertsPolling = false;
           render();
           maybeRerenderFilter();
+          maybeEmptyInboxHooks();
           maybeAutoOpenFilter();
           maybeTurnoutRefresh();
           maybeTapNo();
@@ -8207,6 +8423,10 @@
           // Empty-inbox call to action: open the app filter dropdown, the
           // place where this app's loaded apps are browsed.
           openAppFilter();
+        } else if (action === 'see-finished') {
+          seeFinishedProposals();
+        } else if (action === 'toggle-alerts') {
+          setAlertsOn(!state.alertsOn);
         } else if (action === 'tour-next') {
           tourNext();
         } else if (action === 'tour-skip') {

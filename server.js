@@ -1212,6 +1212,12 @@ function demoInboxPayload(req) {
   // inbox: its copy, its Browse apps action and the header's zero counts.
   // Applied before every other variant; no declared check combines them.
   if (req.query.empty === '1') {
+    // The next-proposal estimate reads the fixture's own arrival times
+    // before they are emptied (six proposals over nine days), through the
+    // same rule production uses. ?estimate=none drops them, so the "not
+    // enough to estimate" line is reachable by checks.
+    const times = req.query.estimate === 'none' ? [] : demo.proposals.map((p) => p.proposedAt);
+    demo.nextEstimate = estimateNextProposal(times, req.now);
     demo.proposals = [];
     return demo;
   }
@@ -1760,6 +1766,52 @@ function findDemoComment(appSlug, sessionId, id) {
 
 // The inbox: every open promoted proposal across Homeroom apps, most
 // votes-needed first, plus the caller's own recorded votes.
+// ---------------------------------------------------------------------------
+// Next-proposal estimate for the empty inbox
+//
+// The empty inbox says roughly when the next proposal is likely to arrive,
+// from recent arrival times: the mean gap between arrivals in the last
+// NEXT_ESTIMATE_WINDOW_MS, added to the latest arrival. Fewer than
+// NEXT_ESTIMATE_MIN_SAMPLES arrivals means there is too little to go on and
+// the screen says so instead of guessing. Pure, so the demo fixture and
+// production share one rule.
+// ---------------------------------------------------------------------------
+
+const NEXT_ESTIMATE_WINDOW_MS = 60 * 24 * 3600 * 1000;
+const NEXT_ESTIMATE_MIN_SAMPLES = 3;
+
+function estimateNextProposal(times, now) {
+  const nowMs = now.getTime();
+  const ms = times
+    .map((t) => (t instanceof Date ? t.getTime() : Date.parse(t)))
+    .filter((t) => Number.isFinite(t) && t <= nowMs && nowMs - t <= NEXT_ESTIMATE_WINDOW_MS)
+    .sort((a, b) => a - b);
+  if (ms.length < NEXT_ESTIMATE_MIN_SAMPLES) return { known: false, samples: ms.length };
+  const first = ms[0];
+  const last = ms[ms.length - 1];
+  const avgGapMs = Math.round((last - first) / (ms.length - 1));
+  return {
+    known: true,
+    samples: ms.length,
+    lastAt: new Date(last).toISOString(),
+    avgGapMs,
+    nextAt: new Date(last + avgGapMs).toISOString(),
+  };
+}
+
+// Production arrival times: the platform gives apps no proposal history, so
+// the best record this app has is when each proposal was first voted on
+// through it (any member's my_votes row; only the per-session earliest time
+// is read, never who voted). Those first votes trail the real proposal times
+// by a little, which is fine for an "about every N days" estimate.
+async function recentArrivalTimes(now) {
+  const { rows } = await pool.query(
+    `SELECT MIN(created_at) AS first_at FROM my_votes
+     WHERE created_at > $1 GROUP BY session_id`,
+    [new Date(now.getTime() - NEXT_ESTIMATE_WINDOW_MS)]);
+  return rows.map((r) => r.first_at);
+}
+
 app.get('/api/inbox', async (req, res) => {
   const userToken = userTokenFrom(req);
   try {
@@ -1840,10 +1892,16 @@ app.get('/api/inbox', async (req, res) => {
       }
     }
 
+    // Only the empty inbox shows the estimate, so only it pays the query.
+    const nextEstimate = proposals.length
+      ? null
+      : estimateNextProposal(await recentArrivalTimes(req.now), req.now);
+
     res.json({
       demo: false,
       apps: filterApps,
       proposals,
+      nextEstimate,
       celebrations,
       failures,
       totalApps: apps.length,

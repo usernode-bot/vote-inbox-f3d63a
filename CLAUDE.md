@@ -307,6 +307,24 @@ user's vote history.
   `?demo=1` only): `?empty=1` (forwarded to /api/inbox) empties the inbox
   fixture's proposals; `?votes-empty=1` (forwarded to /api/my-votes)
   empties the My Votes fixture.
+- Empty inbox extras (the genuinely empty inbox, below its Browse apps
+  button): See finished proposals opens the plain My Votes tab (where
+  proposals end up with their outcome); Turn on new proposal alerts is an
+  IN-APP alert only (Homeroom has no push for apps): while on (persisted in
+  `vote-inbox:new-alerts`) and the app is open and visible, the inbox
+  re-polls every 2 minutes and toasts proposals not seen in the previous
+  load; and a next-proposal estimate from `nextEstimate` on `/api/inbox`
+  (only sent when the inbox is empty): `estimateNextProposal` in
+  `server.js`, mean gap over arrivals in the last 60 days (3+ needed, else
+  "Not enough recent proposals"), where an arrival is the earliest
+  `my_votes` row per session (any member; only the timestamp is read).
+  Demo (staging + `?demo=1&empty=1`): the estimate uses the fixture's own
+  six arrival times, `?estimate=none` the unknown line; `?tap-finished=1`
+  taps See finished proposals; `?tap-alerts=1` resets the stored choice
+  then taps the alerts button; adding `?alerts-arrive=1` runs one poll
+  whose fetch drops `empty=1`, so the fixture "arrives" and
+  `body[data-alerts-new]` counts the announced proposals (5: the merged
+  one is not news).
 - Bulk triage hooks (demo only) drive select mode and the bulk actions
   through the real code paths for checks: `?selectmode=1`,
   `?select=<ids>`, `?deselect=<ids>`, `?clearsel=1`, `?exitsel=1`,
