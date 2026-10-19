@@ -2,7 +2,7 @@
   "description": "One inbox for all open proposals with vote counts. Vote fast, track mine.",
   "icon": {
     "image": "brand/icon.png",
-    "emoji": "\ud83d\udce5"
+    "emoji": "📥"
   },
   "secrets": [],
   "tests": [
@@ -538,7 +538,7 @@
       "name": "Proposal cards show proportional yes/no vote bar",
       "path": "/?demo=1",
       "expectSelector": "[data-vote-bar]",
-      "expectText": "Yes 1 \u00b7 No 0",
+      "expectText": "Yes 1 · No 0",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -1581,7 +1581,7 @@
       "id": "compare.counts",
       "name": "Compare columns show each proposal's vote counts",
       "path": "/?demo=1&compare=demo-1,demo-2",
-      "expectText": "Yes 3 \u00b7 No 1",
+      "expectText": "Yes 3 · No 1",
       "impact": [
         "public/index.html",
         "dapp.json"
@@ -2266,6 +2266,154 @@
         "dapp.json"
       ],
       "expectText": "12 files changed"
+    },
+    {
+      "id": "members.header-link",
+      "name": "Header links to the members directory",
+      "path": "/?demo=1",
+      "expectSelector": "[data-members-link]",
+      "expectText": "Members",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.roster",
+      "name": "Directory lists avatar and handle",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-avatar]",
+      "expectText": "@staging-demo-maya",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.role-chip",
+      "name": "Rows carry a role chip",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-role]",
+      "expectText": "Member",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.owner-chip",
+      "name": "The first member is the owner",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-role='owner']",
+      "expectText": "Owner",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.joined",
+      "name": "Rows show a joined date",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-joined]",
+      "expectText": "Joined",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.votes-cast",
+      "name": "Rows show votes cast",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-votes]",
+      "expectText": "votes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.accepted",
+      "name": "Rows show accepted-proposal count",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-accepted]",
+      "expectText": "accepted",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.search-filter",
+      "name": "Search filters by handle",
+      "path": "/?demo=1&members=1&member-query=priya",
+      "expectSelector": "[data-member-handle='@staging-demo-priya']",
+      "expectText": "1 of 6",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.profile-link",
+      "name": "Member rows link to the author profile",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "a[data-member-link][href*='/u/staging-demo-maya']",
+      "expectText": "@staging-demo-maya",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.summary-count",
+      "name": "Summary shows the member count",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-members-summary]",
+      "expectText": "6 members",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.active-week",
+      "name": "Summary shows the active-this-week count",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-members-summary]",
+      "expectText": "4 active this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.search-empty",
+      "name": "No-match search shows the empty state",
+      "path": "/?demo=1&members=1&member-query=zzz",
+      "expectSelector": "[data-members-empty]",
+      "expectText": "No members match",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     }
   ]
 }
