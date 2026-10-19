@@ -663,6 +663,26 @@ async function migrate() {
     );
     COMMENT ON TABLE merge_celebrations IS 'staging:private';
   `);
+  // Bookmarked proposals: one person's "save this to revisit" marks. Like
+  // watchlist this is one person's own data, so it is staging:private. A row
+  // is the bookmark itself: removing the bookmark deletes it, and the row
+  // keeps only what the Saved tab renders (app, title, when it was saved) —
+  // the proposal stays on the platform.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE bookmarks IS 'staging:private';
+  `);
 }
 
 async function seedStaging() {
@@ -917,6 +937,57 @@ function watchRowPayload(r) {
     seenStatus: r.last_seen_status,
     status: r.current_status || r.last_seen_status || 'voting',
     changed,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarks: proposals the user saved to revisit. Rows are per user
+// (staging:private, same reasoning as watchlist). A bookmark is purely the
+// person's own marker: it never touches votes, stars or the platform's merge
+// state, and the row keeps only what the Saved tab renders.
+// ---------------------------------------------------------------------------
+
+// The session ids this user has bookmarked, for stamping the inbox cards.
+async function bookmarkSetFor(userId) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT session_id FROM bookmarks WHERE user_id = $1', [userId]);
+    return new Set(rows.map((r) => r.session_id));
+  } catch {
+    return new Set();
+  }
+}
+
+// Stamp each proposal with the caller's own bookmark. Real rows always win;
+// a myBookmark already on the proposal survives as a fallback (a demo load
+// may carry one; production responses never do, so this changes nothing
+// there).
+// Stamp each proposal with the caller's own bookmark. Real rows always win;
+// ?preset-bookmark=<sessionId,...> (demo checks) marks extra ones bookmarked
+// for that one load without touching storage.
+async function withMyBookmarks(proposals, userId, req) {
+  const mine = await bookmarkSetFor(userId);
+  const preset = req && req.query['preset-bookmark']
+    ? String(req.query['preset-bookmark']).split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  for (const p of proposals) {
+    p.myBookmark = mine.has(p.sessionId) || preset.includes(p.sessionId) || p.myBookmark === true;
+  }
+  return proposals;
+}
+
+// One Saved-tab row. Bookmarks carry no last-seen status and no change
+// badges: the tab is a "to revisit" list, so it shows what was saved, where
+// it lives and when.
+function bookmarkRowPayload(r) {
+  return {
+    sessionId: r.session_id,
+    appSlug: r.app_slug,
+    appName: r.app_name || r.app_slug,
+    icon: r.icon || null,
+    proposalId: r.proposal_id || null,
+    title: r.title,
+    savedAt: r.saved_at || null,
   };
 }
 
@@ -1309,6 +1380,38 @@ async function applyDemoReadFixtures(req) {
   }
 }
 
+// Bookmark-check fixtures (staging demo only), applied to a demo inbox load
+// before the caller's own bookmark rows are stamped on:
+//   Any of ?set-bookmark= / ?tap-bookmark= / ?saved-other=1
+//                      resets the caller's bookmark rows on the six fixture
+//                      proposals, so every such check starts from all-unsaved
+//                      and never depends on what an earlier check saved.
+//   ?saved-other=1     also records a bookmark on demo-4 for a fake member
+//                      (staging-demo-user), so the per-user rule is
+//                      observable: another member's bookmark never reaches
+//                      the caller's cards, badge count or Saved tab.
+// Both write only fake or check-fixture rows and only under ?demo=1.
+async function applyDemoBookmarkFixtures(req) {
+  const hooked = ['set-bookmark', 'tap-bookmark', 'saved-other']
+    .some((k) => req.query[k]);
+  if (!hooked) return;
+  const ids = demoInbox().proposals.map((p) => p.sessionId);
+  await pool.query(
+    'DELETE FROM bookmarks WHERE user_id = $1 AND session_id = ANY($2)',
+    [req.user.id, ids]);
+  if (req.query['saved-other'] === '1') {
+    const p = demoInbox().proposals.find((x) => x.sessionId === 'demo-4');
+    if (p) {
+      await pool.query(`
+        INSERT INTO bookmarks
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title)
+        VALUES (900002, 'staging-demo-user', $1, $2, $3, $4, $5)
+        ON CONFLICT (user_id, session_id) DO NOTHING`,
+        [p.appSlug, p.appName, p.sessionId, p.proposalId, p.title]);
+    }
+  }
+}
+
 // Celebration check fixtures (staging demo only), applied to a demo inbox
 // load only when the load opts in with ?celeb=1 — the marker the celebration
 // checks' pages and their reloaded marker pages carry, mirroring ?snooze=1 —
@@ -1354,8 +1457,13 @@ async function finishDemoInbox(req, demo) {
   // reads can never reach another check's plain ?demo=1 load, which stays
   // all-unread.
   await applyDemoReadFixtures(req);
+  await applyDemoBookmarkFixtures(req);
   if (req.query.read === '1') await withMyReads(demo.proposals, req.user.id);
   await withMyStars(demo.proposals, req.user.id, req);
+  // The caller's persisted bookmarks are stamped unconditionally, the same
+  // rule the stars follow: a bookmark recorded through the demo save route
+  // (or the ?set-bookmark= check hook) survives a reload on the cards.
+  await withMyBookmarks(demo.proposals, req.user.id, req);
   demo.celebrations = [];
   if (req.query.celeb === '1') {
     await applyDemoCelebrationFixtures(req, demo.proposals);
@@ -1516,6 +1624,82 @@ function demoWatchlistPayload(req) {
 }
 
 // ---------------------------------------------------------------------------
+// Saved-tab demo data (?demo=1). Fixed fixture rows keyed to the demo inbox
+// proposals, so the Saved tab is deterministic in previews and checks: the
+// merged demo-5 (saved 6 days ago, a "revisit this" case) and demo-6 (2 days
+// ago). demo-1, demo-2 and demo-4 are deliberately absent — they are the ids
+// the bookmark check hooks use, so a check's own fixture never collides with
+// the tab's default one. Request-time injection, staging only.
+// ---------------------------------------------------------------------------
+
+function demoSavedRows() {
+  const byId = new Map(demoInbox().proposals.map((p) => [p.sessionId, p]));
+  const daysAgo = (d) => new Date(Date.now() - d * 24 * 3600 * 1000).toISOString();
+  const mk = (sessionId, savedDays) => {
+    const p = byId.get(sessionId);
+    if (!p) return null;
+    return {
+      sessionId,
+      appSlug: p.appSlug,
+      appName: p.appName,
+      icon: p.icon || null,
+      proposalId: p.proposalId,
+      title: p.title,
+      savedAt: daysAgo(savedDays),
+      status: p.status === 'proposed' ? 'voting' : (p.status || 'voting'),
+    };
+  };
+  return [mk('demo-5', 6), mk('demo-6', 2)].filter(Boolean);
+}
+
+// ?saved-empty=1 serves no rows (the empty state). ?saved-mine=<ids> (demo
+// checks) adds the caller's own real rows for exactly those sessions,
+// recorded through the ?set-bookmark= hook, so one URL observes bookmark →
+// reload → still listed from actual storage with a deterministic count (the
+// caller's other rows, if any earlier check left them, stay out).
+// ?saved-other=1 records a bookmark on demo-4 for a fake member
+// (staging-demo-user) so the per-user rule is observable: another member's
+// bookmark never reaches the caller's tab or count.
+async function demoBookmarksPayload(req) {
+  const rows = demoSavedRows();
+  if (req.query['saved-empty'] === '1') return { demo: true, rows: [] };
+  if (req.query['saved-other'] === '1') {
+    const p = demoInbox().proposals.find((x) => x.sessionId === 'demo-4');
+    if (p) {
+      await pool.query(`
+        INSERT INTO bookmarks
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title)
+        VALUES (900002, 'staging-demo-user', $1, $2, $3, $4, $5)
+        ON CONFLICT (user_id, session_id) DO NOTHING`,
+        [p.appSlug, p.appName, p.sessionId, p.proposalId, p.title]);
+    }
+  }
+  const mineIds = String(req.query['saved-mine'] || '').split(',')
+    .map((s) => s.trim()).filter(Boolean);
+  if (mineIds.length) {
+    const byId = new Map(demoInbox().proposals.map((p) => [p.sessionId, p]));
+    const { rows: own } = await pool.query(
+      `SELECT app_slug, app_name, session_id, proposal_id, title, saved_at
+       FROM bookmarks WHERE user_id = $1 AND session_id = ANY($2)`,
+      [req.user.id, mineIds]);
+    for (const r of own) {
+      if (rows.some((x) => x.sessionId === r.session_id)) continue;
+      const fixture = byId.get(r.session_id);
+      rows.unshift({
+        sessionId: r.session_id,
+        appSlug: r.app_slug,
+        appName: r.app_name || r.app_slug,
+        icon: fixture ? fixture.icon : null,
+        proposalId: r.proposal_id,
+        title: r.title,
+        savedAt: r.saved_at,
+      });
+    }
+  }
+  return { demo: true, rows };
+}
+
+// ---------------------------------------------------------------------------
 // Staging demo threads (?demo=1)
 //
 // A proposal detail's discussion reads real rows in production. Staging
@@ -1632,6 +1816,7 @@ app.get('/api/inbox', async (req, res) => {
     await withMyVotes(proposals, req.user.id);
     await withMySnoozes(proposals, req.user.id);
     await withMyStars(proposals, req.user.id, req);
+    await withMyBookmarks(proposals, req.user.id, req);
     await withMyReads(proposals, req.user.id);
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
@@ -2003,6 +2188,85 @@ app.post('/api/watchlist/seen', async (req, res) => {
         [req.user.id, String(s.sessionId), s.status]);
     }
     res.json({ ok: true, marked: statuses.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Bookmarks: proposals the signed-in user saved to revisit. Per person
+// (staging:private), keyed by (user_id, session_id); they never affect
+// votes, stars, snoozes or merge behaviour — purely this member's Saved tab.
+// ---------------------------------------------------------------------------
+
+// The Saved tab: this user's bookmarked proposals, newest save first. Each
+// row carries the app and title it was saved with; a merged/closed status is
+// stamped on from the loaded inbox data client-side, so no extra platform
+// calls. Demo loads serve the fixed fixture (see demoBookmarksPayload).
+app.get('/api/bookmarks', async (req, res) => {
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      return res.json(await demoBookmarksPayload(req));
+    }
+    const { rows } = await pool.query(
+      `SELECT app_slug, app_name, session_id, proposal_id, title, saved_at
+       FROM bookmarks WHERE user_id = $1 ORDER BY saved_at DESC`,
+      [req.user.id]);
+    res.json({ demo: false, rows: rows.map(bookmarkRowPayload) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bookmark a proposal. Demo bodies (staging only) carry just the session id
+// and take their metadata from the demo fixture, so a check URL can bookmark
+// a known proposal; real bookmarks carry what the card showed. Saving again
+// with the row already there is a no-op.
+app.post('/api/bookmarks/save', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    let meta = body;
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo bookmarking is staging-only' });
+      const p = demoInbox().proposals.find((x) => x.sessionId === sessionId);
+      if (!p) return res.status(400).json({ error: 'Unknown demo proposal' });
+      meta = {
+        appSlug: p.appSlug,
+        appName: p.appName,
+        proposalId: p.proposalId,
+        title: p.title,
+      };
+    }
+    await pool.query(`
+      INSERT INTO bookmarks
+        (user_id, username, app_slug, app_name, session_id, proposal_id, title)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (user_id, session_id) DO NOTHING
+    `, [req.user.id, req.user.username, meta.appSlug || '', meta.appName || '',
+        sessionId, meta.proposalId || null, meta.title || 'Untitled proposal']);
+    res.json({ ok: true, demo: body.demo === true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Unbookmark: remove this user's row for one session. Returns how many rows
+// went so the caller can tell a real removal from an already-absent one.
+app.post('/api/bookmarks/unsave', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM bookmarks WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, removed: rowCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
