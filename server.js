@@ -2033,19 +2033,35 @@ app.post('/api/saved-searches/seed', async (req, res) => {
   if (!IS_STAGING) return res.status(400).json({ error: 'Demo seeding is staging-only' });
   const names = Array.isArray(body.names)
     ? body.names.filter((n) => typeof n === 'string' && n.trim()) : [];
+  // One transaction under a per-user advisory lock: check groups run in
+  // parallel against the same shared staging account, and a bare
+  // DELETE + INSERT pair races two concurrent seeds into unique-index
+  // violations (500s) and torn fixture lists.
+  const client = await pool.connect();
   try {
-    await pool.query('DELETE FROM saved_searches WHERE user_id = $1', [req.user.id]);
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('vote-inbox:saved-searches:' || $1::text))`,
+      [String(req.user.id)]);
+    await client.query('DELETE FROM saved_searches WHERE user_id = $1', [req.user.id]);
     for (const name of names) {
       const seed = SAVED_SEARCH_SEEDS[name.trim()];
       if (!seed) continue;
-      await pool.query(
+      await client.query(
         `INSERT INTO saved_searches (user_id, username, name, query, filters, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, NOW() - INTERVAL '3 days')`,
+         VALUES ($1, $2, $3, $4, $5, NOW() - INTERVAL '3 days')
+         ON CONFLICT (user_id, lower(name)) DO UPDATE
+           SET query = EXCLUDED.query, filters = EXCLUDED.filters,
+               last_seen_at = EXCLUDED.last_seen_at`,
         [req.user.id, req.user.username, name.trim(), seed.query, seed.filters]);
     }
+    await client.query('COMMIT');
     res.json({ ok: true });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -2323,6 +2339,34 @@ function demoMembersPayload(req) {
   return { demo: true, ...membersPayload(demoMemberRows(req.now), req.now, { demo: true }) };
 }
 
+// The project's roster, read the way /api/members reads it: the caller's
+// forwarded identity (the platform answers only for actual members) and, in
+// production, the app token. Returns { list }, { notMember: true } for a
+// non-member, or { error } when the platform answered unusably.
+async function loadRosterList(req) {
+  const headers = { 'x-usernode-user-token': userTokenFrom(req) };
+  if (APP_TOKEN) headers['x-usernode-app-token'] = APP_TOKEN;
+  const r = await fetch(PLATFORM_API_BASE + '/members?limit=200', {
+    headers,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (r.status === 403) {
+    // Only members of the project get the roster. Everyone else gets an
+    // explicit flag so the screen can show why it is empty.
+    return { notMember: true };
+  }
+  if (!r.ok) {
+    return { error: 'Could not load the member list from the platform' };
+  }
+  const data = await r.json().catch(() => null);
+  const list = Array.isArray(data) ? data
+    : data && Array.isArray(data.members) ? data.members : null;
+  if (!list) {
+    return { error: 'Unexpected member list response' };
+  }
+  return { list };
+}
+
 app.get('/api/members', async (req, res) => {
   try {
     if (req.query.demo === '1' && IS_STAGING) {
@@ -2334,26 +2378,14 @@ app.get('/api/members', async (req, res) => {
       if (IS_STAGING) return res.json(demoMembersPayload(req));
       return res.status(500).json({ error: 'Platform API is not configured' });
     }
-    const headers = { 'x-usernode-user-token': userTokenFrom(req) };
-    if (APP_TOKEN) headers['x-usernode-app-token'] = APP_TOKEN;
-    const r = await fetch(PLATFORM_API_BASE + '/members?limit=200', {
-      headers,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (r.status === 403) {
-      // Only members of the project get the roster. Everyone else gets an
-      // explicit flag so the screen can show why it is empty.
+    const roster = await loadRosterList(req);
+    if (roster.notMember) {
       return res.json({ demo: false, notMember: true, members: [], activeThisWeek: 0 });
     }
-    if (!r.ok) {
-      return res.status(502).json({ error: 'Could not load the member list from the platform' });
+    if (roster.error) {
+      return res.status(502).json({ error: roster.error });
     }
-    const data = await r.json().catch(() => null);
-    const list = Array.isArray(data) ? data
-      : data && Array.isArray(data.members) ? data.members : null;
-    if (!list) {
-      return res.status(502).json({ error: 'Unexpected member list response' });
-    }
+    const list = roster.list;
     // Votes cast through this app, aggregated per member — the app's own
     // recorded history, not a guess. A query failure just leaves the counts
     // off the rows (the optional-field contract), never fails the roster.
@@ -2377,6 +2409,183 @@ app.get('/api/members', async (req, res) => {
       },
     });
     return res.json({ demo: false, ...payload });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Voters leaderboard
+//
+// Members ranked by the votes they cast through this app: the same my_votes
+// history My Votes reads, aggregated per member — counts only, the rows
+// themselves stay private (my_votes is staging:private). The roster comes
+// from the platform's member list (only members get an answer, so a
+// non-member gets the same explicit notMember flag the directory does), and
+// each member carries both ranges' counts (this week and all time) so the
+// This week / All time toggle re-ranks the loaded rows without a refetch.
+// "This week" is the same rolling seven-day window the directory's
+// active-this-week count uses, read through req.now.
+// ---------------------------------------------------------------------------
+
+// One aggregated member row in the shape the frontend renders. `you` marks
+// the signed-in caller's own row; it rides on the row so the client can
+// highlight and pin it without knowing its own username.
+function leaderboardRow(username, s) {
+  return {
+    username,
+    weekVotes: s.week_votes,
+    weekMerged: s.week_merged,
+    allVotes: s.all_votes,
+    allMerged: s.all_merged,
+  };
+}
+
+const LEADERBOARD_AGGREGATE = `
+  SELECT username,
+         COUNT(*)::int AS all_votes,
+         (COUNT(*) FILTER (WHERE status = 'merged'))::int AS all_merged,
+         (COUNT(*) FILTER (WHERE created_at >= $1))::int AS week_votes,
+         (COUNT(*) FILTER (WHERE status = 'merged' AND created_at >= $1))::int AS week_merged
+  FROM my_votes`;
+
+// Aggregate the signed-in caller's own vote history into one leaderboard row
+// (or null when they have not voted at all). Used by the demo overlay: the
+// fixture roster is fake, the caller's row is their real recorded votes.
+async function myLeaderboardStats(userId, cutoff) {
+  try {
+    const { rows } = await pool.query(
+      LEADERBOARD_AGGREGATE + ' WHERE user_id = $2 GROUP BY username', [cutoff, userId]);
+    return rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+// Staging demo fixture (?demo=1): the same six obviously-fake members the
+// members directory previews with, with fixed week and all-time counts. The
+// numbers make each check point observable: staging-demo-user leads both
+// ranges; quinn and priya tie on this week's votes (2) and the tie is broken
+// by merged votes (1 > 0), while all time priya (4) sits above quinn (2), so
+// the range toggle visibly reorders; raul never voted, so the footer chip
+// reads "5 of 6 members have voted". Request-time injection, staging only.
+function demoLeaderboardFixture() {
+  return [
+    { username: 'staging-demo-user', weekVotes: 5, weekMerged: 1, allVotes: 14, allMerged: 3 },
+    { username: 'staging-demo-maya', weekVotes: 4, weekMerged: 2, allVotes: 9, allMerged: 2 },
+    { username: 'staging-demo-omar', weekVotes: 3, weekMerged: 0, allVotes: 6, allMerged: 1 },
+    { username: 'staging-demo-quinn', weekVotes: 2, weekMerged: 1, allVotes: 2, allMerged: 1 },
+    { username: 'staging-demo-priya', weekVotes: 2, weekMerged: 0, allVotes: 4, allMerged: 1 },
+    { username: 'staging-demo-raul', weekVotes: 0, weekMerged: 0, allVotes: 0, allMerged: 0 },
+  ];
+}
+
+// Fixture variants for the checks (staging + ?demo=1 only): ?lb-many=1 makes
+// a 60-member board so the 50-row cap is observable; ?lb-tie=1 shrinks the
+// board to two members tied on votes with different merged counts; ?lb-empty=1
+// zeroes every member's week so the empty-week state renders.
+function demoLeaderboardRowsFor(req) {
+  if (req.query['lb-many'] === '1') {
+    const rows = [];
+    for (let n = 1; n <= 60; n++) {
+      const name = 'staging-demo-lb-' + (n < 10 ? '0' + n : n);
+      rows.push({ username: name, weekVotes: 61 - n, weekMerged: 0, allVotes: 61 - n, allMerged: 0 });
+    }
+    return rows;
+  }
+  if (req.query['lb-tie'] === '1') {
+    return [
+      { username: 'staging-demo-tie-a', weekVotes: 4, weekMerged: 1, allVotes: 4, allMerged: 1 },
+      { username: 'staging-demo-tie-b', weekVotes: 4, weekMerged: 2, allVotes: 4, allMerged: 2 },
+    ];
+  }
+  if (req.query['lb-empty'] === '1') {
+    return demoLeaderboardFixture().map((r) => ({ ...r, weekVotes: 0, weekMerged: 0 }));
+  }
+  return demoLeaderboardFixture();
+}
+
+async function demoLeaderboardPayload(req) {
+  const rows = demoLeaderboardRowsFor(req).map((r) => ({ ...r }));
+  // The chip counts members who have voted at all (all time), so it stays
+  // put across the range toggle and the empty-week variant.
+  let totalMembers = rows.length;
+  let voters = rows.filter((r) => r.allVotes > 0).length;
+  // ?lb=1 overlays the caller's own aggregated row on the fixture — their
+  // real recorded votes, the way the my_votes route serves them — so the
+  // own-row highlight, the pin and the after-a-fresh-vote update are
+  // reachable in a preview. ?lb-clear=1 first deletes the caller's demo-cast
+  // rows (the way the bulk hooks unvote before acting), so a check run that
+  // shares its staging database still starts from a known count.
+  if (req.query.lb === '1') {
+    if (req.query['lb-clear'] === '1') {
+      try {
+        await pool.query(
+          "DELETE FROM my_votes WHERE user_id = $1 AND app_slug LIKE 'staging-demo%'",
+          [req.user.id]);
+      } catch {}
+    }
+    const cutoff = new Date(req.now.getTime() - MEMBER_ACTIVE_WINDOW_MS);
+    const s = await myLeaderboardStats(req.user.id, cutoff);
+    if (s && s.all_votes > 0) {
+      rows.push({ ...leaderboardRow(req.user.username, s), you: true });
+      totalMembers += 1;
+      voters += 1;
+    }
+  }
+  return { demo: true, rows, totalMembers, voters };
+}
+
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      return res.json(await demoLeaderboardPayload(req));
+    }
+    if (!PLATFORM_API_BASE) {
+      // A staging container without the platform API only exists under a
+      // plain local launch; keep the screen reviewable there with fixtures.
+      if (IS_STAGING) return res.json(await demoLeaderboardPayload(req));
+      return res.status(500).json({ error: 'Platform API is not configured' });
+    }
+    const roster = await loadRosterList(req);
+    if (roster.notMember) {
+      return res.json({ demo: false, notMember: true, rows: [], totalMembers: 0, voters: 0 });
+    }
+    if (roster.error) {
+      return res.status(502).json({ error: roster.error });
+    }
+    const cutoff = new Date(req.now.getTime() - MEMBER_ACTIVE_WINDOW_MS);
+    let stats = new Map();
+    try {
+      const { rows } = await pool.query(
+        LEADERBOARD_AGGREGATE + ' GROUP BY username', [cutoff]);
+      stats = new Map(rows.map((s) => [String(s.username).toLowerCase(), s]));
+    } catch {}
+    const me = String(req.user.username || '').trim().toLowerCase();
+    const rows = [];
+    let voters = 0;
+    let seenMe = false;
+    for (const raw of roster.list) {
+      const username = (typeof raw === 'string' ? raw
+        : raw && typeof raw.username === 'string' ? raw.username : '').trim();
+      if (!username) continue;
+      const s = stats.get(username.toLowerCase());
+      if (!s || !s.all_votes) continue;
+      voters++;
+      const you = me && username.toLowerCase() === me;
+      if (you) seenMe = true;
+      rows.push({ ...leaderboardRow(username, s), you });
+    }
+    // The caller is always a member (the roster answered), but a roster
+    // spelling mismatch would drop their row; fall back to their own stats
+    // so their row and pin never depend on the roster's casing.
+    if (!seenMe && me) {
+      const s = stats.get(me);
+      if (s && s.all_votes) {
+        rows.push({ ...leaderboardRow(req.user.username, s), you: true });
+      }
+    }
+    return res.json({ demo: false, rows, totalMembers: roster.list.length, voters });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

@@ -132,6 +132,7 @@
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="watchlist" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Watchlist<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span data-tab-count></span><span class="tab-badge"></span></button>
+        <button data-tab="leaderboard" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Leaderboard<span class="tab-badge"></span></button>
       </div>
       <div id="views-row" data-views-row data-hidden="0" class="mt-2 flex items-center gap-2">
         <div id="views-chips" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5" role="group" aria-label="Saved views"></div>
@@ -228,6 +229,18 @@
            "See what merged" link turns on; ?votes-merged=1 deep links to it. -->
       <button data-votes-merged-chip type="button" aria-pressed="false"
         class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">Merged this week</button>
+    </div>
+
+    <!-- Leaderboard range pill: shown only on the Leaderboard tab, the same
+         segmented control the other tabs use for their order options. -->
+    <div id="lb-range-row" class="hidden flex items-center gap-2 pt-1">
+      <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Range</span>
+      <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-800 dark:bg-zinc-900" role="radiogroup" aria-label="Leaderboard range">
+        <button data-lb-range="week" type="button" role="radio" aria-checked="true"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">This week</button>
+        <button data-lb-range="all" type="button" role="radio" aria-checked="false"
+          class="rounded-full px-3 py-1 text-xs font-semibold transition-colors">All time</button>
+      </div>
     </div>
 
     <!-- Bulk triage bar: shown only in select mode on the Inbox tab. The
@@ -486,10 +499,39 @@
     // for that one load — the same state a live keystroke sets — so the
     // filtered-list and no-match states are reachable by checks. Demo only.
     var MEMBER_QUERY = DEMO ? (params.get('member-query') || '') : '';
+    // Voters leaderboard. ?tab=leaderboard is a real deep link (the way
+    // ?tab=votes is). ?lb-range=all presets the range pill for that one load
+    // (demo checks; the same state a tap on the pill sets), ?lb=1 asks the
+    // demo board to overlay the caller's own aggregated row on the fixture,
+    // and ?lb-pin=1 forces the pinned own-position chip visible whatever the
+    // scroll position (the way ?impact-mobile=1 forces the collapsed impact
+    // panel). All three check knobs are demo only.
+    var LB_RANGE = params.get('lb-range') === 'all' ? 'all' : 'week';
+    var LB_OVERLAY = DEMO ? params.get('lb') === '1' : false;
+    var LB_CLEAR = DEMO ? params.get('lb-clear') === '1' : false;
+    var LB_PIN_FORCE = DEMO ? params.get('lb-pin') === '1' : false;
+    // Server-side fixture variants (staging + ?demo=1 only): ?lb-many=1
+    // makes a 60-member board so the 50-row cap is observable, ?lb-tie=1
+    // puts two members tied on votes with different merged counts, and
+    // ?lb-empty=1 zeroes the week so the empty state renders. Each is
+    // forwarded to the demo API call by loadLeaderboard.
+    var LB_MANY = DEMO && params.get('lb-many') === '1';
+    var LB_TIE = DEMO && params.get('lb-tie') === '1';
+    var LB_EMPTY = DEMO && params.get('lb-empty') === '1';
+    // The ?cast= vote hook needs the demo inbox loaded to find its proposal;
+    // on the Leaderboard tab (which does not otherwise load the inbox) the
+    // boot fetches it too, so ?tab=leaderboard&cast=… casts for real.
+    var AUTO_CAST = DEMO && !!params.get('cast');
+    // The boot board load's promise, kept so ?cast= can wait for it: the
+    // first fetch carries ?lb-clear=1, whose DELETE must finish before the
+    // hook's vote is recorded, or the clear would erase the vote it was
+    // meant to precede.
+    var bootBoardLoad = null;
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes'
-        : params.get('tab') === 'watchlist' ? 'watchlist' : 'inbox',
+        : params.get('tab') === 'watchlist' ? 'watchlist'
+        : params.get('tab') === 'leaderboard' ? 'leaderboard' : 'inbox',
       inbox: null,
       votes: null,
       watchlist: null,
@@ -620,6 +662,15 @@
       errorMembers: null,
       queuedMembers: false,
       memberQuery: MEMBER_QUERY,
+      // Voters leaderboard tab: the ranked board (rows carry both ranges'
+      // counts, so the range toggle re-ranks without a refetch), its load
+      // state and the current range. The range is not persisted; a reload
+      // starts on This week unless ?lb-range= presets it.
+      leaderboard: null,
+      loadingLeaderboard: false,
+      errorLeaderboard: null,
+      queuedLeaderboard: false,
+      lbRange: LB_RANGE,
     };
 
     // ------------------------------------------------------------------
@@ -3412,7 +3463,9 @@
         var tab = btn.getAttribute('data-tab');
         var active = tab === state.tab;
         var badge = btn.querySelector('.tab-badge');
-        var count = tab === 'inbox' ? inboxCount : tab === 'watchlist' ? watchlistCount : votesCount;
+        var count = tab === 'inbox' ? inboxCount
+          : tab === 'watchlist' ? watchlistCount
+          : tab === 'votes' ? votesCount : null;
         btn.className = 'tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors '
           + (active ? TAB_ACTIVE : TAB_IDLE);
         btn.setAttribute('aria-selected', active ? 'true' : 'false');
@@ -3460,6 +3513,9 @@
       var votesOrderRow = document.getElementById('votes-order-row');
       if (votesOrderRow) votesOrderRow.className =
         'flex items-center gap-2 pt-1' + (state.tab === 'votes' && !inMembers ? '' : ' hidden');
+      var lbRangeRow = document.getElementById('lb-range-row');
+      if (lbRangeRow) lbRangeRow.className =
+        'flex items-center gap-2 pt-1' + (state.tab === 'leaderboard' && !inMembers ? '' : ' hidden');
       var viewsRow = document.getElementById('views-row');
       if (viewsRow) {
         var showViews = state.tab === 'inbox' && !inMembers;
@@ -3501,6 +3557,18 @@
       }
     }
 
+    // Leaderboard range pill: same treatment, driven by state.lbRange.
+    function renderLbRange() {
+      var buttons = document.querySelectorAll('#lb-range-row [data-lb-range]');
+      for (var i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        var on = btn.getAttribute('data-lb-range') === state.lbRange;
+        btn.className = 'rounded-full px-3 py-1 text-xs font-semibold transition-colors '
+          + (on ? TAB_ACTIVE : TAB_IDLE);
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
+    }
+
     function renderRefreshButton() {
       var busy = state.loadingInbox || state.loadingVotes;
       var icon = document.getElementById('refresh-icon');
@@ -3510,7 +3578,8 @@
 
     function renderDemoBanner() {
       var demo = (state.inbox && state.inbox.demo) || (state.votes && state.votes.demo)
-        || (state.members && state.members.demo);
+        || (state.members && state.members.demo)
+        || (state.leaderboard && state.leaderboard.demo);
       document.getElementById('demo-banner').className = demo
         ? 'mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300'
         : 'hidden';
@@ -3902,6 +3971,155 @@
       return '<div data-member-row class="' + MEMBER_ROW_CLASS + '">' + avatar + body + '</div>';
     }
 
+    // ------------------------------------------------------------------
+    // Voters leaderboard. One ranked row per member who has voted through
+    // this app: rank, letter avatar (the same tinted palette the directory
+    // and voter chips use), handle, votes cast in the current range and how
+    // many of them ended up merged. Rows come loaded with both ranges'
+    // counts, so the This week / All time pill re-ranks the board in place.
+    // The caller's own row is highlighted and, when it is scrolled out of
+    // view, its position stays pinned to the bottom of the screen.
+    // ------------------------------------------------------------------
+
+    var LB_ROW_CLASS = 'flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-3.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70';
+    var LB_ME_CLASS = ' border-violet-400/70 bg-violet-600/5 dark:border-violet-500/50 dark:bg-violet-500/10';
+    var LB_MAX_ROWS = 50;
+    var LB_EMPTY_HTML = '<div data-lb-empty class="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white/60 px-6 py-10 text-center dark:border-zinc-700 dark:bg-zinc-900/40">'
+      + '<p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">No votes this week</p>'
+      + '<p class="text-xs text-zinc-500 dark:text-zinc-400">Votes cast in the last 7 days will rank here.</p>'
+      + '</div>';
+    var LB_EMPTY_ALL_HTML = '<div data-lb-empty class="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-zinc-300 bg-white/60 px-6 py-10 text-center dark:border-zinc-700 dark:bg-zinc-900/40">'
+      + '<p class="text-sm font-semibold text-zinc-700 dark:text-zinc-200">No votes yet</p>'
+      + '<p class="text-xs text-zinc-500 dark:text-zinc-400">Votes cast in the Inbox will rank here.</p>'
+      + '</div>';
+
+    function lbStats(r) {
+      var all = state.lbRange === 'all';
+      return {
+        votes: all ? r.allVotes : r.weekVotes,
+        merged: all ? r.allMerged : r.weekMerged,
+      };
+    }
+
+    // Rank the loaded rows for the current range: most votes first, ties
+    // broken by merged votes, then by handle so equal pairs stay put.
+    // Members with no votes in the range are left off the board.
+    function lbRanked(rows) {
+      var key = state.lbRange === 'all' ? 'allVotes' : 'weekVotes';
+      var mergedKey = state.lbRange === 'all' ? 'allMerged' : 'weekMerged';
+      var withVotes = [];
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i][key] > 0) withVotes.push(rows[i]);
+      }
+      withVotes.sort(function (a, b) {
+        if (b[key] !== a[key]) return b[key] - a[key];
+        if (b[mergedKey] !== a[mergedKey]) return b[mergedKey] - a[mergedKey];
+        return String(a.username) < String(b.username) ? -1 : 1;
+      });
+      return withVotes;
+    }
+
+    function lbRow(r, rank) {
+      var me = !!r.you;
+      var s = lbStats(r);
+      var rankHtml = '<span class="w-5 shrink-0 text-right text-xs font-bold text-zinc-400 dark:text-zinc-500">' + rank + '</span>';
+      var avatar = '<span data-lb-avatar aria-hidden="true" class="' + MEMBER_AVATAR_CLASS
+        + avatarClass(r.username) + '">' + esc((r.username.trim().charAt(0) || '?').toUpperCase()) + '</span>';
+      var handle = '<span data-lb-handle="@' + esc(r.username) + '" class="min-w-0 flex-1 truncate text-sm font-semibold '
+        + (me ? 'text-violet-700 dark:text-violet-300' : 'text-zinc-900 dark:text-zinc-100')
+        + '">@' + esc(r.username) + '</span>';
+      var you = me
+        ? '<span data-lb-you class="' + OWNER_CHIP_CLASS + '">You</span>' : '';
+      var stats = '<span class="shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">'
+        + '<span data-lb-votes class="font-semibold text-zinc-800 dark:text-zinc-100">'
+        + s.votes + (s.votes === 1 ? ' vote' : ' votes') + '</span>'
+        + ' · <span data-lb-merged>' + s.merged + ' merged</span></span>';
+      // The rank rides on the row element (the visual number is the span
+      // above), so checks can pin an assertion to one ranked row.
+      return '<div data-lb-row data-lb-rank="' + rank + '"' + (me ? ' data-lb-me="1"' : '') + ' class="'
+        + LB_ROW_CLASS + (me ? LB_ME_CLASS : '') + '">'
+        + rankHtml + avatar + handle + you + stats + '</div>';
+    }
+
+    // The pinned chip: the caller's own position, shown fixed to the bottom
+    // of the screen while their row is scrolled out of view (and forced
+    // visible by ?lb-pin=1 for the checks). Rendered with the board; its
+    // visibility is updated on scroll by updateLbPin.
+    function lbPinHtml(meRow, rank) {
+      var s = lbStats(meRow);
+      return '<div id="lb-pin" data-lb-pin hidden class="fixed bottom-4 left-4 right-4 z-30 mx-auto max-w-md">'
+        + '<div class="flex items-center justify-between gap-3 rounded-full border border-violet-500/40 bg-violet-600 px-4 py-2.5 shadow-lg">'
+        + '<span data-lb-pin-label class="truncate text-sm font-semibold text-white">You · #' + rank + '</span>'
+        + '<span data-lb-pin-votes class="shrink-0 text-xs font-semibold text-violet-100">'
+        + s.votes + (s.votes === 1 ? ' vote' : ' votes') + '</span>'
+        + '</div></div>';
+    }
+
+    function renderLeaderboard() {
+      if (state.errorLeaderboard) return errorHtml(state.errorLeaderboard);
+      if (!state.leaderboard || state.loadingLeaderboard && !state.leaderboard.rows) return skeletons();
+      var data = state.leaderboard;
+      if (data.notMember) {
+        return emptyHtml(
+          'Leaderboard unavailable',
+          'Only members of this project can see the leaderboard.',
+          '');
+      }
+      var ranked = lbRanked(data.rows || []);
+      var html = '';
+      if (!ranked.length) {
+        html += state.lbRange === 'all' ? LB_EMPTY_ALL_HTML : LB_EMPTY_HTML;
+      } else {
+        var shown = ranked.slice(0, LB_MAX_ROWS);
+        for (var i = 0; i < shown.length; i++) html += lbRow(shown[i], i + 1);
+        if (ranked.length > shown.length) {
+          html += '<p data-lb-cap class="pt-1 text-center text-xs text-zinc-500 dark:text-zinc-400">Showing the top '
+            + shown.length + ' of ' + ranked.length + ' voters</p>';
+        }
+        // The own row's position is always computable: it comes from the
+        // full ranked list, so it stays right even when the row itself is
+        // beyond the 50 shown.
+        for (var j = 0; j < ranked.length; j++) {
+          if (ranked[j].you) { html += lbPinHtml(ranked[j], j + 1); break; }
+        }
+      }
+      var members = data.totalMembers != null ? data.totalMembers : 0;
+      var voters = data.voters != null ? data.voters : 0;
+      html += '<p data-lb-voters class="pt-1 text-center text-xs text-zinc-500 dark:text-zinc-400">'
+        + voters + ' of ' + members
+        + (members === 1 ? ' member has' : ' members have') + ' voted</p>';
+      return html;
+    }
+
+    // Show the pinned chip only while the own row is out of view (above or
+    // below the fold); ?lb-pin=1 forces it on for the checks. Runs after
+    // every render and on scroll; a no-op whenever no board is up.
+    function updateLbPin() {
+      var pin = document.getElementById('lb-pin');
+      if (!pin) return;
+      var show = false;
+      if (state.tab === 'leaderboard' && !state.membersView && !state.errorLeaderboard
+          && state.leaderboard && state.leaderboard.rows) {
+        if (LB_PIN_FORCE) {
+          show = true;
+        } else {
+          var row = document.querySelector('[data-lb-me]');
+          if (row) {
+            var rect = row.getBoundingClientRect();
+            show = rect.bottom <= 0 || rect.top >= window.innerHeight;
+          }
+        }
+      }
+      pin.hidden = !show;
+    }
+
+    function setLbRange(range) {
+      if (range !== 'week' && range !== 'all') return;
+      if (range === state.lbRange) return;
+      state.lbRange = range;
+      render();
+    }
+
     function renderMembers() {
       if (state.errorMembers) return errorHtml(state.errorMembers);
       if (!state.members || state.loadingMembers && !state.members.members) return skeletons();
@@ -4210,6 +4428,7 @@
       renderSavedSearches();
       renderSort();
       renderVotesOrder();
+      renderLbRange();
       renderDemoBanner();
       renderRefreshButton();
       renderSummary();
@@ -4240,11 +4459,14 @@
         }
       } else if (state.tab === 'votes') {
         viewHtml = renderVotes();
+      } else if (state.tab === 'leaderboard') {
+        viewHtml = renderLeaderboard();
       } else {
         viewHtml = renderWatchlist();
       }
       document.getElementById('view').innerHTML = viewHtml;
       enhanceTitles();
+      updateLbPin();
     }
 
     // ------------------------------------------------------------------
@@ -5024,6 +5246,7 @@
       if (state.membersView) return loadMembers(true);
       return state.tab === 'inbox' ? loadInbox(true)
         : state.tab === 'votes' ? loadVotes(true)
+        : state.tab === 'leaderboard' ? loadLeaderboard(true)
         : loadWatchlist(true);
     }
 
@@ -5083,7 +5306,60 @@
       window.scrollTo(0, 0);
       if (state.tab === 'votes') loadVotes(!state.votes);
       else if (state.tab === 'watchlist') loadWatchlist(!state.watchlist);
+      else if (state.tab === 'leaderboard') loadLeaderboard(!state.leaderboard);
       else loadInbox(!state.inbox);
+    }
+
+    // ------------------------------------------------------------------
+    // Voters leaderboard: data and loading. Same contract as the other
+    // tabs: one fetch per visit (a force reload clears what is on screen),
+    // a queued refetch when a pull or Refresh lands mid-load, and the
+    // caller's own row carried on the payload so the highlight and pin
+    // never guess who is signed in.
+    // ------------------------------------------------------------------
+
+    function loadLeaderboard(force) {
+      if (state.loadingLeaderboard) {
+        if (force) state.queuedLeaderboard = true;
+        return Promise.resolve();
+      }
+      state.loadingLeaderboard = true;
+      state.errorLeaderboard = null;
+      if (force) state.leaderboard = null;
+      render();
+      var query = [];
+      if (DEMO) {
+        query.push('demo=1');
+        // Demo knobs: overlay the caller's real aggregated row on the
+        // fixture (?lb=1), after clearing their demo-cast rows first
+        // (?lb-clear=1) so shared-database check runs start from a known
+        // count. The server ignores both outside demo data.
+        if (LB_OVERLAY) query.push('lb=1');
+        // lb-clear is one-shot: it must run on the FIRST board fetch (before
+        // the ?cast= hook can fire) so a shared-database check run starts
+        // from a known count, but not on the refetch a fresh cast triggers,
+        // which would delete the vote it is about to show.
+        if (LB_CLEAR) { query.push('lb-clear=1'); LB_CLEAR = false; }
+        // Fixture variants for the checks (?lb-many=1, ?lb-tie=1,
+        // ?lb-empty=1) are server-side fixtures: forward them so the
+        // response carries the variant the page URL asked for.
+        if (LB_MANY) query.push('lb-many=1');
+        if (LB_TIE) query.push('lb-tie=1');
+        if (LB_EMPTY) query.push('lb-empty=1');
+      }
+      return api('/api/leaderboard' + (query.length ? '?' + query.join('&') : ''))
+        .then(function (data) { state.leaderboard = data; })
+        .catch(function (err) {
+          state.errorLeaderboard = err.message || 'Could not load the leaderboard.';
+        })
+        .then(function () {
+          state.loadingLeaderboard = false;
+          render();
+          if (state.queuedLeaderboard) {
+            state.queuedLeaderboard = false;
+            loadLeaderboard(true);
+          }
+        });
     }
 
     function loadWatchlist(force) {
@@ -5313,6 +5589,11 @@
       // error either way), so the bulk pass can await it cast by cast.
       return request.then(function () {
         upsertLocalVote(payload); // history updates in place; refetched next tab open
+        // The leaderboard ranks by votes cast, so a fresh vote moves it;
+        // refetch now when the board is up, or drop the cache so the next
+        // visit to the tab reloads it.
+        state.leaderboard = null;
+        if (state.tab === 'leaderboard') loadLeaderboard(true);
         toast('Vote recorded', {
           duration: 5000,
           action: {
@@ -5357,6 +5638,8 @@
       }).then(function () {
         delete state.retryQueue[sessionId];
         upsertLocalVote(entry.payload); // history updates in place; refetched next tab open
+        state.leaderboard = null; // same as castVote: the board re-ranks
+        if (state.tab === 'leaderboard') loadLeaderboard(true);
         toast('Vote recorded', {
           duration: 5000,
           action: {
@@ -5411,6 +5694,8 @@
           p.no = snapshot.no;
         }
         removeLocalVote(sessionId); // history updates in place; refetched next tab open
+        state.leaderboard = null; // the undone vote leaves the board too
+        if (state.tab === 'leaderboard') loadLeaderboard(true);
         toast('Vote undone');
       }).catch(function (err) {
         toast('Undo failed: ' + (err.message || 'try again'));
@@ -5822,15 +6107,22 @@
       if (!m) return;
       var p = findProposal(m[1]);
       if (!p) return;
-      api('/api/unvote', {
-        method: 'POST',
-        headers: headers({ 'content-type': 'application/json' }),
-        body: JSON.stringify({ sessionId: m[1] }),
-      }).catch(function () {})
-        .then(function () {
-          p.myVote = null;
-          castVote(m[1], m[2]);
-        });
+      // Wait out the boot board load first (when there is one): its
+      // ?lb-clear=1 DELETE runs server-side before that response returns,
+      // so chaining here keeps the clear strictly before the cast.
+      var settle = bootBoardLoad || Promise.resolve();
+      bootBoardLoad = null;
+      settle.catch(function () {}).then(function () {
+        api('/api/unvote', {
+          method: 'POST',
+          headers: headers({ 'content-type': 'application/json' }),
+          body: JSON.stringify({ sessionId: m[1] }),
+        }).catch(function () {})
+          .then(function () {
+            p.myVote = null;
+            castVote(m[1], m[2]);
+          });
+      });
     }
 
     // Weekly-digest demo hooks (see DIGEST above). ?digest-details=1 clicks
@@ -6560,6 +6852,13 @@
       });
     }
 
+    var lbRangeButtons = document.querySelectorAll('#lb-range-row [data-lb-range]');
+    for (var lrb = 0; lrb < lbRangeButtons.length; lrb++) {
+      lbRangeButtons[lrb].addEventListener('click', function (event) {
+        setLbRange(event.currentTarget.getAttribute('data-lb-range'));
+      });
+    }
+
     // The merged-this-week chip on the My Votes tab (same row as the vote
     // order pill).
     var votesMergedChip = document.querySelector('[data-votes-merged-chip]');
@@ -6601,6 +6900,7 @@
         window.scrollTo(0, 0);
         if (tab === 'votes') loadVotes(!state.votes);
         else if (tab === 'watchlist') loadWatchlist(!state.watchlist);
+        else if (tab === 'leaderboard') loadLeaderboard(!state.leaderboard);
       });
     }
 
@@ -6638,7 +6938,20 @@
     if (state.membersView) loadMembers(true);
     else if (state.tab === 'votes') loadVotes(true);
     else if (state.tab === 'watchlist') loadWatchlist(true);
+    else if (state.tab === 'leaderboard') {
+      bootBoardLoad = loadLeaderboard(true);
+      // A ?cast= check on the Leaderboard tab still needs the demo inbox:
+      // the hook casts through the real vote path once the list arrives,
+      // and the vote then refetches the board it just moved. Without the
+      // hook the board alone loads.
+      if (AUTO_CAST) loadInbox(true);
+    }
     else loadInbox(true);
+
+    // The pinned own-position chip follows the scroll: visible while the
+    // own row is above or below the fold, gone while it is on screen.
+    window.addEventListener('scroll', updateLbPin, { passive: true });
+    window.addEventListener('resize', updateLbPin);
   })();
   </script>
 </body>

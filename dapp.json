@@ -2978,6 +2978,31 @@
       ]
     },
     {
+      "id": "leaderboard.tab",
+      "name": "Leaderboard tab opens with its range toggle",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-tab='leaderboard'][aria-selected='true']",
+      "expectText": "This week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.rank",
+      "name": "Board ranks by votes cast this week",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-lb-rank='1'] [data-lb-handle='@staging-demo-user']",
+      "expectText": "5 votes",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "detail.card-tap",
       "name": "Card tap opens the detail view",
       "path": "/?demo=1&tap-card=1",
@@ -2990,10 +3015,120 @@
       ]
     },
     {
+      "id": "leaderboard.row",
+      "name": "Rows show avatar, handle and vote count",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-lb-row] [data-lb-avatar]",
+      "expectText": "@staging-demo-maya",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.merged",
+      "name": "Rows show a merged-vote count",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-lb-row] [data-lb-merged]",
+      "expectText": "merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.range-toggle",
+      "name": "All time toggle re-ranks the board",
+      "path": "/?demo=1&tab=leaderboard&lb-range=all",
+      "expectSelector": "[data-lb-rank='4'] [data-lb-handle='@staging-demo-priya']",
+      "expectText": "All time",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.own-row",
+      "name": "The caller's own row is highlighted and marked You",
+      "path": "/?demo=1&tab=leaderboard&cast=demo-2:yes&lb-clear=1&lb=1",
+      "expectSelector": "[data-lb-row][data-lb-me] [data-lb-you]",
+      "expectText": "You",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "celebrate.appears",
       "name": "A merge celebration card appears for a voted proposal that merged",
       "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
       "expectSelector": "[data-celebration][data-session-id='demo-3']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.pin",
+      "name": "Own position stays pinned to the screen",
+      "path": "/?demo=1&tab=leaderboard&cast=demo-2:yes&lb-clear=1&lb=1&lb-pin=1",
+      "expectSelector": "[data-lb-pin]",
+      "expectText": "You · #6",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.cap",
+      "name": "Board caps at 50 rows with a cap note",
+      "path": "/?demo=1&tab=leaderboard&lb-many=1",
+      "expectSelector": "[data-lb-cap]",
+      "expectText": "top 50 of 60",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.tie",
+      "name": "Tied votes rank by merged votes first",
+      "path": "/?demo=1&tab=leaderboard&lb-tie=1",
+      "expectSelector": "[data-lb-rank='1'] [data-lb-handle='@staging-demo-tie-b']",
+      "expectText": "2 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.voters",
+      "name": "Footer chip counts members who have voted",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-lb-voters]",
+      "expectText": "5 of 6 members have voted",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.empty",
+      "name": "Empty week shows the no-votes message",
+      "path": "/?demo=1&tab=leaderboard&lb-empty=1",
+      "expectSelector": "[data-lb-empty]",
+      "expectText": "No votes this week",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -3095,6 +3230,18 @@
       "path": "/?demo=1&proposal=demo-4&scroll-detail=1",
       "expectSelector": "[data-detail-actions][data-sticky-observed='1'] [data-vote='yes']",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.fresh-vote",
+      "name": "Board updates after a fresh vote",
+      "path": "/?demo=1&tab=leaderboard&cast=demo-2:yes&lb-clear=1&lb=1",
+      "expectSelector": "[data-lb-row][data-lb-me] [data-lb-votes]",
+      "expectText": "1 vote · 0 merged",
       "impact": [
         "public/index.html",
         "server.js",
@@ -3237,6 +3384,7 @@
       "name": "The celebration presentation follows reduced motion",
       "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3&celeb-motion=reduced",
       "expectSelector": "[data-celebrations][data-motion='reduced']",
+      "visual": true,
       "impact": [
         "public/index.html",
         "server.js",
@@ -3245,3 +3393,4 @@
     }
   ]
 }
+
