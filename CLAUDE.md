@@ -238,9 +238,11 @@ user's vote history.
   vote, ending today or, before today's first vote, yesterday) and rank on
   the Leaderboard's This week board (`lbRanked(rows, 'week')`), plus one
   motivational line. Data comes from the existing `/api/my-votes` and
-  `/api/leaderboard` routes, fetched beside every inbox load into
-  `state.inboxStats` (kept apart from the tabs' own state) and refetched
-  (debounced) after a vote, retry or undo. Demo (staging + `?demo=1`): the
+  `/api/leaderboard` routes, fetched into `state.inboxStats` (kept apart
+  from the tabs' own state) only after each inbox load settles and its
+  hooks have run, never on a page that is reloading (a `beforeunload`
+  flag, so check hooks that `location.replace` send no stat requests),
+  and refetched (debounced) after a vote, retry or undo. Demo (staging + `?demo=1`): the
   board fetch carries `?lb-me=1`, which ranks the caller by the same
   `demoVoteRows()` fixture My Votes serves (2 this week, streak 1, "of 6");
   `?votes-empty=1` / `?no-votes=1` empty both halves; `?stats-fail=1`

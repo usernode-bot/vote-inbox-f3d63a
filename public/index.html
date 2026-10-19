@@ -6521,7 +6521,26 @@
     // flight. Either half failing leaves that half null; the cards say so.
     var inboxStatsSeq = 0;
 
+    // The page is on its way out: a check hook (or anything else) called
+    // location.replace/reload. beforeunload fires synchronously inside
+    // those calls, so a hook that reloads during the inbox's completion
+    // handlers is seen before the stat cards would start their fetches.
+    var pageLeaving = false;
+    window.addEventListener('beforeunload', function () { pageLeaving = true; });
+    window.addEventListener('pagehide', function () { pageLeaving = true; });
+
+    // The stat cards never compete with the inbox itself: their fetches
+    // start only once the inbox load has settled and its hooks have run
+    // (on the next tick), and not at all on a page that is reloading.
+    function scheduleInboxStats() {
+      if (pageLeaving) return;
+      setTimeout(function () {
+        if (!pageLeaving) loadInboxStats();
+      }, 0);
+    }
+
     function loadInboxStats() {
+      if (pageLeaving) return Promise.resolve();
       var seq = ++inboxStatsSeq;
       state.loadingInboxStats = true;
       var votesQuery = '';
@@ -6555,7 +6574,7 @@
     function refreshInboxStatsSoon() {
       if (!state.inboxStats) return;
       clearTimeout(inboxStatsTimer);
-      inboxStatsTimer = setTimeout(loadInboxStats, 800);
+      inboxStatsTimer = setTimeout(scheduleInboxStats, 800);
     }
 
     function loadInbox(force) {
@@ -6569,7 +6588,6 @@
       state.errorInbox = null;
       if (force) state.inbox = null;
       render();
-      loadInboxStats();
       var query = [];
       if (DEMO) query.push('demo=1');
       if (ALL_VOTED) query.push('allvoted=1');
@@ -6639,6 +6657,7 @@
         .then(function () {
           state.loadingInbox = false;
           render();
+          scheduleInboxStats();
           maybeRerenderFilter();
           maybeAutoOpenFilter();
           maybeTurnoutRefresh();
