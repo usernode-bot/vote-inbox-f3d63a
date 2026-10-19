@@ -2830,6 +2830,135 @@
         "server.js",
         "dapp.json"
       ]
+    },
+    {
+      "id": "celebrate.appears",
+      "name": "A merge celebration card appears for a voted proposal that merged",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration][data-session-id='demo-3']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.names-title",
+      "name": "The celebration card names the merged proposal",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration] [data-celebration-title]",
+      "expectText": "export to CSV",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.names-app",
+      "name": "The celebration card names the app it merged on",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration] [data-celebration-app]",
+      "expectText": "Staging Demo App",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.says-choice",
+      "name": "The celebration card says which way the user voted",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration] [data-celebration-choice]",
+      "expectText": "You voted yes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.shown-once",
+      "name": "A celebration card is shown once, not again on the next load",
+      "path": "/?demo=1&celeb=1&celebvote=demo-2&celeb-reload=1",
+      "expectSelector": "body:not(:has([data-celebration])) [data-proposal-card]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.dismiss-removes",
+      "name": "Dismissing a celebration card removes it",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3&celeb-tap-dismiss=demo-3",
+      "expectSelector": "body:not(:has([data-celebration])) [data-proposal-card]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.see-merged",
+      "name": "See what merged opens My Votes filtered to merged this week",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3&celeb-tap-see=1",
+      "expectSelector": "body:has([data-votes-merged-chip][aria-pressed='true']) [data-vote-row][data-session-id='demo-v2']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.live-region",
+      "name": "Celebrations announce through a polite live region",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration-live][aria-live='polite']",
+      "expectText": "You voted yes.",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.absent-unvoted",
+      "name": "No celebration card for a proposal the user did not vote on",
+      "path": "/?demo=1&celeb=1&celeb-clear=1",
+      "expectSelector": "body:not(:has([data-celebration])) [data-proposal-card]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.stack",
+      "name": "Multiple merges stack as separate celebration cards",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3,demo-5",
+      "expectSelector": "body:has([data-celebration][data-session-id='demo-3']):has([data-celebration][data-session-id='demo-5'])",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.reduced-motion",
+      "name": "The celebration presentation follows reduced motion",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3&celeb-motion=reduced",
+      "expectSelector": "[data-celebrations][data-motion='reduced']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     }
   ]
 }

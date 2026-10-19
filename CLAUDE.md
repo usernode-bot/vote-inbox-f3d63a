@@ -128,6 +128,50 @@ user's vote history.
   active row for a fake user on demo-3 (the per-user path); `?snooze=1`
   opts the demo inbox into overlaying the caller's persisted rows
   (mirrors the my_votes precedent — the default demo stays deterministic).
+- Merge celebrations: when a proposal the user voted on is seen merged
+  (within the last seven calendar days), a one-time card appears at the top
+  of the inbox — what merged, on which app, and "You voted yes/no" (the
+  choice recorded at detection time, so it never changes). Detection runs
+  on every `/api/inbox` load server-side (`syncMergeCelebrations`) and
+  writes one row per (user, proposal) to `merge_celebrations`
+  (`staging:private`, like the other per-person tables); cards render from
+  the payload's pending list (unseen, undismissed rows, newest first, so
+  multiple merges stack as separate cards), and the first render marks them
+  shown via `POST /api/celebrations/shown` — so each card shows once and
+  never comes back. A failed shown-mark leaves the rows pending (the card
+  returns on the next load). The card's Dismiss button removes it at once
+  (optimistic, restored on failure) and marks the row dismissed via
+  `POST /api/celebrations/dismiss`, so the proposal never celebrates again;
+  the "See what merged" link opens My Votes filtered to merged this week.
+  Only proposals the user actually voted on celebrate; the seven-day window
+  (`CELEBRATION_MERGE_WINDOW_MS`) means older merges never surface. The
+  cards' entrance animation is guarded by both `prefers-reduced-motion: reduce`
+  and a `data-motion` attribute the page computes from the device setting.
+- My Votes "merged this week" filter: a chip on the votes tab (same row as
+  the vote order pill), on when `?votes-merged=1` — a real deep link that
+  works in production (the celebration card's See-what-merged link sets
+  it). Filters the loaded vote rows to those whose proposal merged within
+  seven calendar days (recorded `merged_at`, falling back to `updated_at`,
+  the same stand-in the row's merged date uses); not persisted, and a
+  filtered-none result gets its own empty state with a Show all votes link.
+- Celebration demo hooks (staging + `?demo=1` only; the plain demo payload
+  always carries `celebrations: []` so the default stays deterministic):
+  `?celeb=1` opts the load into the celebration path (fixtures + the real
+  detection pass + the caller's pending cards); `?celebvote=<ids>` marks
+  those fixture proposals voted by the caller (unvoted ones count as yes)
+  and merged 24h ago, re-arming their rows to unseen on every such load;
+  `?celeb-clear=1` empties the caller's celebration rows first, so repeated
+  check runs start clean (checks sharing a fixture id with a concurrent
+  sibling re-arm each other's rows, which is why the shown-once check omits
+  it and uses demo-2, an id no other celebration check names);
+  `?celeb-reload=1` marks the rendered cards shown (the real POST) then
+  reloads a clean `?demo=1&celeb=1` URL, so the check observes that a shown
+  celebration does not come back;
+  `?celeb-tap-dismiss=<id>` taps that card's Dismiss button after render;
+  `?celeb-tap-see=1` taps the card's See-what-merged link after render (the
+  real click path to the votes filter); `?celeb-motion=reduced` forces the
+  reduced-motion presentation (the way `?impact-mobile=1` forces the
+  small-screen impact panel).
 - `proposal_comments` holds the discussion thread. It is PUBLIC (on
   purpose): comments are in-app content visible to every signed-in
   member, so a stranger seeing every row is fine. Nesting is one level
