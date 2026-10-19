@@ -393,6 +393,39 @@ user's vote history.
   last seven calendar days), both tallied from the already-loaded inbox
   data and re-tallied whenever the inbox reloads while the dropdown is
   open. No extra platform calls.
+- App filter merge stats: each app row (not "All apps") carries three
+  fixed-height lines so row size never depends on the values — the name
+  with a four-bar weekly merge sparkline beside it (oldest first, this
+  week on the right so the last bar equals merged-this-week; zero weeks
+  are thin stubs; no merges in 28 days shows `data-app-spark="none"` and
+  a dash), "N waiting · N merged this week" (waiting = not merged and not
+  closed; `data-app-count` stays on the waiting span, so the old
+  `(N)`-text checks now read "N waiting"), and "Median to merge (30
+  days): X" — the median opened→merged time over merges in the trailing
+  30 calendar days ("2d" from one day up, "5h" under a day, "<1h" under
+  an hour; a merge with no open time or merging before opening counts in
+  merged/spark but not the median). No merges in 30 days shows a dash
+  (`data-app-median="none"`). All from `filterStats()` over the loaded
+  inbox, recomputed on every load; while a forced refresh loads, the
+  open dropdown holds the last good apps with grey `animate-pulse`
+  placeholders (`data-stats-loading="1"` on the panel, via
+  `lastFilterApps` — an empty `lastFilterApps` before the first load
+  shows only the All apps row, as before). Demo hooks (staging +
+  `?demo=1` only): `?mergestats=1` serves four merged staging-demo-app
+  fixtures (opened/merged day anchors, durations 1d/2d/4d and a 40-days
+  -back merge outside the window) plus demo-5 pinned to a whole 7d
+  median, so the median/spark values are deterministic; the variant's
+  expected values are app: 3 waiting / 1 this week / 2d (n=3) /
+  spark 1,0,1,1, notes: 2 / 1 / 7d (n=1) / 0,0,0,1, archive: all dashes;
+  `?tap-app-option=<slug>` taps that row through the real handler then
+  reloads with `clear-set-filter=1` (the tap-tag pattern);
+  `?stats-layout=1` refreshes through loadInbox with a one-shot
+  `inboxHoldMs` fetch hold, requires the placeholders mid-hold and stamps
+  `data-layout-stable="1"` when row heights and the list height agree
+  before/during/after; `?filter-phone=1` pins the open panel to 288px and
+  stamps `data-phone-fit` after checking every row's stat lines for
+  overflow. `reanchorDemo` also honours `demoMergedAnchor { days }`
+  (stamps mergedAt to local noon N days back).
 - `?splits=<sessionId>:<yes>-<no>,…` (demo only) overrides named fixture
   proposals' vote counts so the controversy sort's tie behaviour is
   reachable by checks without changing the default fixture's numbers.
