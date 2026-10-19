@@ -150,9 +150,10 @@ user's vote history.
   never unreads. Unread cards show a violet dot before the title (inbox
   cards only, not the detail); the header's unread line counts loaded
   proposals minus snoozed ones and ignores every filter, with a Mark all
-  read button beside it (hidden at zero); a Hide read switch next to Hide
-  voted / Hide merged tucks opened proposals away (persists in
-  `vote-inbox:hide-read`, like Hide voted). The server stamps the caller's
+  read button beside it (hidden at zero); a Hide read switch in the Filter
+  sheet (beside Hide voted / Hide merged) tucks opened proposals away
+  (persists in `vote-inbox:hide-read`, like Hide voted). The server stamps
+  the caller's
   read set onto `/api/inbox` in production; on demo loads it only rides
   along when the fetch carries `?read=1` (the same opt-in rule as the
   snooze overlay), so a plain `?demo=1` load stays all-unread. Demo hooks
@@ -162,10 +163,24 @@ user's vote history.
   `?markallread=1` clicks Mark all read then reloads at `read-set=all`;
   `?open-merged=1` opens the merged fixture (demo-5) the deep-link way;
   `?read-other=1` seeds a fake member's read row on demo-3 for the
-  per-user check; `?tap-hide-read=1` taps the Hide read switch. Any of
+  per-user check; `?tap-hide-read=1` opens the Filter sheet, then taps the
+  Hide read switch. Any of
   `set-read`/`markallread`/`open-merged`/`read-other` first resets the
   caller's rows on the six fixture ids, so checks never depend on earlier
   runs.
+- Filter sheet: the three Hide switches live in a bottom sheet, not the chip
+  row. The row reads Select, One vote away, Snoozed, Filter; the Filter
+  button opens `#filter-sheet` (backdrop, title Filter, Close button,
+  Escape/backdrop dismissal) and carries a violet count badge when any Hide
+  switch is on. The switches keep their ids (`#hide-voted`, `#hide-merged`,
+  `#hide-read`), change listeners, localStorage keys and `?hide-*=1|0`
+  overrides; `syncFilterSheet()` re-syncs their checked state in `render()`
+  so saved views/search open them in step too. Save view shows only while a
+  filter is active (app, tag, search text, One vote away, Snoozed or any
+  Hide switch; sort alone does not count); `#views-row` stays put for the
+  saved chips and stamps `data-save-visible="0|1"`. Demo hooks (staging +
+  `?demo=1` only): `?tap-filter=1` opens the sheet; `?tap-hide-read=1`
+  opens the sheet first, then clicks the switch.
 - Snooze: each person can snooze a proposal for one day or one week from
   the card's Snooze button, so it leaves their inbox until its wake date
   and reappears automatically after it (expiry is lazy: rows whose wake

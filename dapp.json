@@ -1401,11 +1401,53 @@
     },
     {
       "id": "views.row",
-      "name": "Saved views switcher row renders with a Save view button",
-      "path": "/?demo=1",
-      "expectSelector": "[data-views-row]",
+      "name": "Saved views switcher row renders with a Save view button once a filter is on",
+      "path": "/?demo=1&one-away=1",
+      "expectSelector": "[data-views-row][data-save-visible='1'] #save-view-btn:not([hidden])",
       "expectText": "Save view",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "views.save-hidden-no-filter",
+      "name": "Save view stays hidden while no filter is on",
+      "path": "/?demo=1&hide-voted=0&hide-merged=0&hide-read=0",
+      "expectSelector": "[data-views-row][data-save-visible='0'] #save-view-btn[hidden]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "filter.sheet-open",
+      "name": "The Filter button opens the sheet holding the Hide switches",
+      "path": "/?demo=1&tap-filter=1",
+      "visual": true,
+      "expectSelector": "[data-filter-sheet]:not([hidden]) #hide-read",
+      "expectText": "Hide merged",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "filter.count-badge",
+      "name": "The Filter button counts the Hide switches that are on",
+      "path": "/?demo=1&hide-voted=1&hide-read=1&hide-merged=0",
+      "expectSelector": "[data-filter-sheet-btn][data-filter-count='2']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "filter.no-switches-in-row",
+      "name": "The Hide switches no longer sit in the chip row",
+      "path": "/?demo=1",
+      "expectSelector": "#filter-row:not(:has(#hide-voted)) [data-filter-sheet-btn]",
       "impact": [
         "public/index.html",
         "dapp.json"
