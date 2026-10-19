@@ -151,6 +151,25 @@ user's vote history.
   open, `?tap-summary=<sessionId>` taps the line after render (the real
   click path); paired they show collapsing. Expansion state is per card in
   frontend memory only.
+- Proposal tags: a fixed list only (`bug`, `feature`, `copy`, `ux`) —
+  `normalizeProposal` reads them from `tags`/`labels` (array of names or one
+  comma-separated string), lowercases, de-duplicates and drops anything
+  outside the list, so chips and the tag filter always agree on what exists.
+  Cards show at most two chips (the active filter tag first, then fixture
+  order). The header tag filter combines with the app filter, persists in
+  `localStorage` (`vote-inbox:tag-filter`, validated against the list) and
+  shows each tag's open count: merged/closed proposals and voted proposals
+  are excluded regardless of the hide toggles (same rule as the app
+  filter's counts). Saved views neither capture nor clear the tag filter.
+  Demo hooks (staging + `?demo=1` only): `?opentagfilter=1` opens the
+  dropdown; `?tap-tag=<tag|all>` taps a row after render, and a real tag
+  schedules one cleanup reload (`clear-set-tag=1`) that restores the same
+  state from storage then empties it, so check runs don't leak the
+  preference; `?set-tag=<tag>` sets the filter for real (like set-filter,
+  reloads with `clear-set-tag=1`); tapping "all" stores nothing so no
+  reload. Demo fixtures: bug 2, feature 2, copy 1, ux 1 open (demo-1 is
+  voted, demo-5 merged, demo-3 untagged — those three are the absence and
+  hidden-count assertions).
 - `?turnout-refresh=1` (demo only) reloads the inbox through the real
   refresh path with the fetch carrying `?turnoutalt=1`, which the server
   answers with a variant fixture (two more proposals merged), so the app
