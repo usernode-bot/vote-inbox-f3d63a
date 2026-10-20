@@ -11,3 +11,22 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Merge celebration cards: a gentle drop-in when they appear at the top of
+ * the inbox. Only the full-motion presentation animates (the cards carry
+ * data-motion="reduced" when the viewer's device asks for reduced motion,
+ * or a demo check forces it), and prefers-reduced-motion guards the rest,
+ * so a viewer who opted out never sees the movement.
+ */
+@keyframes celebration-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+[data-celebrations][data-motion="full"] .celebration-card {
+  animation: celebration-in 240ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-celebrations] .celebration-card {
+    animation: none;
+  }
+}
