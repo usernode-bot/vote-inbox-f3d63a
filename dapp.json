@@ -173,11 +173,169 @@
       "expectText": "3 voted, 1 merged"
     },
     {
+      "id": "my-votes.tab-count",
+      "name": "My Votes tab title shows the vote count",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "body:has(#view > [data-vote-row]:nth-child(3):last-child) [data-tab='votes'] [data-tab-count='3']",
+      "expectText": "(3)",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "my-votes.merged-date",
       "name": "My Votes shows the merged date on a merged row",
       "path": "/?tab=votes&demo=1",
       "expectSelector": "[data-vote-row][data-vote-status='merged'] [data-merged-date]",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-card",
+      "name": "My Votes shows a weekly digest card at the top",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "body:has(#votes-digest:not([hidden]) ~ #view > [data-vote-row]) [data-weekly-digest]",
+      "expectText": "Weekly digest",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-week-count",
+      "name": "The digest shows the number of votes cast this week",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-weekly-digest] [data-digest-week-count='6']",
+      "expectText": "6 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-merged",
+      "name": "The digest shows how many of this week's votes merged",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-weekly-digest] [data-digest-merged='2']",
+      "expectText": "2 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-streak",
+      "name": "The digest shows a week streak count",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-weekly-digest] [data-digest-streak='3']",
+      "expectText": "3-week streak",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-top-apps",
+      "name": "The digest lists up to three top apps by votes this week",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-digest-apps]:not(:has([data-digest-app='staging-demo-extras'])) [data-digest-app='staging-demo-app']:first-of-type ~ [data-digest-app='staging-demo-archive']:last-child",
+      "expectText": "Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-compare",
+      "name": "The digest shows a comparison line versus last week",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "[data-weekly-digest] [data-digest-compare]",
+      "expectText": "Up from 4 last week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-details",
+      "name": "View details expands a seven day bar chart",
+      "path": "/?tab=votes&demo=1&digest=week&digest-details=1",
+      "expectSelector": "[data-weekly-digest]:has([data-digest-toggle][aria-expanded='true']) [data-digest-chart]",
+      "expectText": "Hide details",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-seven-bars",
+      "name": "The bar chart has one bar per day of the current week",
+      "path": "/?tab=votes&demo=1&digest=week&digest-details=1",
+      "expectSelector": "[data-digest-chart] > [data-digest-day='6']:nth-child(7):last-child [data-digest-bar]",
+      "expectText": "Sun",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-zero-bars",
+      "name": "Days with no votes render as zero-height bars",
+      "path": "/?tab=votes&demo=1&digest=quiet&digest-details=1",
+      "expectSelector": "[data-digest-chart]:not(:has([data-digest-bar]:not([data-count='0']))) [data-digest-day='0'] [data-digest-bar][data-count='0']",
+      "expectText": "Mon",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-no-streak",
+      "name": "The card hides the streak when it is zero",
+      "path": "/?tab=votes&demo=1&digest=quiet",
+      "expectSelector": "[data-weekly-digest]:not(:has([data-digest-streak])) [data-digest-week-count='0']",
+      "expectText": "0 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-matches-list",
+      "name": "The digest matches the votes shown in the list below",
+      "path": "/?tab=votes&demo=1&digest=week",
+      "expectSelector": "body:has([data-digest-week-count='6']):not(:has(#view > [data-vote-row]:nth-child(-n+6):not([data-this-week]))):not(:has(#view > [data-vote-row]:nth-child(n+7)[data-this-week])) #view > [data-vote-row]:nth-child(12):last-child",
+      "expectText": "Weekly digest",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.digest-live-update",
+      "name": "The digest updates after a new vote without a reload",
+      "path": "/?tab=votes&demo=1&digest=week&digest-vote=demo-2:yes",
+      "expectSelector": "body:has(#view > [data-vote-row][data-session-id='demo-2'][data-this-week]:first-child) [data-digest-week-count='7']",
+      "expectText": "7 votes this week",
       "impact": [
         "public/index.html",
         "server.js",
@@ -253,6 +411,258 @@
       "name": "Chosen app filter is restored after a reload",
       "path": "/?demo=1&set-filter=staging-demo-archive&set-filter-name=Staging%20Demo%20Archive",
       "expectText": "Staging Demo Archive",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-open-app",
+      "name": "App filter shows Staging Demo App's open count of 3",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='3']",
+      "expectText": "(3)",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-merged-zero-app",
+      "name": "Staging Demo App shows zero merged this week",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-merged='0']",
+      "expectText": "0 merged this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-open-notes",
+      "name": "App filter shows Staging Demo Notes' open count of 2",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
+      "expectText": "(2)",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-merged-notes",
+      "name": "Staging Demo Notes shows one merged this week",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-merged='1']",
+      "expectText": "1 merged this week",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-open-archive",
+      "name": "App filter shows Staging Demo Archive's open count of 0",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-count='0']",
+      "expectText": "(0)",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-merged-zero-archive",
+      "name": "Staging Demo Archive shows zero merged this week",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-merged='0']",
+      "expectText": "0 merged this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-both-on-row",
+      "name": "Open and merged-this-week counts sit on the same app row",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-notes']:has([data-app-count='2']):has([data-app-merged='1'])",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-all-row-plain",
+      "name": "All apps row carries no per-app counts",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "body:not(:has([data-app-option=''] [data-app-count]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-app-row-pair",
+      "name": "Staging Demo App row carries open and merged-this-week together",
+      "path": "/?demo=1&openfilter=1",
+      "expectSelector": "[data-app-option='staging-demo-app']:has([data-app-count='3']):has([data-app-merged='0'])",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-hides-keep-counts",
+      "name": "Hide voted and hide merged do not change the filter counts",
+      "path": "/?demo=1&openfilter=1&hide-voted=1&hide-merged=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
+      "expectText": "(2)",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-open-app",
+      "name": "After a data refresh Staging Demo App's open count drops to 2",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='2']",
+      "expectText": "(2)",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-merged-app",
+      "name": "After a data refresh Staging Demo App shows one merged this week",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-merged='1']",
+      "expectText": "1 merged this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-open-notes",
+      "name": "After a data refresh Staging Demo Notes' open count drops to 1",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='1']",
+      "expectText": "(1)",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-merged-notes",
+      "name": "After a data refresh Staging Demo Notes shows two merged this week",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-merged='2']",
+      "expectText": "2 merged this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-archive-unchanged",
+      "name": "Staging Demo Archive keeps zero counts after the refresh",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-count='0']",
+      "expectText": "0 merged this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-stale-open-gone",
+      "name": "The refresh replaced the old open count of 3",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "body:not(:has([data-app-count='3']))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-stale-merged-gone",
+      "name": "The refresh replaced the app's old merged count of 0",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "body:not(:has([data-app-option='staging-demo-app'] [data-app-merged='0']))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-still-open",
+      "name": "The dropdown stays open across the data refresh",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-filter-trigger][aria-expanded='true']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-both-open-updated",
+      "name": "One refresh updates the open counts of both apps",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "body:has([data-app-option='staging-demo-app'] [data-app-count='2']):has([data-app-option='staging-demo-notes'] [data-app-count='1'])",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-both-merged-updated",
+      "name": "One refresh updates the merged counts of both apps",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "body:has([data-app-option='staging-demo-app'] [data-app-merged='1']):has([data-app-option='staging-demo-notes'] [data-app-merged='2'])",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.turnout-refresh-notes-row-pair",
+      "name": "After the refresh the Notes row carries its new pair together",
+      "path": "/?demo=1&openfilter=1&turnout-refresh=1",
+      "expectSelector": "[data-app-option='staging-demo-notes']:has([data-app-count='1']):has([data-app-merged='2'])",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.counts",
+      "name": "App filter shows open proposal count next to each app",
+      "path": "/?demo=1&app-filter=open",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count]",
+      "expectText": "(3)",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -431,6 +841,260 @@
       "expectSelector": "[data-proposal-card] [data-proposed-date]",
       "expectText": "Proposed",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-first",
+      "name": "Next-to-merge card shows 1st in queue",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
+      "expectText": "1st in queue",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-second",
+      "name": "Second in queue shows its position",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-queue-badge]",
+      "expectText": "2nd in queue",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-third",
+      "name": "Third in queue shows its position",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-queue-badge]",
+      "expectText": "3rd in queue",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-fourth",
+      "name": "Fourth in queue shows its position",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-queue-badge]",
+      "expectText": "4th in queue",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-first-state",
+      "name": "First in queue is marked next to merge",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge][data-queue-first='1']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-first-only",
+      "name": "Only the first queued card carries the next-to-merge mark",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-queue-first='1'])):not(:has([data-proposal-card][data-session-id='demo-6'] [data-queue-first='1'])):not(:has([data-proposal-card][data-session-id='demo-1'] [data-queue-first='1']))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-not-voting",
+      "name": "Still-voting cards show no queue badge",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-4']):not(:has([data-proposal-card][data-session-id='demo-4'] [data-queue-badge]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-not-merged",
+      "name": "Already-merged cards show no queue badge",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'] [data-queue-badge]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-eta-order",
+      "name": "Queue position follows the merge countdown (reversed etas)",
+      "path": "/?demo=1&queue=1&queue-eta=reverse",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-queue-badge][data-queue-first='1']",
+      "expectText": "1st in queue",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-eta-order-last",
+      "name": "The latest countdown queues last (reversed etas)",
+      "path": "/?demo=1&queue=1&queue-eta=reverse",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
+      "expectText": "4th in queue",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-no-eta-fallback",
+      "name": "Without countdowns the queue keeps the loaded order",
+      "path": "/?demo=1&queue=1&no-eta=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-queue-badge]",
+      "expectText": "1st in queue",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-no-eta-fallback-last",
+      "name": "Without countdowns the loaded order fills the queue end",
+      "path": "/?demo=1&queue=1&no-eta=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
+      "expectText": "4th in queue",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-merges-clears",
+      "name": "A merged proposal loses its queue badge",
+      "path": "/?demo=1&queue=1&merged=demo-2",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-2']):not(:has([data-proposal-card][data-session-id='demo-2'] [data-queue-badge]))",
+      "expectText": "Merged",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-merges-shift",
+      "name": "Queue positions move up when one proposal merges",
+      "path": "/?demo=1&queue=1&merged=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-queue-badge]",
+      "expectText": "2nd in queue",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-merges-keep-first",
+      "name": "First in queue keeps its place when another merges",
+      "path": "/?demo=1&queue=1&merged=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge][data-queue-first='1']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-all-merged",
+      "name": "No queue badges when every proposal has merged",
+      "path": "/?demo=1&allmerged=1",
+      "expectSelector": "body:not(:has([data-queue-badge]))",
+      "expectText": "Merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-plain-inbox",
+      "name": "Queue badge renders on the plain demo inbox too",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-queue-badge]",
+      "expectText": "1st in queue",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-plain-no-voting-badge",
+      "name": "Voting cards show no badge on the plain demo inbox",
+      "path": "/?demo=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-queue-badge]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-info-only",
+      "name": "Queue badge is plain text, not a control",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "body:has(span[data-queue-badge]):not(:has(button[data-queue-badge]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-hide-merged",
+      "name": "Hide merged keeps the badges on merging cards",
+      "path": "/?demo=1&queue=1&hide-merged=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-5'])):has([data-proposal-card][data-session-id='demo-3'] [data-queue-badge])",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-status-row",
+      "name": "Queue badge sits beside the Merging status label",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-proposal-status] [data-queue-badge]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.queue-pos-attr",
+      "name": "Queue badge carries its numeric position",
+      "path": "/?demo=1&queue=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-queue-badge][data-queue-pos='3']",
       "impact": [
         "public/index.html",
         "server.js",
@@ -1342,6 +2006,124 @@
       ]
     },
     {
+      "id": "searches.save-keeps-filters",
+      "name": "A saved search keeps the current query and app filter",
+      "path": "/?demo=1&seed-searches=none&q=weekly&set-filter=staging-demo-app&set-filter-name=Staging%20Demo%20App&savesearch=Filtered%20weekly",
+      "expectSelector": "[data-saved-search][data-search-name='Filtered weekly'][data-search-query='weekly'][data-search-app='staging-demo-app']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.chips-under-search",
+      "name": "Saved searches appear as chips under the search box",
+      "path": "/?demo=1&seed-searches=Weekly",
+      "expectSelector": "[data-search-row] + [data-saved-searches-row] [data-saved-search][data-search-name='Weekly']",
+      "expectText": "Weekly",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.apply-query",
+      "name": "Selecting a saved search re-applies its query",
+      "path": "/?demo=1&seed-searches=Weekly,All%20demo&tap-search=Weekly",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-2']):not(:has([data-proposal-card][data-session-id='demo-4'])) [data-saved-search][data-search-name='Weekly'] [data-saved-search-open][aria-pressed='true']",
+      "expectText": "Weekly",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.unread-count",
+      "name": "A saved search shows a count of new matches since last opened",
+      "path": "/?demo=1&seed-searches=Weekly",
+      "expectSelector": "[data-saved-search][data-search-name='Weekly'] [data-search-unread]",
+      "expectText": "1",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.open-clears-count",
+      "name": "Opening a saved search clears its count",
+      "path": "/?demo=1&seed-searches=All%20demo&tap-search=All%20demo",
+      "expectSelector": "body:not(:has([data-saved-search][data-search-name='All demo'] [data-search-unread])) [data-saved-search][data-search-name='All demo'] [data-saved-search-open][aria-pressed='true']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.delete",
+      "name": "Deleting a saved search removes its chip, keeps the others",
+      "path": "/?demo=1&seed-searches=Weekly,All%20demo&delsearch=Weekly",
+      "expectSelector": "body:not(:has([data-saved-search][data-search-name='Weekly'])) [data-saved-search][data-search-name='All demo']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.survive-reload",
+      "name": "Saved searches survive a reload",
+      "path": "/?demo=1&seed-searches=none&q=export&savesearch=Exports&search-reload=1",
+      "expectSelector": "[data-saved-search][data-search-name='Exports'][data-search-query='export']",
+      "expectText": "Exports",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.empty-name-fallback",
+      "name": "An empty saved name falls back to the search text",
+      "path": "/?demo=1&seed-searches=none&q=tag%20colours&savesearch=",
+      "expectSelector": "[data-saved-search][data-search-name='tag colours']",
+      "expectText": "tag colours",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.no-duplicate",
+      "name": "A saved name is not created twice",
+      "path": "/?demo=1&seed-searches=Weekly&q=export&savesearch=Weekly",
+      "expectSelector": "body:not(:has([data-saved-search][data-search-name='Weekly'] ~ [data-saved-search][data-search-name='Weekly'])) [data-saved-search][data-search-name='Weekly'][data-search-query='weekly']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "searches.count-ignores-read",
+      "name": "The count ignores proposals already read or voted",
+      "path": "/?demo=1&seed-searches=All%20demo",
+      "expectSelector": "[data-saved-search][data-search-name='All demo'] [data-search-unread]",
+      "expectText": "3",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "compare.clear-bar",
       "name": "Clear on the compare bar empties the selection",
       "path": "/?demo=1&pick=demo-1&tap-clear=1",
@@ -1359,6 +2141,1938 @@
       "expectText": "Pick one more",
       "impact": [
         "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "bulk.select-control",
+      "name": "Inbox offers a Select control",
+      "path": "/?demo=1",
+      "expectSelector": "[data-select-mode-toggle]",
+      "expectText": "Select",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "bulk.mode-enters",
+      "name": "Select mode shows the bulk bar",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-select-bar]:not([hidden])"
+    },
+    {
+      "id": "bulk.checkboxes-render",
+      "name": "Select mode puts a checkbox on votable cards",
+      "path": "/?demo=1&selectmode=1&select=demo-2&deselect=demo-2",
+      "expectSelector": "[data-proposal-card] [data-select-toggle]"
+    },
+    {
+      "id": "bulk.voted-not-selectable",
+      "name": "Already-voted cards offer no checkbox",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-3']):not(:has([data-proposal-card][data-session-id='demo-3'] [data-select-toggle]))"
+    },
+    {
+      "id": "bulk.card-selects",
+      "name": "Ticking a card marks it selected",
+      "path": "/?demo=1&select=demo-1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-selected='true']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "bulk.counter-one",
+      "name": "Counter reads one selected",
+      "path": "/?demo=1&select=demo-1",
+      "expectText": "1 selected"
+    },
+    {
+      "id": "bulk.counter-three",
+      "name": "Counter reads three selected",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-6",
+      "expectText": "3 selected"
+    },
+    {
+      "id": "bulk.counter-empty-mode",
+      "name": "Select mode with nothing ticked reads zero selected",
+      "path": "/?demo=1&selectmode=1",
+      "expectText": "0 selected"
+    },
+    {
+      "id": "bulk.deselect-card",
+      "name": "Unticking a card unmarks it",
+      "path": "/?demo=1&select=demo-1,demo-2&deselect=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'][data-selected='false']"
+    },
+    {
+      "id": "bulk.counter-after-deselect",
+      "name": "Counter drops after an untick",
+      "path": "/?demo=1&select=demo-1,demo-2&deselect=demo-2",
+      "expectText": "1 selected"
+    },
+    {
+      "id": "bulk.approve-votes",
+      "name": "Bulk approve votes yes on every selected card",
+      "path": "/?demo=1&select=demo-1,demo-6&bulk=approve",
+      "expectText": "You voted yes"
+    },
+    {
+      "id": "bulk.approve-toast",
+      "name": "Bulk approve names its outcome",
+      "path": "/?demo=1&select=demo-1,demo-6&bulk=approve",
+      "expectText": "Approved 2"
+    },
+    {
+      "id": "bulk.approve-clears-counter",
+      "name": "Counter resets after bulk approve",
+      "path": "/?demo=1&select=demo-1,demo-6&bulk=approve",
+      "expectText": "0 selected"
+    },
+    {
+      "id": "bulk.hide-votes",
+      "name": "Bulk hide votes no on every selected card",
+      "path": "/?demo=1&select=demo-1&bulk=hide",
+      "expectText": "You voted no"
+    },
+    {
+      "id": "bulk.hide-toast",
+      "name": "Bulk hide names its outcome",
+      "path": "/?demo=1&select=demo-1&bulk=hide",
+      "expectText": "Hid 1 proposal"
+    },
+    {
+      "id": "bulk.clear-all",
+      "name": "Clear empties the selection",
+      "path": "/?demo=1&select=demo-1,demo-2&clearsel=1",
+      "expectText": "0 selected"
+    },
+    {
+      "id": "bulk.clear-unmarks",
+      "name": "Clear unticks the selected cards",
+      "path": "/?demo=1&select=demo-1,demo-2&clearsel=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-selected='false']"
+    },
+    {
+      "id": "bulk.clear-keeps-mode",
+      "name": "Clear keeps select mode on",
+      "path": "/?demo=1&select=demo-1,demo-2&clearsel=1",
+      "expectSelector": "[data-select-bar]:not([hidden])"
+    },
+    {
+      "id": "bulk.selection-survives-search",
+      "name": "Selection survives the title search filter",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-4&q=tag",
+      "expectText": "3 selected"
+    },
+    {
+      "id": "bulk.selection-survives-app-filter",
+      "name": "Selection survives the app filter",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-6&filter=staging-demo-notes",
+      "expectText": "3 selected"
+    },
+    {
+      "id": "bulk.selection-survives-one-away",
+      "name": "Selection survives the one-vote-away filter",
+      "path": "/?demo=1&select=demo-1,demo-2&one-away=1",
+      "expectText": "2 selected"
+    },
+    {
+      "id": "bulk.deselect-while-filtered",
+      "name": "Unticking a filtered-out card keeps the counter accurate",
+      "path": "/?demo=1&select=demo-1,demo-2,demo-4&filter=staging-demo-notes&deselect=demo-4",
+      "expectText": "2 selected"
+    },
+    {
+      "id": "bulk.done-exits",
+      "name": "Done leaves select mode and clears the checkboxes",
+      "path": "/?demo=1&select=demo-1&exitsel=1",
+      "expectSelector": "body:has(#view [data-proposal-card]):not(:has([data-select-toggle]))"
+    },
+    {
+      "id": "bulk.one-tap-in-select-mode",
+      "name": "One-tap voting keeps working in select mode",
+      "path": "/?demo=1&selectmode=1&cast=demo-1:yes",
+      "expectText": "You voted yes"
+    },
+    {
+      "id": "bulk.approve-button-renders",
+      "name": "Bulk bar offers Approve",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-bulk-approve]",
+      "expectText": "Approve"
+    },
+    {
+      "id": "bulk.hide-button-renders",
+      "name": "Bulk bar offers Hide",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-bulk-hide]",
+      "expectText": "Hide"
+    },
+    {
+      "id": "inbox.summary-line",
+      "name": "Inbox cards show a change summary",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-change-summary] [data-summary-toggle]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "Staging demo summary: adds keyboard shortcuts",
+      "visual": true
+    },
+    {
+      "id": "inbox.summary-collapsed-default",
+      "name": "Change summary starts collapsed",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='false']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-one-line",
+      "name": "Change summary clamps to one line",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle].truncate",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-short",
+      "name": "Short change summary renders whole",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-summary-toggle]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "sends a weekly email"
+    },
+    {
+      "id": "inbox.summary-expand",
+      "name": "Expanded change summary deep link",
+      "path": "/?demo=1&expand-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='true']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-expand-full",
+      "name": "Expanded change summary shows full text",
+      "path": "/?demo=1&expand-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle].whitespace-pre-line",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "turned off in settings"
+    },
+    {
+      "id": "inbox.summary-tap-expand",
+      "name": "Tapping summary expands it",
+      "path": "/?demo=1&tap-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='true']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-tap-collapse",
+      "name": "Tapping an open summary collapses it",
+      "path": "/?demo=1&expand-summary=demo-4&tap-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='false'].truncate",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-expand-one-card",
+      "name": "Expanding one summary leaves others closed",
+      "path": "/?demo=1&expand-summary=demo-4",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-summary-toggle][aria-expanded='false']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-expand-survives-vote",
+      "name": "Open summary survives a vote re-render",
+      "path": "/?demo=1&expand-summary=demo-4&cast=demo-2:yes",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle][aria-expanded='true']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.files-count-plural",
+      "name": "Plural files-changed count",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-files-changed='12']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "12 files changed"
+    },
+    {
+      "id": "inbox.files-count-singular",
+      "name": "Singular files-changed count",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-files-changed='1']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "1 file changed"
+    },
+    {
+      "id": "inbox.files-count-accuracy",
+      "name": "Files-changed count matches fixture",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-files-changed='5']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "5 files changed"
+    },
+    {
+      "id": "inbox.files-count-only",
+      "name": "Count-only card shows its count",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-files-changed='3']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "3 files changed"
+    },
+    {
+      "id": "inbox.summary-fallback-no-count",
+      "name": "Summary without a count",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-change-summary]:not(:has([data-files-changed]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "switches the app between light and dark"
+    },
+    {
+      "id": "inbox.summary-fallback-no-summary",
+      "name": "Count without a summary",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-change-summary]:not(:has([data-summary-toggle]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-fallback-neither",
+      "name": "Card with neither summary nor count has no summary row",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-5']:not(:has([data-change-summary]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.summary-fallback-card-intact",
+      "name": "Fallback card still renders its title",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-5'] [data-proposal-title]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "pinned notes"
+    },
+    {
+      "id": "inbox.summary-select-mode",
+      "name": "Select mode keeps the summary row",
+      "path": "/?demo=1&selectmode=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-summary-toggle]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "adds keyboard shortcuts"
+    },
+    {
+      "id": "inbox.summary-controversy-sort",
+      "name": "Controversy sort keeps the summary row",
+      "path": "/?demo=1&sort=controversy",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-files-changed='12']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "12 files changed"
+    },
+    {
+      "id": "tags.chips-render",
+      "name": "Tag chips render on cards with counts",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-tag-chip='bug']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "bug (2)"
+    },
+    {
+      "id": "tags.max-two-chips",
+      "name": "Card with three tags shows at most two chips",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-proposal-tags][data-tag-count='2']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "impact.panel",
+      "name": "Proposal detail shows an impact panel",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-impact-panel]",
+      "expectText": "Impact",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "snooze.menu-day",
+      "name": "Card menu offers Snooze for one day",
+      "path": "/?demo=1&tap-snooze=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-snooze-choose][data-days='1']",
+      "expectText": "Snooze 1 day",
+      "visual": true,
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tags.header-filter",
+      "name": "Tag filter sits in the header",
+      "path": "/?demo=1",
+      "expectSelector": "[data-tag-filter-trigger]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ],
+      "expectText": "All tags"
+    },
+    {
+      "id": "tags.option-counts",
+      "name": "Tag filter options show open counts",
+      "path": "/?demo=1&opentagfilter=1",
+      "expectSelector": "[data-tag-option='copy'] [data-tag-count='1']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "(1)"
+    },
+    {
+      "id": "tags.filter-select",
+      "name": "Picking a tag filters the inbox",
+      "path": "/?demo=1&opentagfilter=1&tap-tag=bug",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-session-id='demo-6']))",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ],
+      "expectText": "bug"
+    },
+    {
+      "id": "tags.combines-with-app-filter",
+      "name": "Tag filter combines with the app filter",
+      "path": "/?demo=1&filter=staging-demo-notes&opentagfilter=1&tap-tag=feature",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-session-id='demo-2'])):not(:has([data-proposal-card][data-session-id='demo-6']))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tags.clear-restores",
+      "name": "Clearing the tag filter restores the list",
+      "path": "/?demo=1&set-tag=bug&opentagfilter=1&tap-tag=all",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ],
+      "expectText": "All tags"
+    },
+    {
+      "id": "tags.no-chip-card",
+      "name": "Card without tags shows no chip",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3']:not(:has([data-tag-chip]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tags.persist-reload",
+      "name": "Tag filter survives a reload",
+      "path": "/?demo=1&set-tag=bug",
+      "expectSelector": "#view:not(:has([data-proposal-card][data-session-id='demo-6']))",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ],
+      "expectText": "bug"
+    },
+    {
+      "id": "tags.counts-ignore-hidden",
+      "name": "Tag counts exclude voted and merged proposals",
+      "path": "/?demo=1&opentagfilter=1",
+      "expectSelector": "[data-tag-option='bug'] [data-tag-count='2']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "(2)"
+    },
+    {
+      "id": "members.header-link",
+      "name": "Header links to the members directory",
+      "path": "/?demo=1",
+      "expectSelector": "[data-members-link]",
+      "expectText": "Members",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "impact.members",
+      "name": "Impact panel shows the member count",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectText": "5 members"
+    },
+    {
+      "id": "impact.apps",
+      "name": "Impact panel lists the apps touched",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectText": "Staging Demo Archive"
+    },
+    {
+      "id": "impact.release",
+      "name": "Impact panel shows the target release",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectText": "Staging demo build 2.4"
+    },
+    {
+      "id": "impact.checks-listed",
+      "name": "Impact panel lists the automated checks",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-impact-checks]",
+      "expectText": "Staging demo check: thread replies"
+    },
+    {
+      "id": "impact.summary",
+      "name": "Impact panel shows a plain-language summary",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-impact-summary]",
+      "expectText": "keyboard shortcuts land on every list screen"
+    },
+    {
+      "id": "impact.merged-readonly",
+      "name": "Merged proposal keeps the impact panel",
+      "path": "/?demo=1&proposal=demo-5",
+      "expectSelector": "[data-impact-panel]",
+      "expectText": "Staging demo build 2.3"
+    },
+    {
+      "id": "impact.unknown-label",
+      "name": "Missing impact data shows an Unknown label",
+      "path": "/?demo=1&proposal=demo-6",
+      "expectSelector": "[data-impact-panel]",
+      "expectText": "Unknown"
+    },
+    {
+      "id": "impact.check-passed-tick",
+      "name": "Passed automated checks are ticked",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-check-passed]"
+    },
+    {
+      "id": "impact.check-failed-mark",
+      "name": "Failed automated checks carry no tick",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-check-failed]"
+    },
+    {
+      "id": "impact.collapse-toggle",
+      "name": "Small screens collapse the panel behind Show details",
+      "path": "/?demo=1&proposal=demo-4&impact-mobile=1",
+      "expectSelector": "[data-impact-toggle]",
+      "expectText": "Show details",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "snooze.menu-week",
+      "name": "Card menu offers Snooze for one week",
+      "path": "/?demo=1&tap-snooze=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-snooze-choose][data-days='7']",
+      "expectText": "Snooze 1 week",
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.leaves-inbox",
+      "name": "Snoozed proposal leaves the main inbox",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=1",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'])) [data-proposal-card][data-session-id='demo-1']",
+      "visual": true,
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.filter-lists",
+      "name": "Snoozed filter lists snoozed proposals",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=7&snoozed=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'][data-snoozed='1']",
+      "visual": true,
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.wake-date",
+      "name": "Snoozed row shows its wake date",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=7&snoozed=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-wake-date]",
+      "expectText": "Wake"
+    },
+    {
+      "id": "snooze.unsnooze-returns",
+      "name": "Unsnooze returns the proposal to the inbox",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=1&snoozed=1&tap-unsnooze=demo-2",
+      "expectSelector": "body:not(:has([data-snoozed-chip][aria-pressed='true'])) [data-proposal-card][data-session-id='demo-2']",
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.reappears-after-wake",
+      "name": "Snoozed proposal reappears after its wake date",
+      "path": "/?demo=1&snooze-past=demo-6&snooze=1",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-6']):not(:has([data-proposal-card][data-session-id='demo-6'] [data-wake-date]))"
+    },
+    {
+      "id": "snooze.survives-reload",
+      "name": "Snooze choice survives a reload",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=7&snoozed=1",
+      "expectSelector": "body:has([data-snoozed-chip][aria-pressed='true']) [data-proposal-card][data-session-id='demo-2'][data-snoozed='1']",
+      "impact": [
+        "server.js",
+        "public/index.html"
+      ]
+    },
+    {
+      "id": "snooze.counts-in-summary",
+      "name": "Snoozed proposal still counts in the header totals",
+      "path": "/?demo=1&set-snooze=demo-2&snooze-days=1",
+      "expectSelector": "#inbox-summary",
+      "expectText": "6 open, 9 votes needed"
+    },
+    {
+      "id": "snooze.per-user",
+      "name": "Snooze is per user and leaves other members alone",
+      "path": "/?demo=1&snooze-other=1&snooze=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3']",
+      "expectText": "export to CSV"
+    },
+    {
+      "id": "members.roster",
+      "name": "Directory lists avatar and handle",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-avatar]",
+      "expectText": "@staging-demo-maya",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "impact.collapse-expand",
+      "name": "Show details expands the collapsed panel",
+      "path": "/?demo=1&proposal=demo-4&impact-mobile=1&tap-impact-toggle=1",
+      "expectText": "Hide details"
+    },
+    {
+      "id": "members.role-chip",
+      "name": "Rows carry a role chip",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-role]",
+      "expectText": "Member",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.owner-chip",
+      "name": "The first member is the owner",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-role='owner']",
+      "expectText": "Owner",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.joined",
+      "name": "Rows show a joined date",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-joined]",
+      "expectText": "Joined",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.votes-cast",
+      "name": "Rows show votes cast",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-votes]",
+      "expectText": "votes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.accepted",
+      "name": "Rows show accepted-proposal count",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-member-accepted]",
+      "expectText": "accepted",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.search-filter",
+      "name": "Search filters by handle",
+      "path": "/?demo=1&members=1&member-query=priya",
+      "expectSelector": "[data-member-handle='@staging-demo-priya']",
+      "expectText": "1 of 6",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.profile-link",
+      "name": "Member rows link to the author profile",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "a[data-member-link][href*='/u/staging-demo-maya']",
+      "expectText": "@staging-demo-maya",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.summary-count",
+      "name": "Summary shows the member count",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-members-summary]",
+      "expectText": "6 members",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.active-week",
+      "name": "Summary shows the active-this-week count",
+      "path": "/?demo=1&members=1",
+      "expectSelector": "[data-members-summary]",
+      "expectText": "4 active this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "members.search-empty",
+      "name": "No-match search shows the empty state",
+      "path": "/?demo=1&members=1&member-query=zzz",
+      "expectSelector": "[data-members-empty]",
+      "expectText": "No members match",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.first-visit",
+      "name": "A first visit shows the tour at step 1",
+      "path": "/?demo=1&tour-reset=1",
+      "expectSelector": "[data-tour]",
+      "expectText": "What a proposal is",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-button",
+      "name": "My Votes offers Share as image",
+      "path": "/?tab=votes&demo=1",
+      "expectSelector": "#votes-order-row [data-shareimg-open]",
+      "expectText": "Share as image",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.tab",
+      "name": "Leaderboard tab opens with its range toggle",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-tab='leaderboard'][aria-selected='true']",
+      "expectText": "This week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-handle",
+      "name": "The generated card shows my handle",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-handle]:not([data-handle='']) [data-shareimg-preview]",
+      "expectText": "@",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.rank",
+      "name": "Board ranks by votes cast this week",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-lb-rank='1'] [data-lb-handle='@staging-demo-user']",
+      "expectText": "5 votes",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-week",
+      "name": "The card shows my votes this week",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-week='2']",
+      "expectText": "2 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.card-tap",
+      "name": "Card tap opens the detail view",
+      "path": "/?demo=1&tap-card=1",
+      "expectSelector": "[data-proposal-detail][data-session-id='demo-2']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.next-advances",
+      "name": "The tour advances with the Next button",
+      "path": "/?demo=1&tour=1&tap-tour-next=1",
+      "expectSelector": "[data-tour]",
+      "expectText": "How to vote",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-merged",
+      "name": "The card shows my merged count",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-merged='1']",
+      "expectText": "1 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.row",
+      "name": "Rows show avatar, handle and vote count",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-lb-row] [data-lb-avatar]",
+      "expectText": "@staging-demo-maya",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-apps",
+      "name": "The card lists the top apps",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-apps='Staging Demo App,Staging Demo Notes']",
+      "expectText": "Top apps: Staging Demo App, Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.merged",
+      "name": "Rows show a merged-vote count",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-lb-row] [data-lb-merged]",
+      "expectText": "merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-theme",
+      "name": "The card follows the current theme",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&shareimg-theme=dark&tap-shareimg=1",
+      "expectSelector": "html.dark [data-share-card][data-theme='dark']",
+      "expectText": "Share as image",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.range-toggle",
+      "name": "All time toggle re-ranks the board",
+      "path": "/?demo=1&tab=leaderboard&lb-range=all",
+      "expectSelector": "[data-lb-rank='4'] [data-lb-handle='@staging-demo-priya']",
+      "expectText": "All time",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-sheet",
+      "name": "Share opens the native share sheet when available",
+      "path": "/?tab=votes&demo=1&shareimg=sheet&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-share-state='sheet'] [data-shareimg-share]",
+      "expectText": "Share",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.own-row",
+      "name": "The caller's own row is highlighted and marked You",
+      "path": "/?demo=1&tab=leaderboard&cast=demo-2:yes&lb-clear=1&lb=1",
+      "expectSelector": "[data-lb-row][data-lb-me] [data-lb-you]",
+      "expectText": "You",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.skip-any-step",
+      "name": "The tour can be skipped from step 2",
+      "path": "/?demo=1&tour=1&tap-tour-next=1&tap-tour-skip=1",
+      "expectSelector": "main:not(:has([data-tour]))",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.finish-never-again",
+      "name": "The tour is not shown again after finishing",
+      "path": "/?demo=1&tour-reset=1&finish-tour=1",
+      "expectSelector": "main:not(:has([data-tour]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.skip-never-again",
+      "name": "The tour is not shown again after skipping",
+      "path": "/?demo=1&tour-reset=1&skip-tour=1",
+      "expectSelector": "main:not(:has([data-tour]))",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.vote-not-blocked",
+      "name": "The tour does not block voting on the first card",
+      "path": "/?demo=1&tour-reset=1&cast=demo-4:yes",
+      "expectSelector": "[data-tour]",
+      "expectText": "You voted yes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "tour.reopen-menu",
+      "name": "The tour reopens from the header menu",
+      "path": "/?demo=1&tap-tour-open=1",
+      "expectSelector": "[data-tour]",
+      "expectText": "What a proposal is",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.inbox-browse-apps",
+      "name": "Empty inbox shows the Browse apps empty state",
+      "path": "/?demo=1&empty=1",
+      "expectSelector": "[data-action='browse-apps']",
+      "expectText": "Nothing to vote on yet",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.votes",
+      "name": "Empty My Votes explains votes show up here",
+      "path": "/?demo=1&tab=votes&votes-empty=1",
+      "expectText": "No votes yet",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.search",
+      "name": "Empty search results say nothing matches",
+      "path": "/?demo=1&q=zzznothing",
+      "expectText": "No proposals match",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.one-away",
+      "name": "No one-vote-away proposals shows the matching empty state",
+      "path": "/?demo=1&one-away=1&splits=demo-1:2-1,demo-6:1-0",
+      "expectText": "Nothing is one vote away",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.zero-counts",
+      "name": "Empty inbox keeps the header counts at zero",
+      "path": "/?demo=1&empty=1",
+      "expectSelector": "#inbox-summary",
+      "expectText": "0 open, 0 votes needed",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-download",
+      "name": "A Download fallback saves the image",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=download",
+      "expectSelector": "[data-share-card][data-share-state='downloaded']",
+      "expectText": "Image saved",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.appears",
+      "name": "A merge celebration card appears for a voted proposal that merged",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration][data-session-id='demo-3']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-copy",
+      "name": "A Copy link fallback copies a link when sharing is unavailable",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=copy",
+      "expectSelector": "[data-share-card] [data-shareimg-copy]",
+      "expectText": "Copied!",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.pin",
+      "name": "Own position stays pinned to the screen",
+      "path": "/?demo=1&tab=leaderboard&cast=demo-2:yes&lb-clear=1&lb=1&lb-pin=1",
+      "expectSelector": "[data-lb-pin]",
+      "expectText": "You · #6",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-size",
+      "name": "The image has a fixed pixel size that fits a chat preview",
+      "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-width='1200'][data-height='630']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.cap",
+      "name": "Board caps at 50 rows with a cap note",
+      "path": "/?demo=1&tab=leaderboard&lb-many=1",
+      "expectSelector": "[data-lb-cap]",
+      "expectText": "top 50 of 60",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-error",
+      "name": "An error while rendering shows a friendly message",
+      "path": "/?tab=votes&demo=1&shareimg=error&tap-shareimg=1",
+      "expectSelector": "#shareimg-panel [data-shareimg-error]",
+      "expectText": "Could not make the image",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.tie",
+      "name": "Tied votes rank by merged votes first",
+      "path": "/?demo=1&tab=leaderboard&lb-tie=1",
+      "expectSelector": "[data-lb-rank='1'] [data-lb-handle='@staging-demo-tie-b']",
+      "expectText": "2 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "my-votes.shareimg-no-votes",
+      "name": "The card omits apps when there were no votes",
+      "path": "/?tab=votes&demo=1&no-votes=1&shareimg=fallback&tap-shareimg=1",
+      "expectSelector": "[data-share-card][data-week='0']:not([data-apps])",
+      "expectText": "0 votes this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.voters",
+      "name": "Footer chip counts members who have voted",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "[data-lb-voters]",
+      "expectText": "5 of 6 members have voted",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.empty",
+      "name": "Empty week shows the no-votes message",
+      "path": "/?demo=1&tab=leaderboard&lb-empty=1",
+      "expectSelector": "[data-lb-empty]",
+      "expectText": "No votes this week",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.deep-link",
+      "name": "Deep link opens the detail view directly",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-proposal-detail][data-session-id='demo-4']"
+    },
+    {
+      "id": "detail.ring-counts",
+      "name": "Vote ring shows needed count",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-vote-ring] [data-ring-needed]",
+      "expectText": "4 votes needed"
+    },
+    {
+      "id": "detail.ring-label",
+      "name": "Vote ring label shows yes-to-merge progress",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-ring-label]",
+      "expectText": "7 of 11 yes to merge"
+    },
+    {
+      "id": "detail.timeline-opened-first",
+      "name": "Timeline starts with the opened row",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "[data-timeline] li[data-timeline-event='opened'][data-timeline-index='1']"
+    },
+    {
+      "id": "detail.timeline-voter-rows",
+      "name": "Timeline lists yes voters with names",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-timeline][data-timeline-votes='7']",
+      "expectText": "Tom (demo)"
+    },
+    {
+      "id": "detail.timeline-relative-date",
+      "name": "Timeline vote rows show relative dates",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-timeline-event='vote'][data-timeline-voter='staging-demo-sara'] [data-timeline-time]",
+      "expectText": "2h ago"
+    },
+    {
+      "id": "detail.timeline-merged",
+      "name": "Timeline shows the merged row",
+      "path": "/?demo=1&proposal=demo-5",
+      "expectSelector": "[data-timeline-event='merged']",
+      "expectText": "2d ago"
+    },
+    {
+      "id": "detail.full-description",
+      "name": "Detail shows the full description",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-proposal-description]",
+      "expectText": "every shortcut can be turned off in settings"
+    },
+    {
+      "id": "detail.description-fallback",
+      "name": "Empty description falls back to the title",
+      "path": "/?demo=1&proposal=demo-5",
+      "expectSelector": "[data-proposal-description][data-description-fallback='1']",
+      "expectText": "pinned notes"
+    },
+    {
+      "id": "detail.author-app",
+      "name": "Detail shows the author and app name",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "body:has([data-detail-app='Staging Demo Notes']) [data-detail-author]",
+      "expectText": "@staging-demo-user"
+    },
+    {
+      "id": "detail.related-same-app",
+      "name": "Related strip lists same-app open proposals",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "[data-related-proposals] [data-open-detail][data-session='demo-1']",
+      "expectText": "More from Staging Demo App"
+    },
+    {
+      "id": "detail.related-apps-only",
+      "name": "Related strip excludes other apps",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "body:has([data-related-proposals] [data-open-detail][data-session='demo-3']):not(:has([data-related-proposals] [data-open-detail][data-session='demo-4']))"
+    },
+    {
+      "id": "detail.related-hidden",
+      "name": "Related strip hides when none exist",
+      "path": "/?demo=1&proposal=demo-2&allmerged=1",
+      "expectSelector": "body:not(:has([data-related-proposals]))",
+      "expectText": "weekly summary email"
+    },
+    {
+      "id": "detail.sticky-bar-scroll",
+      "name": "Action bar stays reachable while scrolling",
+      "path": "/?demo=1&proposal=demo-4&scroll-detail=1",
+      "expectSelector": "[data-detail-actions][data-sticky-observed='1'] [data-vote='yes']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "leaderboard.fresh-vote",
+      "name": "Board updates after a fresh vote",
+      "path": "/?demo=1&tab=leaderboard&cast=demo-2:yes&lb-clear=1&lb=1",
+      "expectSelector": "[data-lb-row][data-lb-me] [data-lb-votes]",
+      "expectText": "1 vote · 0 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.names-title",
+      "name": "The celebration card names the merged proposal",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration] [data-celebration-title]",
+      "expectText": "export to CSV",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.names-app",
+      "name": "The celebration card names the app it merged on",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration] [data-celebration-app]",
+      "expectText": "Staging Demo App",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.says-choice",
+      "name": "The celebration card says which way the user voted",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration] [data-celebration-choice]",
+      "expectText": "You voted yes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.shown-once",
+      "name": "A celebration card is shown once, not again on the next load",
+      "path": "/?demo=1&celeb=1&celebvote=demo-2&celeb-reload=1",
+      "expectSelector": "body:not(:has([data-celebration])) [data-proposal-card]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.dismiss-removes",
+      "name": "Dismissing a celebration card removes it",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3&celeb-tap-dismiss=demo-3",
+      "expectSelector": "body:not(:has([data-celebration])) [data-proposal-card]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.share-sheet",
+      "name": "Share button keeps the native sheet mode",
+      "path": "/?demo=1&proposal=demo-2&share=sheet",
+      "expectSelector": "[data-detail-actions] [data-share-link][data-share-mode='sheet']",
+      "expectText": "Share"
+    },
+    {
+      "id": "detail.back-scroll",
+      "name": "Back returns to the inbox at the same scroll",
+      "path": "/?demo=1&tap-back=1",
+      "expectSelector": "body[data-inbox-scroll='400']"
+    },
+    {
+      "id": "detail.voted-state",
+      "name": "Voted proposal shows the pill and disables voting",
+      "path": "/?demo=1&proposal=demo-1",
+      "expectSelector": "[data-detail-actions]:has([data-voted-pill]):has([data-vote='yes'][disabled]):has([data-vote='no'][disabled])"
+    },
+    {
+      "id": "detail.keyboard",
+      "name": "Detail actions are keyboard buttons",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "body:has([data-proposal-detail] > button[data-action='close-detail']) [data-detail-actions] button[data-vote='yes']"
+    },
+    {
+      "id": "celebrate.see-merged",
+      "name": "See what merged opens My Votes filtered to merged this week",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3&celeb-tap-see=1",
+      "expectSelector": "body:has([data-votes-merged-chip][aria-pressed='true']) [data-vote-row][data-session-id='demo-v2']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.live-region",
+      "name": "Celebrations announce through a polite live region",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3",
+      "expectSelector": "[data-celebration-live][aria-live='polite']",
+      "expectText": "You voted yes.",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.absent-unvoted",
+      "name": "No celebration card for a proposal the user did not vote on",
+      "path": "/?demo=1&celeb=1&celeb-clear=1",
+      "expectSelector": "body:not(:has([data-celebration])) [data-proposal-card]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.stack",
+      "name": "Multiple merges stack as separate celebration cards",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3,demo-5",
+      "expectSelector": "body:has([data-celebration][data-session-id='demo-3']):has([data-celebration][data-session-id='demo-5'])",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "celebrate.reduced-motion",
+      "name": "The celebration presentation follows reduced motion",
+      "path": "/?demo=1&celeb=1&celeb-clear=1&celebvote=demo-3&celeb-motion=reduced",
+      "expectSelector": "[data-celebrations][data-motion='reduced']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.unread-dot",
+      "name": "Unread proposals show a dot on the card",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-unread-dot]",
+      "visual": true,
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.open-marks-read",
+      "name": "Opening a proposal marks it read",
+      "path": "/?demo=1&tap-open=demo-2",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'][data-read='1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.dot-clears",
+      "name": "The unread dot disappears once read",
+      "path": "/?demo=1&tap-open=demo-2",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-unread-dot])) [data-proposal-card][data-session-id='demo-1'] [data-unread-dot]",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.header-count",
+      "name": "The header shows an unread count",
+      "path": "/?demo=1",
+      "expectSelector": "#inbox-unread[data-unread-count='6']",
+      "expectText": "6 unread",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.hide-read",
+      "name": "Hide read removes read proposals from the list",
+      "path": "/?demo=1&set-read=demo-2&hide-read=1",
+      "visual": true,
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'])) [data-proposal-card][data-session-id='demo-1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.hide-read-off",
+      "name": "Turning Hide read off brings read proposals back",
+      "path": "/?demo=1&set-read=demo-2&hide-read=1&tap-hide-read=1",
+      "expectSelector": "body:has(#hide-read:not(:checked)) [data-proposal-card][data-session-id='demo-2'][data-read='1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.mark-all",
+      "name": "Mark all read clears every unread dot",
+      "path": "/?demo=1&markallread=1",
+      "expectSelector": "body:has(#inbox-unread[data-unread-count='0']):not(:has([data-unread-dot])) [data-proposal-card][data-session-id='demo-1']",
+      "expectText": "No unread proposals",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.survives-reload",
+      "name": "Read state survives a reload",
+      "path": "/?demo=1&set-read=demo-2",
+      "expectSelector": "body:not(:has([data-proposal-card][data-session-id='demo-2'] [data-unread-dot])) [data-proposal-card][data-session-id='demo-2'][data-read='1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.per-user",
+      "name": "Read state is per user and does not leak between accounts",
+      "path": "/?demo=1&read-other=1&read=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-3'] [data-unread-dot]",
+      "expectText": "export to CSV",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.count-matches-dots",
+      "name": "The unread count matches the number of dots",
+      "path": "/?demo=1&set-read=demo-2",
+      "expectSelector": "body:has(#inbox-unread[data-unread-count='5']):has([data-proposal-card][data-session-id='demo-1'] [data-unread-dot]):has([data-proposal-card][data-session-id='demo-3'] [data-unread-dot]):has([data-proposal-card][data-session-id='demo-4'] [data-unread-dot]):has([data-proposal-card][data-session-id='demo-5'] [data-unread-dot]):has([data-proposal-card][data-session-id='demo-6'] [data-unread-dot]):not(:has([data-proposal-card][data-session-id='demo-2'] [data-unread-dot])) [data-proposal-card][data-session-id='demo-1']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "read.merged-stays-read",
+      "name": "A merged proposal opened once is not counted as unread again",
+      "path": "/?demo=1&open-merged=1",
+      "expectSelector": "body:has(#inbox-unread[data-unread-count='5']):not(:has([data-proposal-card][data-session-id='demo-5'] [data-unread-dot])) [data-proposal-card][data-session-id='demo-5'][data-read='1']",
+      "impact": [
+        "server.js",
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.menu-control",
+      "name": "The header menu has a Density control",
+      "path": "/?demo=1&tap-menu=1",
+      "expectSelector": "[data-density-menu]",
+      "expectText": "Density",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.menu-options",
+      "name": "The Density control offers Comfortable and Compact",
+      "path": "/?demo=1&tap-menu=1",
+      "expectSelector": "body:has([data-density-option='comfortable']):has([data-density-option='compact']) [data-density-menu]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.menu-previews",
+      "name": "The Density menu shows a preview of each density",
+      "path": "/?demo=1&tap-menu=1",
+      "expectSelector": "body:has([data-density-preview='comfortable']):has([data-density-preview='compact']) [data-density-menu]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.default-comfortable",
+      "name": "Comfortable is the default density",
+      "path": "/?demo=1&density-clear=1",
+      "expectSelector": "body[data-density-summary-visible='1'] [data-proposal-card][data-session-id='demo-1'][data-density='comfortable']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.inbox-compact",
+      "name": "Compact density applies to the Inbox",
+      "path": "/?demo=1&density=compact",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-density='compact']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.votes-compact",
+      "name": "Compact density applies to My Votes",
+      "path": "/?tab=votes&demo=1&density=compact",
+      "expectSelector": "[data-vote-row][data-density='compact']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.compact-hides-preview",
+      "name": "Compact hides the description preview",
+      "path": "/?demo=1&density=compact",
+      "expectSelector": "body[data-density-applied='compact'][data-density-summary-visible='0']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.compact-saves-pad",
+      "name": "Compact reduces card padding",
+      "path": "/?demo=1&density=compact&density-fit=1",
+      "expectSelector": "body[data-density-saves-pad='1']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.compact-saves-space",
+      "name": "Compact cards are shorter, so more fit per screen",
+      "path": "/?demo=1&density=compact&density-fit=1",
+      "expectSelector": "body[data-density-saves-space='1']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.compact-fits-phone",
+      "name": "Compact cards do not overflow at phone width",
+      "path": "/?demo=1&density=compact&density-fit=1",
+      "expectSelector": "body[data-density-phone-fit='ok']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "density.persist-reload",
+      "name": "The density choice survives a reload",
+      "path": "/?demo=1&tap-density=compact",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'][data-density='compact']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.card-button",
+      "name": "Every card offers a Bookmark button",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-bookmark-toggle]",
+      "expectText": "Bookmark",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.card-tap",
+      "name": "Tapping Bookmark saves the card",
+      "path": "/?demo=1&tap-bookmark=demo-6",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-6'] [data-bookmark-toggle][aria-pressed='true']",
+      "expectText": "Bookmarked",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.detail-button",
+      "name": "The detail screen offers a Bookmark button",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "[data-proposal-detail][data-session-id='demo-2'] [data-bookmark-toggle]",
+      "expectText": "Bookmark",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.detail-press",
+      "name": "The detail screen shows the bookmarked state",
+      "path": "/?demo=1&proposal=demo-2&preset-bookmark=demo-2",
+      "expectSelector": "[data-proposal-detail][data-session-id='demo-2'] [data-bookmark-toggle][aria-pressed='true']",
+      "expectText": "Bookmarked",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.tab-rows",
+      "name": "The Saved tab lists bookmarked proposals",
+      "path": "/?tab=saved&demo=1",
+      "expectSelector": "[data-saved-row][data-session-id='demo-5']",
+      "expectText": "pinned notes",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.tab-badge",
+      "name": "The Saved tab shows its row count",
+      "path": "/?tab=saved&demo=1",
+      "expectSelector": "[data-tab='saved'] .tab-badge:not(.hidden)"
+    },
+    {
+      "id": "saved.tab-summary",
+      "name": "The Saved tab shows a summary line",
+      "path": "/?tab=saved&demo=1",
+      "expectText": "2 saved, 1 settled"
+    },
+    {
+      "id": "saved.persist-card",
+      "name": "A bookmark survives a reload",
+      "path": "/?demo=1&set-bookmark=demo-1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-bookmark-toggle][aria-pressed='true']",
+      "expectText": "Bookmarked",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.persist-tab",
+      "name": "A bookmarked proposal is listed on the Saved tab",
+      "path": "/?tab=saved&demo=1&set-bookmark=demo-1",
+      "expectSelector": "[data-saved-row][data-session-id='demo-1']",
+      "expectText": "dark mode",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.per-user",
+      "name": "Another member's bookmark stays out of your list",
+      "path": "/?tab=saved&demo=1&saved-other=1",
+      "expectSelector": "body:has([data-saved-row][data-session-id='demo-6']):not(:has([data-saved-row][data-session-id='demo-4']))",
+      "expectText": "tag colours",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.remove-card",
+      "name": "Tapping Bookmarked removes the bookmark",
+      "path": "/?demo=1&tap-unbookmark=demo-1&preset-bookmark=demo-1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-1'] [data-bookmark-toggle][aria-pressed='false']",
+      "expectText": "Bookmark",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.remove-tab",
+      "name": "Un-bookmarking removes the row at once",
+      "path": "/?tab=saved&demo=1&tap-unbookmark=demo-5",
+      "expectSelector": "body:has([data-saved-row][data-session-id='demo-6']):not(:has([data-saved-row][data-session-id='demo-5']))",
+      "expectText": "tag colours",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "saved.tab-empty",
+      "name": "An empty Saved tab shows its friendly empty state",
+      "path": "/?tab=saved&demo=1&saved-empty=1",
+      "expectText": "Nothing saved yet",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
         "dapp.json"
       ]
     },
