@@ -4338,6 +4338,237 @@
         "server.js",
         "dapp.json"
       ]
+    },
+    {
+      "id": "notis.badge-count",
+      "name": "Bell shows the unread count badge",
+      "path": "/?demo=1&seed-notis=default",
+      "expectSelector": "body:has([data-noti-bell]) [data-noti-badge]",
+      "expectText": "3",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.badge-hidden",
+      "name": "Badge hides when nothing is unread",
+      "path": "/?demo=1&seed-notis=none",
+      "expectSelector": "body:has([data-noti-bell]):not(:has([data-noti-badge]:not([hidden])))",
+      "expectText": null,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.center",
+      "name": "Tapping the bell opens the center",
+      "path": "/?demo=1&seed-notis=default&tap-bell=1",
+      "expectSelector": "[data-noti-center]",
+      "expectText": "Mark all as read",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.newest-first",
+      "name": "Center lists newest first",
+      "path": "/?demo=1&seed-notis=default&notis=1",
+      "expectSelector": "#view [data-noti-row][data-noti-session='demo-5']:first-child",
+      "expectText": "pinned notes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.detect-threshold",
+      "name": "Threshold detection adds one notification",
+      "path": "/?demo=1&seed-notis=none&noti-detect=1&notis=1",
+      "expectSelector": "body:has([data-noti-row][data-noti-session='demo-3'][data-noti-kind='threshold']):not(:has([data-noti-row][data-noti-session='demo-1'])):not(:has([data-noti-row][data-noti-session='demo-2'])):not(:has([data-noti-row][data-noti-session='demo-5']))",
+      "expectText": "Reached its vote threshold",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.detect-merged",
+      "name": "Merging detection adds one notification",
+      "path": "/?demo=1&seed-notis=none&noti-detect=1&noti-vote=demo-5&notis=1",
+      "expectSelector": "#view [data-noti-row][data-noti-session='demo-5'][data-noti-kind='merged']",
+      "expectText": "Merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.detect-first-yes",
+      "name": "First-yes detection adds one notification",
+      "path": "/?demo=1&seed-notis=none&noti-detect=1&noti-mine=demo-2&notis=1",
+      "expectSelector": "#view [data-noti-row][data-noti-session='demo-2'][data-noti-kind='first_yes']",
+      "expectText": "Got its first yes vote",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.detect-one-away",
+      "name": "One-vote-away detection adds a needs-one-more notification",
+      "path": "/?demo=1&seed-notis=none&noti-detect=1&noti-vote=demo-6&notis=1",
+      "expectSelector": "#view [data-noti-row][data-noti-session='demo-6'][data-noti-kind='one_vote_away']",
+      "expectText": "Needs one more vote",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.row-link",
+      "name": "Tapping a row opens the proposal detail",
+      "path": "/?demo=1&seed-notis=default&notis=1&tap-noti=demo-5",
+      "expectSelector": "[data-proposal-detail]",
+      "expectText": null,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.unread-dot",
+      "name": "Unread rows show a dot and read rows do not",
+      "path": "/?demo=1&seed-notis=default&notis=1",
+      "expectSelector": "body:has([data-noti-row][data-noti-session='demo-5'] [data-noti-dot]):not(:has([data-noti-row][data-noti-session='demo-1'] [data-noti-dot]))",
+      "expectText": null,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.read-all",
+      "name": "Mark all as read clears the badge",
+      "path": "/?demo=1&seed-notis=default&notis=1&tap-readall=1",
+      "expectSelector": "body:not(:has([data-noti-badge]:not([hidden]))):has([data-noti-row][data-noti-session='demo-5'][data-noti-read='1'])",
+      "expectText": null,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.filter-voted",
+      "name": "Voted filter shows only voted-audience rows",
+      "path": "/?demo=1&seed-notis=default&notis=1&noti-filter=voted",
+      "expectSelector": "body:has([data-noti-row][data-noti-session='demo-3']):not(:has([data-noti-row][data-noti-session='demo-2']))",
+      "expectText": null,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.filter-mine",
+      "name": "Mine filter shows only own-proposal rows",
+      "path": "/?demo=1&seed-notis=default&notis=1&noti-filter=mine",
+      "expectSelector": "body:has([data-noti-row][data-noti-session='demo-2']):not(:has([data-noti-row][data-noti-session='demo-3']))",
+      "expectText": null,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.filter-all",
+      "name": "All filter shows every row",
+      "path": "/?demo=1&seed-notis=default&notis=1&noti-filter=all",
+      "expectSelector": "body:has([data-noti-row][data-noti-session='demo-5']):has([data-noti-row][data-noti-session='demo-3']):has([data-noti-row][data-noti-session='demo-2']):has([data-noti-row][data-noti-session='demo-1'])",
+      "expectText": null,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.thirty-day-window",
+      "name": "Notifications older than 30 days are not listed",
+      "path": "/?demo=1&seed-notis=default&notis=1",
+      "expectSelector": "body:has([data-noti-row][data-noti-session='demo-2']):not(:has([data-noti-row][data-noti-session='demo-6']))",
+      "expectText": null,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.empty",
+      "name": "An empty center shows the no-notis state",
+      "path": "/?demo=1&seed-notis=none&notis=1",
+      "expectSelector": "[data-notis-empty]",
+      "expectText": "No notis yet",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "notis.badge-reload",
+      "name": "Unread count survives a page reload",
+      "path": "/?demo=1&seed-notis=default&noti-reload=1",
+      "expectSelector": "[data-noti-badge]",
+      "expectText": "3",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.change-summary-line",
+      "name": "Inbox cards show a change summary",
+      "path": "/?demo=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-4'] [data-change-summary] [data-summary-toggle]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ],
+      "expectText": "Staging demo summary: adds keyboard shortcuts",
+      "visual": true
+    },
+    {
+      "id": "app-filter.open-counts-next-to-app",
+      "name": "App filter shows open proposal count next to each app",
+      "path": "/?demo=1&app-filter=open",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count]",
+      "expectText": "(3)",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
     }
   ]
 }

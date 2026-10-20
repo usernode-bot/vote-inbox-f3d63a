@@ -119,6 +119,11 @@
         <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Members</span>
       </button>
+      <button id="noti-bell" data-noti-bell type="button" aria-label="Notifications"
+        class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span data-noti-badge hidden class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-xs font-bold leading-none text-white"></span>
+      </button>
       <button id="menu-btn" aria-label="Menu" aria-haspopup="menu" aria-expanded="false" type="button"
         class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
         <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
@@ -622,6 +627,34 @@
     // for that one load — the same state a live keystroke sets — so the
     // filtered-list and no-match states are reachable by checks. Demo only.
     var MEMBER_QUERY = DEMO ? (params.get('member-query') || '') : '';
+    // Notification center. ?notis=1 is a real deep link (the way ?members=1
+    // is): it opens the center in every environment. The rest are demo-only
+    // check hooks driven through the real controls, the way the snooze and
+    // members hooks are:
+    //   ?seed-notis=<default|none>  replaces the caller's notification rows
+    //                               with the named fixture set ('none'
+    //                               empties the list) before anything loads
+    //   ?noti-filter=<voted|mine|all>
+    //                               presets the center's filter for that
+    //                               one load, like ?member-query=
+    //   ?tap-bell=1                 clicks the header bell once it exists
+    //   ?tap-readall=1              clicks Mark all as read once the center
+    //                               has rendered its rows
+    //   ?tap-noti=<sessionId>       taps that notification row once the
+    //                               center has rendered (the real click
+    //                               path into the proposal detail)
+    //   ?noti-reload=1              reloads a clean URL after the seed, so
+    //                               the check sees the persisted state
+    // ?noti-detect=1, ?noti-vote= and ?noti-mine= are demo-inbox params
+    // forwarded to /api/inbox (see NOTI_INBOX_PARAMS and the server): they
+    // stamp the in-memory vote/author fixtures and run detection there.
+    var NOTIS_VIEW = params.get('notis') === '1';
+    var NOTI_FILTER_PARAM = DEMO ? (params.get('noti-filter') || '') : '';
+    var TAP_BELL = DEMO && params.get('tap-bell') === '1';
+    var TAP_READALL = DEMO && params.get('tap-readall') === '1';
+    var TAP_NOTI = DEMO ? (params.get('tap-noti') || '') : '';
+    var NOTI_RELOAD = DEMO && params.get('noti-reload') === '1';
+    var NOTI_INBOX_PARAMS = ['noti-detect', 'noti-vote', 'noti-mine'];
     // Voters leaderboard. ?tab=leaderboard is a real deep link (the way
     // ?tab=votes is). ?lb-range=all presets the range pill for that one load
     // (demo checks; the same state a tap on the pill sets), ?lb=1 asks the
@@ -875,6 +908,20 @@
       errorMembers: null,
       queuedMembers: false,
       memberQuery: MEMBER_QUERY,
+      // Notification center: open when ?notis=1 or the bell is tapped; the
+      // rows are the user's own notifications from the staging:private
+      // table (or the platform-noticed ones in production). The unread
+      // count feeds the bell badge and persists across reloads because it
+      // is read back from the table on every load. The filter is transient:
+      // a reload starts on All unless ?noti-filter= presets it.
+      notisView: NOTIS_VIEW,
+      notis: null,
+      notisLoading: false,
+      notisLoaded: false,
+      notisError: null,
+      queuedNotis: false,
+      notiUnread: 0,
+      notiFilter: NOTI_FILTER_PARAM || 'all',
       // Voters leaderboard tab: the ranked board (rows carry both ranges'
       // counts, so the range toggle re-ranks without a refetch), its load
       // state and the current range. The range is not persisted; a reload
@@ -2226,6 +2273,41 @@
           var remaining = new URLSearchParams(params);
           ['seed-searches', 'savesearch', 'delsearch', 'tap-search',
             'search-reload', 'q'].forEach(function (k) { remaining.delete(k); });
+          var restQ = remaining.toString();
+          location.replace(location.pathname + (restQ ? '?' + restQ : '') + location.hash);
+        });
+      }
+      return p;
+    }
+
+    // Notification-center check hooks (staging + ?demo=1 only), run at boot
+    // BEFORE the first data loads: ?seed-notis=<default|none> replaces the
+    // caller's notification rows with the named fixture set so every check
+    // run starts from a known list, and ?noti-reload=1 then lands a clean
+    // URL (seed and hook parameters dropped, the deep link and the rest
+    // kept) so what a check sees is the persisted state. Seeding must
+    // settle before the inbox load fires, or detection could race the wipe.
+    function runNotiHooks() {
+      if (!DEMO) return Promise.resolve();
+      var p = Promise.resolve();
+      var seedParam = (params.get('seed-notis') || '').trim();
+      if (seedParam) {
+        var names = seedParam === 'none' ? []
+          : seedParam.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        p = p.then(function () {
+          return api('/api/notifications/seed', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ demo: true, names: names }),
+          }).catch(function () { /* the checks will see the real state */ });
+        });
+      }
+      if (NOTI_RELOAD) {
+        p = p.then(function () {
+          var remaining = new URLSearchParams(params);
+          ['seed-notis', 'noti-reload', 'noti-filter', 'tap-bell', 'tap-readall',
+            'tap-noti', 'noti-detect', 'noti-vote', 'noti-mine']
+            .forEach(function (k) { remaining.delete(k); });
           var restQ = remaining.toString();
           location.replace(location.pathname + (restQ ? '?' + restQ : '') + location.hash);
         });
@@ -4429,15 +4511,17 @@
         && !!(state.detail && findProposal(state.detail));
       // The Members directory replaces the tab's own list and controls.
       var inMembers = !!state.membersView;
+      // The notification center replaces them the same way.
+      var inNotis = !!state.notisView;
       document.getElementById('filter-row').className =
-        'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail && !inMembers ? '' : ' hidden');
+        'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail && !inMembers && !inNotis ? '' : ' hidden');
       document.getElementById('search-row').className =
-        'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail && !inMembers ? '' : ' hidden');
+        'mt-2' + (state.tab === 'inbox' && !state.compareView && !inDetail && !inMembers && !inNotis ? '' : ' hidden');
       // The saved searches bar sits under the search box and shows exactly
       // where it does.
       var savedSearchesRow = document.getElementById('saved-searches-row');
       if (savedSearchesRow) {
-        var showSearches = state.tab === 'inbox' && !state.compareView && !inDetail && !inMembers;
+        var showSearches = state.tab === 'inbox' && !state.compareView && !inDetail && !inMembers && !inNotis;
         savedSearchesRow.className = 'mt-2 flex items-center gap-2' + (showSearches ? '' : ' hidden');
         savedSearchesRow.setAttribute('data-hidden', showSearches ? '0' : '1');
       }
@@ -4445,16 +4529,17 @@
       if (membersRow) membersRow.className = 'mt-2' + (inMembers ? '' : ' hidden');
       var sortRow = document.getElementById('sort-row');
       if (sortRow) sortRow.className =
-        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' && !state.compareView && !inDetail && !inMembers ? '' : ' hidden');
+        'flex items-center gap-2 pt-1' + (state.tab === 'inbox' && !state.compareView && !inDetail && !inMembers && !inNotis ? '' : ' hidden');
       var votesOrderRow = document.getElementById('votes-order-row');
       if (votesOrderRow) votesOrderRow.className =
-        'flex items-center gap-2 pt-1' + (state.tab === 'votes' && !inMembers ? '' : ' hidden');
+        'flex items-center gap-2 pt-1' + (state.tab === 'votes' && !inMembers && !inNotis ? '' : ' hidden');
+        'flex items-center gap-2 pt-1' + (state.tab === 'votes' && !inMembers && !inNotis ? '' : ' hidden');
       var lbRangeRow = document.getElementById('lb-range-row');
       if (lbRangeRow) lbRangeRow.className =
-        'flex items-center gap-2 pt-1' + (state.tab === 'leaderboard' && !inMembers ? '' : ' hidden');
+        'flex items-center gap-2 pt-1' + (state.tab === 'leaderboard' && !inMembers && !inNotis ? '' : ' hidden');
       var viewsRow = document.getElementById('views-row');
       if (viewsRow) {
-        var showViews = state.tab === 'inbox' && !inMembers;
+        var showViews = state.tab === 'inbox' && !inMembers && !inNotis;
         viewsRow.className = 'mt-2 flex items-center gap-2' + (showViews ? '' : ' hidden');
         viewsRow.setAttribute('data-hidden', showViews ? '0' : '1');
       }
@@ -5119,6 +5204,95 @@
       return html;
     }
 
+    // ------------------------------------------------------------------
+    // Notification center rendering. Rows are newest first (the server
+    // orders them); each row is a link into the proposal detail, carries
+    // the kind's plain-language line, the proposal title, its app and age,
+    // and an unread dot the Mark-all-as-read pass clears along with the
+    // bell badge.
+    // ------------------------------------------------------------------
+
+    var NOTI_KIND_TEXT = {
+      threshold: 'Reached its vote threshold',
+      merged: 'Merged',
+      first_yes: 'Got its first yes vote',
+      one_vote_away: 'Needs one more vote',
+    };
+    var NOTI_FILTERS = [['voted', 'Voted'], ['mine', 'Mine'], ['all', 'All']];
+
+    function filterNotis(rows, filter) {
+      if (filter === 'all') return rows;
+      var want = filter === 'mine' ? 'mine' : 'voted';
+      var out = [];
+      for (var i = 0; i < rows.length; i++) {
+        var aud = String(rows[i].audience || '').split(',');
+        if (aud.indexOf(want) !== -1) out.push(rows[i]);
+      }
+      return out;
+    }
+
+    function notiRow(n) {
+      var read = !!n.read;
+      var kindText = NOTI_KIND_TEXT[n.kind] || 'Update';
+      // Unread rows carry the dot; read rows get an equally sized spacer so
+      // the rows line up either way.
+      var dot = read
+        ? '<span class="mt-1 h-2 w-2 shrink-0 rounded-full bg-transparent"></span>'
+        : '<span data-noti-dot class="mt-1 h-2 w-2 shrink-0 rounded-full bg-violet-600"></span>';
+      return '<button type="button" data-noti-link data-session="' + esc(n.sessionId) + '"'
+        + ' data-noti-row data-noti-id="' + esc(n.id) + '"'
+        + ' data-noti-session="' + esc(n.sessionId) + '"'
+        + ' data-noti-kind="' + esc(n.kind) + '"'
+        + ' data-noti-audience="' + esc(n.audience || '') + '"'
+        + ' data-noti-read="' + (read ? '1' : '0') + '"'
+        + ' class="flex w-full items-start gap-3 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-left dark:border-zinc-800 dark:bg-zinc-900">'
+        + dot
+        + '<span class="min-w-0 flex-1">'
+        + '<span class="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">' + esc(kindText) + '</span>'
+        + '<span class="mt-0.5 block truncate text-sm text-zinc-600 dark:text-zinc-300">' + esc(n.title || '') + '</span>'
+        + '<span class="mt-0.5 block truncate text-xs text-zinc-500 dark:text-zinc-400">'
+        + esc(n.appName || '') + ' · ' + relTime(n.createdAt) + '</span>'
+        + '</span>'
+        + '<svg aria-hidden="true" viewBox="0 0 24 24" class="mt-1 h-4 w-4 shrink-0 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>'
+        + '</button>';
+    }
+
+    function renderNotis() {
+      if (state.notisError) return errorHtml(state.notisError);
+      if (!state.notis || (state.notisLoading && !state.notis.notifications)) {
+        return skeletons();
+      }
+      var rows = state.notis.notifications || [];
+      var filtered = filterNotis(rows, state.notiFilter);
+      var chips = '';
+      for (var f = 0; f < NOTI_FILTERS.length; f++) {
+        var key = NOTI_FILTERS[f][0];
+        var on = state.notiFilter === key;
+        chips += '<button type="button" data-noti-filter="' + key + '"'
+          + ' aria-pressed="' + (on ? 'true' : 'false') + '"'
+          + ' class="rounded-full px-3 py-1 text-xs font-semibold transition-colors '
+          + (on ? TAB_ACTIVE : TAB_IDLE) + '">' + NOTI_FILTERS[f][1] + '</button>';
+      }
+      var listHtml = '';
+      if (!filtered.length) {
+        listHtml = '<div data-notis-empty>'
+          + emptyHtml('No notis yet',
+            'Notis about proposals you voted on or opened will land here.',
+            '')
+          + '</div>';
+      } else {
+        for (var i = 0; i < filtered.length; i++) listHtml += notiRow(filtered[i]);
+        listHtml = '<div class="flex flex-col gap-2">' + listHtml + '</div>';
+      }
+      return '<div data-noti-center class="flex items-center justify-between gap-2">'
+        + '<h2 class="text-base font-bold tracking-tight">Notifications</h2>'
+        + '<button type="button" data-noti-readall'
+        + ' class="shrink-0 whitespace-nowrap rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">Mark all as read</button>'
+        + '</div>'
+        + '<div class="mt-2 flex items-center gap-1.5">' + chips + '</div>'
+        + '<div class="mt-3">' + listHtml + '</div>';
+    }
+
     // One-line summary under the header, computed from the loaded inbox
     // list (no extra request): how many proposals are open and how many
     // yes votes they still need in total. Proposals without a known
@@ -5132,7 +5306,7 @@
       // an empty inbox is a real state (see the empty-inbox empty state),
       // and "0 open, 0 votes needed" is the header keeping count of it
       // rather than pretending the line does not apply.
-      if (state.tab !== 'inbox' || state.membersView || state.errorInbox
+      if (state.tab !== 'inbox' || state.membersView || state.notisView || state.errorInbox
         || !state.inbox || state.compareView) {
         el.hidden = true;
         return;
@@ -5188,7 +5362,7 @@
       // Same zero rule as the inbox summary: once the history has loaded,
       // "0 voted, 0 merged" is shown, not hidden (see emptyHtml's My Votes
       // empty state next to it).
-      if (state.tab !== 'votes' || state.membersView || state.errorVotes
+      if (state.tab !== 'votes' || state.membersView || state.notisView || state.errorVotes
         || !state.votes) {
         el.hidden = true;
         return;
@@ -5721,7 +5895,7 @@
       var rows = state.watchlist && state.watchlist.rows;
       var total = rows ? rows.length : 0;
       // Same zero rule as the inbox and votes summaries.
-      if (state.tab !== 'watchlist' || state.membersView || state.errorWatchlist
+      if (state.tab !== 'watchlist' || state.membersView || state.notisView || state.errorWatchlist
         || !state.watchlist) {
         el.hidden = true;
         return;
@@ -5792,13 +5966,32 @@
       el.hidden = false;
     }
 
+    // The bell's unread badge: the count from the last notifications load.
+    // Hidden entirely when it is zero, so a quiet inbox shows a plain bell.
+    function renderNotiBadge() {
+      var badge = document.querySelector('[data-noti-badge]');
+      if (!badge) return;
+      var unread = state.notiUnread || 0;
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      // The attribute alone is not enough: the badge's Tailwind `flex`
+      // class would beat the UA stylesheet's [hidden] rule, so the hidden
+      // class is toggled with it (it is emitted after .flex, so it wins).
+      if (unread > 0) {
+        badge.removeAttribute('hidden');
+        badge.classList.remove('hidden');
+      } else {
+        badge.setAttribute('hidden', '');
+        badge.classList.add('hidden');
+      }
+    }
+
     // "Updated X ago" under the header, stamped on every successful inbox
     // load so it always reflects the most recent data fetch. Uses the same
     // relative-time wording as the proposal age chips.
     function renderUpdated() {
       var el = document.getElementById('inbox-updated');
       if (!el) return;
-      if (state.tab !== 'inbox' || state.membersView || !state.inboxLoadedAt || state.compareView) {
+      if (state.tab !== 'inbox' || state.membersView || state.notisView || !state.inboxLoadedAt || state.compareView) {
         el.hidden = true;
         return;
       }
@@ -5842,6 +6035,7 @@
       renderLbRange();
       renderDemoBanner();
       renderRefreshButton();
+      renderNotiBadge();
       renderSummary();
       renderUnread();
       renderUpdated();
@@ -5852,7 +6046,9 @@
       renderSavedSummary();
       renderMembersSummary();
       var viewHtml;
-      if (state.membersView) {
+      if (state.notisView) {
+        viewHtml = renderNotis();
+      } else if (state.membersView) {
         viewHtml = renderMembers();
       } else if (state.tab === 'inbox' && state.compareView
           && state.compare.length === 2
@@ -6811,6 +7007,13 @@
           if (sv) query.push(SNOOZE_PARAMS[si] + '=' + encodeURIComponent(sv));
         }
         if (SNOOZE_SET) query.push('snooze=1');
+        // Notification detection knobs: the server stamps the in-memory
+        // vote/author fixtures (?noti-vote=, ?noti-mine=) and runs
+        // detection when ?noti-detect=1 asks it to.
+        for (var ni = 0; ni < NOTI_INBOX_PARAMS.length; ni++) {
+          var nv = params.get(NOTI_INBOX_PARAMS[ni]);
+          if (nv) query.push(NOTI_INBOX_PARAMS[ni] + '=' + encodeURIComponent(nv));
+        }
         // Read fixture knobs, plus the read-set marker page: that one
         // forwards ?read=1 so the reload reads the persisted rows back.
         for (var ri = 0; ri < READ_PARAMS.length; ri++) {
@@ -6897,6 +7100,9 @@
           maybeScrollDetail();
           maybeAutoComment();
           maybeAutoReply();
+          // The inbox load is what noticed any new proposal status changes,
+          // so it is also what refreshes the bell's badge.
+          loadNotifications();
           // A ?proposal= deep link lands on the inbox first; once the list
           // holds the proposal, the detail view can load its thread.
           // A ?proposal= deep link lands on the inbox first; once the list holds the
@@ -6954,6 +7160,7 @@
 
     function refreshCurrent() {
       if (state.membersView) return loadMembers(true);
+      if (state.notisView) return loadNotifications(true);
       return state.tab === 'inbox' ? loadInbox(true)
         : state.tab === 'votes' ? loadVotes(true)
         : state.tab === 'saved' ? loadSaved(true)
@@ -7004,6 +7211,8 @@
 
     function openMembers() {
       state.membersView = true;
+      state.notisView = false;
+      syncNotisUrl();
       syncMembersUrl();
       render();
       window.scrollTo(0, 0);
@@ -7023,6 +7232,45 @@
     }
 
     // ------------------------------------------------------------------
+    // Notification center: data and open/close. The header bell toggles
+    // the center over the current tab (closing the members directory if it
+    // was open); ?notis=1 deep-links straight into it. Closing returns to
+    // the tab the user came from and fetches its list if it was never
+    // loaded (the boot went to the center instead), the way closeMembers
+    // does.
+    // ------------------------------------------------------------------
+
+    function loadNotifications(force) {
+      if (state.notisLoading) {
+        // Same queued-refetch contract as the tabs: a Refresh tap while a
+        // load is in flight queues one fresh fetch.
+        if (force) state.queuedNotis = true;
+        return Promise.resolve();
+      }
+      state.notisLoading = true;
+      state.notisError = null;
+      if (force) state.notis = null;
+      render();
+      return api('/api/notifications')
+        .then(function (data) {
+          state.notis = data;
+          state.notiUnread = (data && data.unread) || 0;
+        })
+        .catch(function (err) {
+          state.notisError = err.message || 'Could not load notifications.';
+        })
+        .then(function () {
+          state.notisLoading = false;
+          state.notisLoaded = true;
+          render();
+          maybeNotiHooks();
+          if (state.queuedNotis) {
+            state.queuedNotis = false;
+            loadNotifications(true);
+          }
+        });
+    }
+
     // Voters leaderboard: data and loading. Same contract as the other
     // tabs: one fetch per visit (a force reload clears what is on screen),
     // a queued refetch when a pull or Refresh lands mid-load, and the
@@ -7072,6 +7320,75 @@
             loadLeaderboard(true);
           }
         });
+    }
+
+    function syncNotisUrl() {
+      var url = new URL(location.href);
+      if (state.notisView) url.searchParams.set('notis', '1');
+      else url.searchParams.delete('notis');
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+    }
+
+    function openNotis() {
+      state.notisView = true;
+      state.membersView = false;
+      state.detail = '';
+      state.replyForm = null;
+      syncNotisUrl();
+      syncMembersUrl();
+      render();
+      window.scrollTo(0, 0);
+      loadNotifications(!state.notis);
+    }
+
+    function closeNotis() {
+      state.notisView = false;
+      state.detail = '';
+      state.replyForm = null;
+      syncNotisUrl();
+      render();
+      window.scrollTo(0, 0);
+      if (state.tab === 'votes') loadVotes(!state.votes);
+      else if (state.tab === 'watchlist') loadWatchlist(!state.watchlist);
+      else loadInbox(!state.inbox);
+    }
+
+    // Mark every row read in one call, then reload so the dots, the rows'
+    // data-noti-read and the bell badge all show the persisted truth.
+    function markAllNotisRead() {
+      if (state.notiReadAllBusy) return;
+      state.notiReadAllBusy = true;
+      api('/api/notifications/read-all', { method: 'POST' })
+        .then(function () {
+          state.notiReadAllBusy = false;
+          return loadNotifications(true);
+        })
+        .catch(function () {
+          state.notiReadAllBusy = false;
+          render();
+        });
+    }
+
+    // A notification row is a link into the proposal detail: switch to the
+    // Inbox tab, drop the center, and open the detail the same way the
+    // Discuss button does. A proposal that has left the loaded inbox (an
+    // older notification) falls back to an inbox reload, which re-renders
+    // the detail once the list holds it.
+    function openNotiDetail(sessionId) {
+      if (!sessionId) return;
+      state.tab = 'inbox';
+      state.compareView = false;
+      state.notisView = false;
+      state.detail = sessionId;
+      state.replyForm = null;
+      syncNotisUrl();
+      var url = new URL(location.href);
+      url.searchParams.set('tab', 'inbox');
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+      render();
+      window.scrollTo(0, 0);
+      if (findProposal(sessionId)) loadDetailComments();
+      else loadInbox(true);
     }
 
     function loadWatchlist(force) {
@@ -8292,6 +8609,40 @@
       });
     }
 
+    // Staging demo hooks for the notification center, one-shot and driven
+    // through the REAL controls: ?tap-bell=1 clicks the header bell (which
+    // opens the center) as soon as the shell has rendered; ?tap-readall=1
+    // clicks Mark all as read and ?tap-noti=<id> taps that row once the
+    // center has rendered its list. Called from loadNotifications' settle,
+    // which is exactly when those elements exist.
+    var notiHookDone = { bell: false, readall: false, row: false };
+    function maybeNotiHooks() {
+      if (!DEMO) return;
+      if (TAP_BELL && !notiHookDone.bell) {
+        var bell = document.querySelector('[data-noti-bell]');
+        if (bell) {
+          notiHookDone.bell = true;
+          bell.click();
+        }
+      }
+      if (!state.notisView || !state.notis || !state.notis.notifications) return;
+      if (TAP_READALL && !notiHookDone.readall) {
+        var readAllBtn = document.querySelector('[data-noti-readall]');
+        if (readAllBtn) {
+          notiHookDone.readall = true;
+          readAllBtn.click();
+        }
+      }
+      if (TAP_NOTI && !notiHookDone.row) {
+        var row = document.querySelector(
+          '[data-noti-link][data-session="' + TAP_NOTI + '"]');
+        if (row) {
+          notiHookDone.row = true;
+          row.click();
+        }
+      }
+    }
+
     // ---------------------------------------------------------------------
     // Read-tracking check hooks (demo only), one-shot each and driven
     // through the REAL controls (the Discuss button, the Mark all read
@@ -8656,6 +9007,24 @@
         }
         return;
       }
+      // Notification center controls: the Mark all as read button, the
+      // Voted/Mine/All chips, and a row tap into the proposal detail.
+      var readAllBtn = target.closest ? target.closest('[data-noti-readall]') : null;
+      if (readAllBtn) {
+        markAllNotisRead();
+        return;
+      }
+      var notiChip = target.closest ? target.closest('[data-noti-filter]') : null;
+      if (notiChip) {
+        state.notiFilter = notiChip.getAttribute('data-noti-filter');
+        render();
+        return;
+      }
+      var notiLink = target.closest ? target.closest('[data-noti-link]') : null;
+      if (notiLink) {
+        openNotiDetail(notiLink.getAttribute('data-session'));
+        return;
+      }
       var titleBtn = target.closest ? target.closest('[data-title-toggle]') : null;
       if (titleBtn) {
         toggleTitle(titleBtn);
@@ -8973,6 +9342,12 @@
       else openMembers();
     });
 
+    // The header bell toggles the notification center over the current tab.
+    document.getElementById('noti-bell').addEventListener('click', function () {
+      if (state.notisView) closeNotis();
+      else openNotis();
+    });
+
     // Header menu (fallback panel path: dismiss on an outside tap or
     // Escape; the kit's menu handles its own dismissal).
     document.getElementById('menu-btn').addEventListener('click', function () {
@@ -9038,13 +9413,18 @@
     for (var i = 0; i < tabButtons.length; i++) {
       tabButtons[i].addEventListener('click', function (event) {
         var tab = event.currentTarget.getAttribute('data-tab');
-        // Tapping a tab while the members directory is open goes back to
-        // that tab, even when it is the one underneath: close the
-        // directory and load the tab as if the switch had happened.
+        // Tapping a tab while the members directory or the notification
+        // center is open goes back to that tab, even when it is the one
+        // underneath: close the overlay and load the tab as if the switch
+        // had happened.
         var wasMembers = state.membersView;
+        var wasNotis = state.notisView;
         if (wasMembers) {
           state.membersView = false;
           syncMembersUrl();
+        } else if (wasNotis) {
+          state.notisView = false;
+          syncNotisUrl();
         } else if (tab === state.tab) {
           return;
         }
@@ -9103,6 +9483,13 @@
     if (searchBox && state.search) searchBox.value = state.search;
     var membersBox = document.getElementById('members-search');
     if (membersBox && state.memberQuery) membersBox.value = state.memberQuery;
+    // Notification-center hooks seed their rows before any load runs, so
+    // the boot's tab load only starts once they have settled: the badge
+    // loads with them, and any ?noti-detect=1 results arrive with the
+    // inbox load that noticed them (loadNotifications is called from its
+    // settle).
+    runNotiHooks().then(function () { return loadNotifications(); })
+      .then(function () {
     if (state.screen === 'compose') {
       // The ?compose=1 deep link opens the New proposal screen; the list
       // behind it is not shown, so its data loads when the user leaves
@@ -9120,6 +9507,7 @@
       if (AUTO_CAST) loadInbox(true);
     }
     else loadInbox(true);
+      });
 
     // The pinned own-position chip follows the scroll: visible while the
     // own row is above or below the fold, gone while it is on screen.

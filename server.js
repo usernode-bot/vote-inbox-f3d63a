@@ -615,6 +615,32 @@ async function migrate() {
       ON saved_searches (user_id, lower(name));
     COMMENT ON TABLE saved_searches IS 'staging:private';
   `);
+  // Notification center events: one person's record of the proposal status
+  // changes the app noticed for them while polling the inbox. Per-user data
+  // like my_votes and the watchlist, so staging:private. No foreign keys;
+  // proposal content stays on the platform. Rows older than the 30-day
+  // window stop being listed (the read filters them), and an event is
+  // announced once: detection skips a (user, session, kind) pair that
+  // already has a row here.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      kind VARCHAR(20) NOT NULL CHECK (kind IN ('threshold', 'merged', 'first_yes', 'one_vote_away')),
+      audience VARCHAR(20) NOT NULL DEFAULT 'voted',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      read_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS notifications_user_idx
+      ON notifications (user_id, created_at DESC);
+    COMMENT ON TABLE notifications IS 'staging:private';
+  `);
   // Snoozed proposals: one person's "hide this from my inbox until <date>"
   // marks. Like my_votes and watchlist this is per-user tracking data, so it
   // is staging:private. No foreign keys; proposal content stays on the
@@ -819,6 +845,100 @@ async function withMySnoozes(proposals, userId) {
     p.mySnooze = wake ? new Date(wake).toISOString() : null;
   }
   return proposals;
+}
+
+// ---------------------------------------------------------------------------
+// Notification center: the events the app notices for this user while
+// polling the inbox. Detection runs on every production inbox load (and on
+// a ?demo=1&noti-detect=1 staging load — the default demo stays
+// deterministic): each loaded proposal is matched against what the user has
+// a stake in, and the status change becomes one notification row. An event
+// is announced once — a row already existing for (user, session, kind)
+// mutes it forever after — and rows older than the 30-day window stop
+// being listed.
+// ---------------------------------------------------------------------------
+
+const NOTI_WINDOW_MS = 30 * 24 * 3600 * 1000;
+
+function notificationPayload(r) {
+  return {
+    id: r.id,
+    sessionId: r.session_id,
+    proposalId: r.proposal_id || null,
+    appSlug: r.app_slug || '',
+    appName: r.app_name || r.app_slug || '',
+    title: r.title,
+    kind: r.kind,
+    audience: r.audience || 'voted',
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : null,
+    read: r.read_at != null,
+  };
+}
+
+// The four events, matched against the freshly loaded proposals. A stake
+// means the user voted on it (a my_votes record — or, in demo, the
+// fixture's myVote — stamped onto p.myVote) or they opened it (its author
+// is them):
+//   threshold     they voted on it and it reached its vote threshold
+//   merged        they voted on it and it merged
+//   first_yes     it is theirs and detection observes a first yes on it
+//   one_vote_away it sits exactly one yes vote from its threshold — worth
+//                 a nudge only to someone who wants it to pass (a yes
+//                 voter or the author), not to a no voter.
+// A proposal both voted on and authored gets both roles, stored in the row
+// so the Voted and Mine filters can each surface it.
+async function detectNotifications(proposals, req) {
+  if (!req.user || !Array.isArray(proposals)) return;
+  try {
+    const username = String(req.user.username || '').trim().toLowerCase();
+    const stake = new Map(); // sessionId -> { voted, mine, p }
+    for (const p of proposals) {
+      const voted = p.myVote === 'yes' || p.myVote === 'no';
+      const mine = !!username && typeof p.author === 'string'
+        && p.author.trim().toLowerCase() === username;
+      if (!voted && !mine) continue;
+      stake.set(p.sessionId, { voted, mine, p });
+    }
+    if (!stake.size) return;
+    // An event is announced once per (user, session, kind): what is
+    // already recorded here never fires again.
+    const { rows: known } = await pool.query(
+      'SELECT session_id, kind FROM notifications WHERE user_id = $1 AND session_id = ANY($2)',
+      [req.user.id, [...stake.keys()]]);
+    const seen = new Set(known.map((r) => r.session_id + '|' + r.kind));
+    const inserts = [];
+    for (const { voted, mine, p } of stake.values()) {
+      const merged = p.status === 'merged';
+      const kinds = [];
+      if (voted && merged) kinds.push('merged');
+      else if (voted && p.required != null && p.yes >= p.required) kinds.push('threshold');
+      if (mine && p.yes >= 1) kinds.push('first_yes');
+      if (p.needed === 1 && !merged && (p.myVote === 'yes' || mine)) {
+        kinds.push('one_vote_away');
+      }
+      for (const kind of kinds) {
+        if (seen.has(p.sessionId + '|' + kind)) continue;
+        seen.add(p.sessionId + '|' + kind);
+        inserts.push({
+          p,
+          kind,
+          audience: [voted ? 'voted' : null, mine ? 'mine' : null]
+            .filter(Boolean).join(',') || 'voted',
+        });
+      }
+    }
+    for (const { p, kind, audience } of inserts) {
+      await pool.query(`
+        INSERT INTO notifications
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title, kind, audience, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [req.user.id, req.user.username, p.appSlug || '', p.appName || '',
+          p.sessionId, p.proposalId || null, p.title, kind, audience, req.now]);
+    }
+  } catch {
+    // Detection must never break the inbox load that noticed the events;
+    // a failed write just means a missed announcement.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1337,6 +1457,32 @@ function applyQueueScenario(proposals, req) {
 //                      (staging-demo-user), so the per-user rule is
 //                      observable: another member's snooze never hides a
 //                      proposal from the caller.
+// Notification check fixtures (staging demo only), applied to a demo inbox
+// load before any event detection could see it:
+//   ?noti-vote=<id,id,...>  the fixture marks those proposals voted 'yes'
+//                           for this load, so the merged and one-vote-away
+//                           events are reachable without touching storage
+//                           (the way ?preset-star= works for stars).
+//   ?noti-mine=<id,id,...>  the fixture sets those proposals' author to the
+//                           caller, so the first-yes event is reachable.
+// Both are in-memory only, the way ?splits= is.
+function applyDemoNotiFixtures(req, proposals) {
+  const votes = String(req.query['noti-vote'] || '').split(',')
+    .map((s) => s.trim()).filter(Boolean);
+  const mine = String(req.query['noti-mine'] || '').split(',')
+    .map((s) => s.trim()).filter(Boolean);
+  if ((!votes.length && !mine.length) || !Array.isArray(proposals)) return;
+  const byId = new Map(proposals.map((p) => [p.sessionId, p]));
+  for (const id of votes) {
+    const p = byId.get(id);
+    if (p) p.myVote = 'yes';
+  }
+  for (const id of mine) {
+    const p = byId.get(id);
+    if (p) p.author = req.user.username;
+  }
+}
+
 // Both write only fake or check-fixture rows and only under ?demo=1.
 async function applyDemoSnoozeFixtures(req) {
   const past = String(req.query['snooze-past'] || '').trim();
@@ -1481,6 +1627,11 @@ async function finishDemoInbox(req, demo) {
   // rule the stars follow: a bookmark recorded through the demo save route
   // (or the ?set-bookmark= check hook) survives a reload on the cards.
   await withMyBookmarks(demo.proposals, req.user.id, req);
+  // Event detection is opt-in on the demo fixture (?noti-detect=1): the
+  // default demo stays deterministic.
+  if (req.query['noti-detect'] === '1') {
+    await detectNotifications(demo.proposals, req);
+  }
   demo.celebrations = [];
   if (req.query.celeb === '1') {
     await applyDemoCelebrationFixtures(req, demo.proposals);
@@ -1792,6 +1943,7 @@ app.get('/api/inbox', async (req, res) => {
     // check's plain ?demo=1 load. Production always stamps.
     if (req.query.demo === '1' && IS_STAGING) {
       const demo = demoInboxPayload(req);
+      applyDemoNotiFixtures(req, demo.proposals);
       await applyDemoSnoozeFixtures(req);
       await finishDemoInbox(req, demo);
       return res.json(demo);
@@ -1801,6 +1953,7 @@ app.get('/api/inbox', async (req, res) => {
       // plain local launch; keep the screen reviewable there with fixtures.
       if (IS_STAGING) {
         const demo = demoInboxPayload(req);
+        applyDemoNotiFixtures(req, demo.proposals);
         await applyDemoSnoozeFixtures(req);
         await finishDemoInbox(req, demo);
         return res.json(demo);
@@ -1835,6 +1988,10 @@ app.get('/api/inbox', async (req, res) => {
     await withMyStars(proposals, req.user.id, req);
     await withMyBookmarks(proposals, req.user.id, req);
     await withMyReads(proposals, req.user.id);
+
+    // Notice proposal status changes for this user while the fresh list is
+    // here (a failed detection never blocks the inbox response).
+    await detectNotifications(proposals, req);
 
     // Most votes-needed first; unknown requirement last, then fewest yes.
     proposals.sort(neededFirst);
@@ -2569,6 +2726,94 @@ app.post('/api/unsnooze', async (req, res) => {
       'DELETE FROM snoozes WHERE user_id = $1 AND session_id = $2',
       [req.user.id, sessionId]);
     res.json({ ok: true, removed: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Notification center routes. The list drops rows older than the 30-day
+// window (they stay in the table; a reload just never shows them) and
+// orders newest first. The unread count is the bell badge's number and
+// persists across reloads because it is read back from the table.
+// ---------------------------------------------------------------------------
+
+app.get('/api/notifications', async (req, res) => {
+  try {
+    const cutoff = new Date(req.now.getTime() - NOTI_WINDOW_MS);
+    const { rows } = await pool.query(
+      `SELECT * FROM notifications
+       WHERE user_id = $1 AND created_at >= $2
+       ORDER BY created_at DESC, id DESC
+       LIMIT 200`,
+      [req.user.id, cutoff]);
+    let unread = 0;
+    for (const r of rows) if (r.read_at == null) unread++;
+    res.json({ notifications: rows.map(notificationPayload), unread });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/notifications/read-all', async (req, res) => {
+  try {
+    await pool.query(
+      'UPDATE notifications SET read_at = $2 WHERE user_id = $1 AND read_at IS NULL',
+      [req.user.id, req.now]);
+    res.json({ ok: true, unread: 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Named notification fixtures for the checks (staging only, like the saved
+// searches seed): seeding REPLACES the caller's rows so every run starts
+// from a known list. 'default' covers the newest-first order (2h / 1d / 2d
+// / 3d), the unread badge (three unread), a read row without a dot, both
+// filter audiences and a 35-day-old row the 30-day window drops. 'none'
+// empties the list for the empty-state and hidden-badge checks.
+const NOTIFICATION_SEEDS = {
+  default: [
+    { sessionId: 'demo-5', proposalId: '90205', appSlug: 'staging-demo-notes',
+      appName: 'Staging Demo Notes', title: 'Staging demo proposal: pinned notes',
+      kind: 'merged', audience: 'voted', ageMs: 2 * 3600 * 1000, read: false },
+    { sessionId: 'demo-3', proposalId: '90204', appSlug: 'staging-demo-app',
+      appName: 'Staging Demo App', title: 'Staging demo proposal: export to CSV',
+      kind: 'threshold', audience: 'voted', ageMs: 24 * 3600 * 1000, read: false },
+    { sessionId: 'demo-2', proposalId: '90201', appSlug: 'staging-demo-app',
+      appName: 'Staging Demo App', title: 'Staging demo proposal: weekly summary email',
+      kind: 'first_yes', audience: 'mine', ageMs: 2 * 24 * 3600 * 1000, read: false },
+    { sessionId: 'demo-1', proposalId: '90203', appSlug: 'staging-demo-app',
+      appName: 'Staging Demo App', title: 'Staging demo proposal: add a dark mode toggle',
+      kind: 'one_vote_away', audience: 'voted', ageMs: 3 * 24 * 3600 * 1000, read: true },
+    { sessionId: 'demo-6', proposalId: '90206', appSlug: 'staging-demo-notes',
+      appName: 'Staging Demo Notes', title: 'Staging demo proposal: tag colours',
+      kind: 'threshold', audience: 'voted', ageMs: 35 * 24 * 3600 * 1000, read: false },
+  ],
+};
+
+app.post('/api/notifications/seed', async (req, res) => {
+  const body = req.body || {};
+  if (!IS_STAGING) return res.status(400).json({ error: 'Demo seeding is staging-only' });
+  const names = Array.isArray(body.names)
+    ? body.names.filter((n) => typeof n === 'string' && n.trim()) : [];
+  try {
+    await pool.query('DELETE FROM notifications WHERE user_id = $1', [req.user.id]);
+    for (const name of names) {
+      const seed = NOTIFICATION_SEEDS[name.trim()];
+      if (!seed) continue;
+      for (const n of seed) {
+        const createdAt = new Date(Date.now() - n.ageMs);
+        await pool.query(`
+          INSERT INTO notifications
+            (user_id, username, app_slug, app_name, session_id, proposal_id, title, kind, audience, created_at, read_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [req.user.id, req.user.username, n.appSlug, n.appName, n.sessionId,
+            n.proposalId, n.title, n.kind, n.audience, createdAt,
+            n.read ? createdAt : null]);
+      }
+    }
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
