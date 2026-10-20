@@ -111,6 +111,9 @@
           <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">Open proposals across Homeroom</p>
         </div>
       </div>
+      <button id="new-proposal-btn" data-new-proposal aria-label="New proposal" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      </button>
       <button id="members-btn" data-members-link type="button" aria-label="Members"
         class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-600 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
         <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -133,12 +136,16 @@
     </p>
     <p id="votes-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="watchlist-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
+    <p id="following-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
+    <p id="saved-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="members-summary" data-members-summary class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
-    <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
+    <div id="list-controls" class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
       <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
+        <button data-tab="following" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Following<span class="tab-badge"></span></button>
+        <button data-tab="saved" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Saved<span class="tab-badge"></span></button>
         <button data-tab="watchlist" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Watchlist<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span data-tab-count></span><span class="tab-badge"></span></button>
         <button data-tab="leaderboard" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Leaderboard<span class="tab-badge"></span></button>
@@ -308,6 +315,10 @@
     // reachable by a check. Same idea for ?allmerged=1 and the Hide merged
     // toggle. Neither is ever sent without demo data.
     var ALL_VOTED = params.get('allvoted') === '1';
+    // Deep link ?app-filter=open opens the app filter once the inbox has
+    // loaded, for shareable links and for the staging checks, which cannot
+    // tap. Same shape as ?q=: a one-load hint read at startup.
+    var APP_FILTER_OPEN = params.get('app-filter') === 'open';
     // Staging-check fixture: ?openfilter=1 opens the app filter dropdown on
     // load, so a check can assert on the list without clicking. Never sent
     // without demo data.
@@ -346,6 +357,26 @@
     // ?tap-share=<sessionId> (demo only) taps that card's share button once
     // the inbox has rendered, the way ?tap-no=1 taps a vote button.
     var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
+    // ?compose=1 opens the New proposal screen on load. A real deep link,
+    // not a demo fixture: the same screen the header + button opens, and it
+    // works in every environment. The other compose fixture parameters
+    // (template, switch-template, set-title, set-body, send) replay one
+    // user path through the real controls, the way ?tap-no=1 does. Demo
+    // gated like the other check fixtures.
+    var COMPOSE = params.get('compose') === '1';
+    var COMPOSE_TEMPLATE = DEMO ? (params.get('template') || '') : '';
+    // ?switch-template=feature means: tap the Bugfix chip first (so there is
+    // a prefill on screen), then switch to the named one — proving the
+    // switch replaces the prefill rather than appending to it.
+    var COMPOSE_SWITCH = DEMO ? (params.get('switch-template') || '') : '';
+    var COMPOSE_TITLE = DEMO ? (params.get('set-title') || '') : '';
+    var COMPOSE_BODY = DEMO ? (params.get('set-body') || '') : '';
+    var COMPOSE_SEND = DEMO && params.get('send') === '1';
+    // ?back=1 taps the compose screen's back chevron at the end of the
+    // fixture chain, so a check can pin that leaving compose restores the
+    // main list.
+    var COMPOSE_BACK = DEMO && params.get('back') === '1';
+
     // Share-as-image hooks (demo only), one URL per check behaviour:
     // ?shareimg=sheet|fallback|error forces which path the share-image card
     // uses (error makes the draw throw, through the real error path);
@@ -460,6 +491,23 @@
     // row as already seen, so the no-badge state is reachable too.
     var WATCH_EMPTY = DEMO && params.get('watch-empty') === '1';
     var WATCH_SEEN = DEMO && params.get('watch-seen') === '1';
+    // Bookmark hooks, all demo only, driven through the real controls the way
+    // the star hooks are. ?tap-bookmark=<id> taps that card's bookmark button
+    // once the list has rendered (one-shot, retried on the next render);
+    // ?preset-bookmark=<id,...> is forwarded to the demo inbox so those cards
+    // render bookmarked for that load without touching storage;
+    // ?set-bookmark=<id> bookmarks for real (a DB row for the signed-in
+    // account) then reloads at a ?saved-set=<id> marker, so persistence is
+    // observable; ?tap-unbookmark=<id> taps an already-bookmarked card's
+    // button (paired with ?preset-bookmark=, which needs no storage);
+    // ?saved-mine=<ids> asks the demo Saved tab to merge the caller's own
+    // real rows (recorded via ?set-bookmark=) into the fixture;
+    // ?saved-empty=1 serves no rows, so the empty state is reachable.
+    var TAP_BOOKMARK = DEMO ? (params.get('tap-bookmark') || '') : '';
+    var PRESET_BOOKMARK = DEMO ? (params.get('preset-bookmark') || '') : '';
+    var TAP_UNBOOKMARK = DEMO ? (params.get('tap-unbookmark') || '') : '';
+    var SAVED_MINE = DEMO ? (params.get('saved-mine') || '') : '';
+    var SAVED_EMPTY = DEMO && params.get('saved-empty') === '1';
     // Weekly-digest hooks, all demo only. ?digest=week|quiet asks the demo
     // my-votes route for the digest fixture rows (see demoDigestRows in
     // server.js) instead of the default three; the frontend re-stamps their
@@ -541,6 +589,12 @@
     var MARK_ALL_READ = DEMO && params.get('markallread') === '1';
     var OPEN_MERGED = DEMO && params.get('open-merged') === '1';
     var TAP_HIDE_READ = DEMO && params.get('tap-hide-read') === '1';
+    // New-since-last-visit hook (demo only): ?newbadge=1 sets the
+    // remembered newest proposal to the demo-6 fixture for that load, so
+    // cards proposed after it (demo-2, demo-4) read as New. Client-only:
+    // nothing is forwarded to /api/inbox; the comparison and the write-back
+    // run the real code (see applyNewSince).
+    var NEWBADGE = DEMO && params.get('newbadge') === '1';
     // Demo-inbox params forwarded to /api/inbox: the read-check fixtures make
     // the server reset the caller's rows, and ?read=1 overlays the persisted
     // reads on demand.
@@ -657,11 +711,37 @@
 
     var state = {
       tab: params.get('tab') === 'votes' ? 'votes'
+        : params.get('tab') === 'saved' ? 'saved'
         : params.get('tab') === 'watchlist' ? 'watchlist'
+        : params.get('tab') === 'following' ? 'following'
         : params.get('tab') === 'leaderboard' ? 'leaderboard' : 'inbox',
+      // Which top-level screen is showing: 'main' (the two tabs) or
+      // 'compose' (the New proposal screen). Not persisted; the ?compose=
+      // parameter opens compose for one load, the + button after that.
+      screen: COMPOSE ? 'compose' : 'main',
+      compose: {
+        // Which template chip is selected: 'bugfix' | 'feature' | 'copy' |
+        // 'blank' | null (nothing picked yet). null keeps both fields empty.
+        template: null,
+        title: '',
+        body: '',
+        sending: false,
+        error: null,
+        // Title of the last sent proposal, which switches the screen to the
+        // confirmation block; null means the compose form is showing.
+        sentTitle: null,
+        sent: null,
+        sentLoaded: false,
+        sentError: false,
+      },
       inbox: null,
       votes: null,
       watchlist: null,
+      // Saved tab: the signed-in user's bookmarked proposals (one load,
+      // same shape as watchlist.rows). savedPending mirrors starPending for
+      // the bookmark buttons' in-flight state.
+      saved: null,
+      savedPending: {},
       // Pending merge celebrations, from the inbox payload (one row per
       // merged proposal the user voted on). Each card is rendered once and
       // then marked shown server-side, so the next load no longer returns
@@ -673,6 +753,10 @@
       celebShownPromise: null,
       celebDismissPromise: null,
       inboxLoadedAt: null,
+      // Baseline time (ms) for the "New" badges on this load, set once per
+      // successful fetch by applyNewSince (see NEWEST_SEEN_KEY). null =
+      // no baseline (first visit, blocked storage): nothing shows as New.
+      newSinceMs: null,
       filter: '',
       filterName: '',
       // Tag filter, one of the fixed list or '' for all. Persisted like the
@@ -718,6 +802,7 @@
       loadingInbox: false,
       loadingVotes: false,
       loadingWatchlist: false,
+      loadingSaved: false,
       errorInbox: null,
       errorVotes: null,
       // Share-as-image preview on My Votes: the drawn card record
@@ -725,6 +810,7 @@
       // Frontend memory only; Close or a reload clears it.
       shareImage: null,
       errorWatchlist: null,
+      errorSaved: null,
       pending: {},
       // Star toggles in flight, per session and per watchlist row.
       starPending: {},
@@ -738,6 +824,7 @@
       queuedInbox: false,
       queuedVotes: false,
       queuedWatchlist: false,
+      queuedSaved: false,
       // Session ids whose card title the user expanded with More. A re-render
       // (a vote, a filter change) keeps those titles expanded; not persisted,
       // a reload starts collapsed again.
@@ -923,6 +1010,74 @@
 
     function isVoted(p) {
       return p.myVote === 'yes' || p.myVote === 'no';
+    }
+
+    // ------------------------------------------------------------------
+    // New-since-last-visit badges. localStorage remembers the newest
+    // proposal seen on this device ({ id, at }) and applyNewSince turns it
+    // into a baseline time once per successful inbox load: cards proposed
+    // after that baseline show a small "New" badge beside the title until
+    // the next fetch. Per device and browser, like the hide-voted switch.
+    // Storage can be refused in an iframe — then nothing shows as New.
+    // ------------------------------------------------------------------
+
+    var NEWEST_SEEN_KEY = 'vote-inbox:newest-seen';
+
+    function loadNewestSeen() {
+      try {
+        var raw = localStorage.getItem(NEWEST_SEEN_KEY);
+        if (!raw) return null;
+        var rec = JSON.parse(raw);
+        return rec && rec.id ? rec : null;
+      } catch (e) { return null; }
+    }
+
+    function saveNewestSeen(rec) {
+      try { localStorage.setItem(NEWEST_SEEN_KEY, JSON.stringify(rec)); } catch (e) { /* not persistable here */ }
+    }
+
+    // Called once per successful load, right after reanchorDemo. Re-renders
+    // (votes, filters, tab switches) never call this, so badges persist
+    // until the next fetch; a failed fetch leaves the baseline and the key
+    // alone.
+    function applyNewSince(data) {
+      // ?newbadge=1 (demo only) swaps the remembered record for an older
+      // fixture so the badge is check-reachable; the rest runs the real code.
+      var baseline = NEWBADGE ? { id: 'demo-6' } : loadNewestSeen();
+      var list = Array.isArray(data && data.proposals) ? data.proposals : [];
+      // Newest proposal on this load, from everything loaded (unfiltered),
+      // so filters or hide toggles can never make something look new later.
+      var newest = null;
+      for (var i = 0; i < list.length; i++) {
+        var t = list[i].proposedAt ? Date.parse(list[i].proposedAt) : NaN;
+        if (!isNaN(t) && (!newest || t > newest.t)) newest = { id: list[i].sessionId, at: list[i].proposedAt, t: t };
+      }
+      // Baseline time: the remembered proposal's own time when it is still
+      // loaded (keeps plain ?demo=1 loads deterministic even though
+      // reanchorDemo moves fixture times forward), else the stored at stamp
+      // (the proposal has left the inbox). No record or an unparseable time
+      // means no badges — a first visit marks nothing New.
+      state.newSinceMs = null;
+      if (baseline) {
+        var bt = NaN;
+        for (var j = 0; j < list.length; j++) {
+          if (list[j].sessionId === baseline.id) {
+            bt = list[j].proposedAt ? Date.parse(list[j].proposedAt) : NaN;
+            break;
+          }
+        }
+        if (isNaN(bt)) bt = baseline.at ? Date.parse(baseline.at) : NaN;
+        if (!isNaN(bt)) state.newSinceMs = bt;
+      }
+      // Overwritten after every successful load; an empty inbox writes
+      // nothing, so the previous baseline is kept.
+      if (newest) saveNewestSeen({ id: newest.id, at: newest.at });
+    }
+
+    function isNewSince(p) {
+      if (state.newSinceMs == null) return false;
+      var t = p.proposedAt ? Date.parse(p.proposedAt) : NaN;
+      return !isNaN(t) && t > state.newSinceMs;
     }
 
     // ------------------------------------------------------------------
@@ -1146,6 +1301,91 @@
     }
 
     // ------------------------------------------------------------------
+    // Followed apps. A set of slugs persisted in localStorage; the app
+    // filter rows carry a follow star for each and the Following tab lists
+    // the followed apps' open proposals. The Inbox never changes shape
+    // because of a follow — the set only adds a tab. Storage can be
+    // refused in an iframe — follows then just don't persist.
+    // ------------------------------------------------------------------
+
+    var FOLLOW_KEY = 'vote-inbox:follows';
+
+    function loadFollows() {
+      try {
+        var v = JSON.parse(localStorage.getItem(FOLLOW_KEY) || '[]');
+        if (!Array.isArray(v)) return [];
+        var out = [];
+        for (var i = 0; i < v.length; i++) {
+          if (typeof v[i] === 'string' && v[i] && out.indexOf(v[i]) === -1) out.push(v[i]);
+        }
+        return out;
+      } catch (e) { return []; }
+    }
+
+    function saveFollows(list) {
+      try { localStorage.setItem(FOLLOW_KEY, JSON.stringify(list)); } catch (e) { /* not persistable here */ }
+    }
+
+    state.follows = loadFollows();
+
+    // One-load cleanup for the set-follow hook below: the reloaded page has
+    // restored the follows into state, then empties them again, so the hook
+    // leaves storage the way it found it (a check run shares one browser
+    // profile across routes; later routes must not inherit the set).
+    if (params.get('clear-set-follow') === '1') saveFollows([]);
+
+    // Staging-check hook: ?set-follow=<slug,slug> writes the follow set the
+    // way taps on the rows' stars would, then reloads without the
+    // parameter, so one check URL observes follow → reload → still followed
+    // (behavior 7). The plain routes never touch the set from a parameter.
+    var setFollowParam = params.get('set-follow');
+    if (setFollowParam && DEMO) {
+      var seededFollows = state.follows.slice();
+      setFollowParam.split(',').forEach(function (slug) {
+        var s = slug.trim();
+        if (s && seededFollows.indexOf(s) === -1) seededFollows.push(s);
+      });
+      saveFollows(seededFollows);
+      var remainingFollowParams = new URLSearchParams(params);
+      remainingFollowParams.delete('set-follow');
+      remainingFollowParams.set('clear-set-follow', '1');
+      var remainingFollowQ = remainingFollowParams.toString();
+      location.replace(location.pathname + (remainingFollowQ ? '?' + remainingFollowQ : '') + location.hash);
+      return;
+    }
+
+    // Staging-check hook: ?clear-follows=1 empties the follow set for one
+    // load (no reload), so the Following tab's no-follows empty state is
+    // reachable by checks regardless of what earlier routes stored. Demo only.
+    if (params.get('clear-follows') === '1' && DEMO) {
+      state.follows = [];
+      saveFollows([]);
+    }
+
+    // Staging-check hooks: ?tap-follow=<slug> and ?tap-unfollow=<slug> tap
+    // that app row's follow star through the real delegated click handler
+    // once the filter has rendered (pair with ?openfilter=1). localStorage
+    // is synchronous, so the stored set is adjusted right here before any
+    // render: a tap-follow URL always acts from an unfollowed row and a
+    // tap-unfollow URL from a followed one, whatever earlier checks left
+    // behind. Demo only.
+    var tapFollowParam = params.get('tap-follow');
+    var tapUnfollowParam = params.get('tap-unfollow');
+    if (tapFollowParam && DEMO) {
+      var unfollowed = state.follows.slice();
+      var at = unfollowed.indexOf(tapFollowParam);
+      if (at !== -1) { unfollowed.splice(at, 1); saveFollows(unfollowed); state.follows = unfollowed; }
+    }
+    if (tapUnfollowParam && DEMO) {
+      var refollowed = state.follows.slice();
+      if (refollowed.indexOf(tapUnfollowParam) === -1) {
+        refollowed.push(tapUnfollowParam);
+        saveFollows(refollowed);
+        state.follows = refollowed;
+      }
+    }
+
+    // ------------------------------------------------------------------
     // Tag filter: fixed-list tags (bug, feature, copy, ux) served as the
     // proposal's normalized `tags`. The chosen tag persists like the app
     // filter, in its own key; the saved value is validated against the
@@ -1236,6 +1476,54 @@
         }
         var remainingStarQ = remainingStarParams.toString();
         location.replace(location.pathname + (remainingStarQ ? '?' + remainingStarQ : '') + location.hash);
+      });
+      return;
+    }
+
+    // Staging-check hook: ?tap-bookmark=<sessionId> taps that card's bookmark
+    // button through the real delegated click handler after the list has
+    // rendered. Because checks share one database and one account, it first
+    // clears any stored bookmark for that proposal (one unsave POST, then a
+    // reload with ?bookmark-ensured=1) so the tap always acts from an
+    // unsaved card. Demo only. Pair ?tap-unbookmark=<same id> with
+    // ?preset-bookmark=<same id> (display-only) to reach the unsave
+    // direction instead: the card renders bookmarked, the tap unsaves, and
+    // no stored row is needed either way.
+    if (TAP_BOOKMARK && DEMO && !params.has('bookmark-ensured')) {
+      api('/api/bookmarks/unsave', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ demo: true, sessionId: TAP_BOOKMARK }),
+      }).catch(function () {}).then(function () {
+        var remainingTapParams = new URLSearchParams(params);
+        remainingTapParams.set('bookmark-ensured', '1');
+        var remainingTapQ = remainingTapParams.toString();
+        location.replace(location.pathname + (remainingTapQ ? '?' + remainingTapQ : '') + location.hash);
+      });
+      return;
+    }
+
+    // Staging-check hook: ?set-bookmark=<sessionId> bookmarks that demo
+    // proposal for real (a demo save records the row for the signed-in
+    // account, the same way a demo star or vote is recorded), then reloads
+    // without the parameter, so one check URL observes bookmark → reload →
+    // still bookmarked from the server. Opening it on the Saved tab also
+    // turns on ?saved-mine= for the reloaded page, so the persisted row is
+    // listed there. Demo only.
+    var setBookmarkParam = params.get('set-bookmark');
+    if (setBookmarkParam && DEMO) {
+      api('/api/bookmarks/save', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ demo: true, sessionId: setBookmarkParam }),
+      }).catch(function () {}).then(function () {
+        var remainingBmParams = new URLSearchParams(params);
+        remainingBmParams.delete('set-bookmark');
+        if (remainingBmParams.get('tab') === 'saved') {
+          remainingBmParams.set('saved-mine', setBookmarkParam);
+        }
+        var remainingBmQ = remainingBmParams.toString();
+        location.replace(location.pathname + (remainingBmQ ? '?' + remainingBmQ : '') + location.hash);
       });
       return;
     }
@@ -2143,6 +2431,9 @@
     var TAG_TRIGGER_IDLE = 'flex shrink-0 items-center justify-between gap-2 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
     var TAG_TRIGGER_ACTIVE = 'flex shrink-0 items-center justify-between gap-2 whitespace-nowrap rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
     var TAG_CHIP = 'inline-block whitespace-nowrap rounded-full bg-zinc-200/70 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
+    // "New" badge on cards proposed since the last inbox load (see
+    // NEWEST_SEEN_KEY). Violet, to match the unread dot it sits beside.
+    var NEW_BADGE = 'mr-1.5 inline-block whitespace-nowrap rounded-full bg-violet-100 px-1.5 py-px align-middle text-[11px] font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300';
     var TAG_CHIP_COUNT = 'font-normal tabular-nums text-zinc-500 dark:text-zinc-400';
     var FILTER_CHECK = '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
     var FILTER_ALL_ICON = '<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400" aria-hidden="true">'
@@ -2468,6 +2759,24 @@
         + (busy ? ' disabled' : '')
         + ' class="' + (starred ? STAR_ACTIVE_CLASS : STAR_IDLE_CLASS) + '">'
         + (starred ? STAR_FILLED_HTML : STAR_OUTLINE_HTML) + '</button>';
+    }
+
+    // Bookmark: a quiet ghost button on every proposal card and in the
+    // detail's action bar, the same idiom as Star. Bookmarked uses the app's
+    // violet accent; whole literals for the Tailwind compiler.
+    var BOOKMARK_ICON_PATH = 'm19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z';
+    var BOOKMARK_OUTLINE_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + BOOKMARK_ICON_PATH + '"/></svg><span>Bookmark</span>';
+    var BOOKMARK_FILLED_HTML = '<svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="' + BOOKMARK_ICON_PATH + '"/></svg><span>Bookmarked</span>';
+    var BOOKMARK_IDLE_CLASS = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
+    var BOOKMARK_ACTIVE_CLASS = 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-violet-600 transition-colors hover:text-violet-500 dark:text-violet-300 dark:hover:text-violet-200';
+
+    function bookmarkToggleButton(sessionId, bookmarked, busy) {
+      return '<button data-bookmark-toggle data-session="' + esc(sessionId) + '"'
+        + ' aria-pressed="' + (bookmarked ? 'true' : 'false') + '"'
+        + ' aria-label="' + (bookmarked ? 'Remove from Saved' : 'Save for later') + '"'
+        + (busy ? ' disabled' : '')
+        + ' class="' + (bookmarked ? BOOKMARK_ACTIVE_CLASS : BOOKMARK_IDLE_CLASS) + '">'
+        + (bookmarked ? BOOKMARK_FILLED_HTML : BOOKMARK_OUTLINE_HTML) + '</button>';
     }
 
     // Snooze: a quiet ghost button on each open proposal card (not on cards
@@ -2977,6 +3286,11 @@
         // this account has never opened. Read cards render the title alone.
         + (isRead(p) ? ''
           : '<span data-unread-dot aria-label="Unread" class="mr-1.5 inline-block h-2 w-2 rounded-full bg-violet-600 align-middle dark:bg-violet-400"></span>')
+        // New badge: proposed since this device's last inbox load (see
+        // isNewSince). A label, not a button — no click handling.
+        + (isNewSince(p)
+          ? '<span data-new-badge aria-label="New since your last visit" class="' + NEW_BADGE + '">New</span>'
+          : '')
         + esc(p.title) + '</h2>'
         + tagChipsRow(p)
         + changeSummaryRow(p)
@@ -2988,6 +3302,8 @@
         + (p.author ? 'by @' + esc(p.author) : '') + '</p>'
         + '<div class="' + cardFooterBtnsClass() + '">'
         + starToggleButton(p.sessionId, !!p.myStar, !!state.starPending['star:' + p.sessionId])
+        + bookmarkToggleButton(p.sessionId, !!p.myBookmark,
+          !!state.savedPending['bookmark:' + p.sessionId])
         + (!snoozed ? snoozeToggleButton(p.sessionId) : '')
         + discussButton(p)
         + compareButton(p)
@@ -3491,6 +3807,8 @@
         + ' class="' + VOTE_YES_ROW + '"' + (disabled ? ' disabled' : '') + '>Yes</button>'
         + '<button data-vote="no" data-session="' + esc(p.sessionId) + '"'
         + ' class="' + VOTE_NO_ROW + '"' + (disabled ? ' disabled' : '') + '>No</button>'
+        + bookmarkToggleButton(p.sessionId, !!p.myBookmark,
+          !!state.savedPending['bookmark:' + p.sessionId])
         + (p.url
           ? '<button data-share-link data-url="' + esc(p.url) + '"'
             + (copy ? ' data-share-mode="copy"' : ' data-share-mode="sheet"')
@@ -3786,6 +4104,55 @@
         + '</article>';
     }
 
+    // One Saved row: the app name, the proposal title, the row's current
+    // status pill (from the inbox data when it holds the proposal, so a
+    // merged save shows Merged) and the date it was saved. The bookmark
+    // button is pressed here; tapping it unsaves and drops the row at once.
+    function savedRow(r) {
+      var statusPill = '';
+      var key = null;
+      // The server supplies a status when it has one (demo rows); otherwise
+      // fall back to the loaded inbox data (no extra platform calls).
+      if (r.status) {
+        key = r.status === 'proposed' ? 'voting' : (r.status || 'voting');
+      } else if (state.inbox && state.inbox.proposals) {
+        for (var i = 0; i < state.inbox.proposals.length; i++) {
+          if (state.inbox.proposals[i].sessionId === r.sessionId) {
+            key = state.inbox.proposals[i].status === 'proposed'
+              ? 'voting' : (state.inbox.proposals[i].status || 'voting');
+            break;
+          }
+        }
+      }
+      if (key) {
+        var style = STATUS_STYLE[key] || STATUS_STYLE.closed;
+        statusPill = '<span class="whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold '
+          + style[1] + '">' + style[0] + '</span>';
+      }
+      var savedDate = '';
+      if (r.savedAt && isFinite(new Date(r.savedAt).getTime())) {
+        savedDate = new Date(r.savedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      }
+      return '<article data-saved-row data-session-id="' + esc(r.sessionId) + '"'
+        + ' class="' + CARD_CLASS + '">'
+        + '<div class="flex items-start justify-between gap-2">'
+        + '<span class="flex min-w-0 items-center gap-1.5">'
+        + appAvatar({ appSlug: r.appSlug, appName: r.appName, icon: r.icon })
+        + '<span class="truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">' + esc(r.appName || r.appSlug) + '</span>'
+        + '</span>'
+        + statusPill
+        + '</div>'
+        + '<h2 class="line-clamp-2 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">' + esc(r.title) + '</h2>'
+        + '<div class="flex items-center justify-between gap-2">'
+        + (savedDate
+          ? '<p data-saved-date class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">Saved ' + esc(savedDate) + '</p>'
+          : '<span></span>')
+        + bookmarkToggleButton(r.sessionId, true,
+          !!state.savedPending['bookmark:' + r.sessionId])
+        + '</div>'
+        + '</article>';
+    }
+
     function skeletonCard() {
       return '<div class="animate-pulse rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70">'
         + '<div class="flex items-center justify-between gap-2">'
@@ -4050,18 +4417,173 @@
         + '</div>';
     }
 
+    // ------------------------------------------------------------------
+    // New proposal screen: template picker, prefilled (and fully
+    // editable) title and description, Send, and the Sent list.
+    //
+    // A template only FILLS the two fields: the prefill lands in ordinary
+    // inputs the user edits freely before sending, and what is sent is
+    // whatever the fields hold at that moment. Picking another template
+    // refills both fields, so switching is an undoable-by-typing choice,
+    // not a merge.
+    // ------------------------------------------------------------------
+
+    var TEMPLATES = [
+      { id: 'bugfix', label: 'Bugfix',
+        title: 'Fix: [what is broken]',
+        body: 'Problem\n[What is broken and where it shows up.]\n\nSteps to reproduce\n1. [First step]\n2. [Second step]\n\nExpected\n[What should happen instead.]\n\nFix\n[What you propose changing.]' },
+      { id: 'feature', label: 'Feature',
+        title: 'Add [feature name]',
+        body: 'What\n[The feature in one sentence.]\n\nWhy\n[The problem it solves or the value it adds.]\n\nHow it works\n[What a person sees, step by step.]\n\nScope\n[What is included, and what is left out.]' },
+      { id: 'copy', label: 'Copy change',
+        title: 'Copy change: [where]',
+        body: 'Where\n[The screen or text that changes.]\n\nCurrent text\n[What it says today.]\n\nNew text\n[What it should say.]\n\nReason\n[Why the new wording is better.]' },
+      { id: 'blank', label: 'Blank', title: '', body: '' },
+    ];
+
+    // Whole-literal class strings for the Tailwind compiler. The back
+    // button mirrors the header's circular icon buttons; the fields mirror
+    // the inbox search box's look.
+    var COMPOSE_BACK_CLASS = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400';
+    var COMPOSE_CHIP_ACTIVE = 'rounded-full bg-violet-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-sm transition-transform active:scale-95';
+    var COMPOSE_CHIP_IDLE = 'rounded-full border border-zinc-300 bg-white px-3.5 py-1.5 text-sm font-semibold text-zinc-700 transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
+    var COMPOSE_FIELD = 'w-full rounded-xl border border-zinc-300 bg-white py-2.5 pl-3 pr-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500';
+    var SEND_PILL_CLASS = 'shrink-0 rounded-full bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition-transform active:scale-95 disabled:opacity-50';
+    var SENT_ROW_CLASS = 'rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/70';
+
+    function templateLabel(id) {
+      for (var i = 0; i < TEMPLATES.length; i++) {
+        if (TEMPLATES[i].id === id) return TEMPLATES[i].label;
+      }
+      return 'Blank';
+    }
+
+    function composeChipsHtml() {
+      var html = '';
+      for (var i = 0; i < TEMPLATES.length; i++) {
+        var t = TEMPLATES[i];
+        var on = state.compose.template === t.id;
+        html += '<button type="button" data-template-option data-template-id="' + t.id + '"'
+          + ' aria-pressed="' + (on ? 'true' : 'false') + '"'
+          + ' class="' + (on ? COMPOSE_CHIP_ACTIVE : COMPOSE_CHIP_IDLE) + '">'
+          + esc(t.label) + '</button>';
+      }
+      return '<div class="flex flex-wrap gap-2">' + html + '</div>';
+    }
+
+    // The compose form: template chips on top, then the two fields the
+    // prefill lands in. The title's current value is mirrored onto the
+    // value attribute (kept in step by the input handler) so the staging
+    // checks, which read markup rather than input properties, can assert
+    // on an edit; the description's state is visible in its character
+    // counter the same way.
+    function composeFormHtml() {
+      var c = state.compose;
+      return '<section class="flex flex-col gap-2">'
+        + '<p class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Start from a template</p>'
+        + composeChipsHtml()
+        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">A template fills the title and description. Everything stays editable before you send.</p>'
+        + '</section>'
+        + '<section class="flex flex-col gap-1.5">'
+        + '<label for="compose-title" class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Title</label>'
+        + '<input id="compose-title" data-compose-title type="text" autocomplete="off"'
+        + ' value="' + esc(c.title) + '" class="' + COMPOSE_FIELD + '">'
+        + '</section>'
+        + '<section class="flex flex-col gap-1.5">'
+        + '<label for="compose-body" class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Description</label>'
+        + '<textarea id="compose-body" data-compose-body rows="10" class="' + COMPOSE_FIELD + ' resize-y">' + esc(c.body) + '</textarea>'
+        + '<p data-compose-count class="text-xs tabular-nums text-zinc-400 dark:text-zinc-500">' + c.body.length + ' characters</p>'
+        + '</section>'
+        + (c.error
+          ? '<p data-compose-error class="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs font-medium text-red-700 dark:text-red-300">' + esc(c.error) + '</p>'
+          : '');
+    }
+
+    // The sent state: confirmation block instead of the form, with the sent
+    // title echoed. Send records the proposal in this app (see the Sent
+    // list note below); the copy says so plainly.
+    function composeConfirmationHtml() {
+      var c = state.compose;
+      return '<div data-send-confirmation class="flex flex-col gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">'
+        + '<p class="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>'
+        + 'Proposal sent</p>'
+        + '<p class="text-xs text-zinc-600 dark:text-zinc-300">"' + esc(c.sentTitle) + '" is in your Sent list below.</p>'
+        + '<button type="button" data-compose-again class="self-start rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-transform active:scale-95">Compose another</button>'
+        + '</div>';
+    }
+
+    function sentListHtml() {
+      var c = state.compose;
+      if (c.sentError) {
+        return '<p class="text-xs text-zinc-500 dark:text-zinc-400">Could not load sent proposals.</p>'
+          + '<button type="button" data-action="reload-sent" class="self-start rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Try again</button>';
+      }
+      if (!c.sentLoaded) return '<p class="text-xs text-zinc-400 dark:text-zinc-500">Loading…</p>';
+      var rows = c.sent || [];
+      if (!rows.length) {
+        return '<p data-sent-empty class="text-xs text-zinc-500 dark:text-zinc-400">Nothing sent yet</p>';
+      }
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var when = '';
+        if (r.created_at) {
+          try { when = new Date(r.created_at).toLocaleDateString(); } catch (e) { when = ''; }
+        }
+        html += '<article data-sent-row class="' + SENT_ROW_CLASS + '">'
+          + '<p class="line-clamp-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">' + esc(r.title) + '</p>'
+          + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(templateLabel(r.template))
+          + (when ? ' · ' + esc(when) : '') + '</p>'
+          + '</article>';
+      }
+      return html;
+    }
+
+    function composeHtml() {
+      var c = state.compose;
+      var sent = c.sentTitle != null;
+      var canSend = !!c.title.trim() && !!c.body.trim() && !c.sending && !sent;
+      // Back and Send share the top row, iOS-compose style: the primary
+      // action stays visible above the keyboard while the description is
+      // being typed.
+      return '<div data-compose-screen class="flex flex-col gap-4 pt-1">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<div class="flex min-w-0 items-center gap-2">'
+        + '<button type="button" data-compose-back aria-label="Back to the list"'
+        + ' class="' + COMPOSE_BACK_CLASS + '">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>'
+        + '</button>'
+        + '<h2 class="truncate text-lg font-bold tracking-tight">New proposal</h2>'
+        + '</div>'
+        + (sent ? '' : '<button type="button" data-send-proposal class="' + SEND_PILL_CLASS + '"'
+          + (canSend ? '' : ' disabled') + '>Send</button>')
+        + '</div>'
+        + (sent ? composeConfirmationHtml() : composeFormHtml())
+        + '<section class="flex flex-col gap-2 pt-2">'
+        + '<h3 class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Sent</h3>'
+        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">Kept in this app. Paste a proposal into the app&#39;s dev chat to open it for a vote.</p>'
+        + '<div id="sent-list" class="flex flex-col gap-2">' + sentListHtml() + '</div>'
+        + '</section>'
+        + '</div>';
+    }
+
     function renderTabs() {
       var buttons = document.querySelectorAll('.tab-btn');
       var inboxCount = state.inbox && state.inbox.proposals ? state.inbox.proposals.length : null;
       var votesCount = state.votes && state.votes.votes ? state.votes.votes.length : null;
       var watchlistCount = state.watchlist && state.watchlist.rows ? state.watchlist.rows.length : null;
+      var followingCount = followingNeededCount();
+      var savedCount = state.saved && state.saved.rows ? state.saved.rows.length : null;
       for (var i = 0; i < buttons.length; i++) {
         var btn = buttons[i];
         var tab = btn.getAttribute('data-tab');
         var active = tab === state.tab;
         var badge = btn.querySelector('.tab-badge');
         var count = tab === 'inbox' ? inboxCount
+          : tab === 'saved' ? savedCount
           : tab === 'watchlist' ? watchlistCount
+          : tab === 'following' ? followingCount
           : tab === 'votes' ? votesCount : null;
         btn.className = 'tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors '
           + (active ? TAB_ACTIVE : TAB_IDLE);
@@ -4167,7 +4689,7 @@
     }
 
     function renderRefreshButton() {
-      var busy = state.loadingInbox || state.loadingVotes;
+      var busy = state.loadingInbox || state.loadingVotes || state.loadingSaved;
       var icon = document.getElementById('refresh-icon');
       if (icon) icon.classList.toggle('animate-spin', busy);
       document.getElementById('refresh-btn').setAttribute('aria-busy', busy ? 'true' : 'false');
@@ -4176,7 +4698,8 @@
     function renderDemoBanner() {
       var demo = (state.inbox && state.inbox.demo) || (state.votes && state.votes.demo)
         || (state.members && state.members.demo)
-        || (state.leaderboard && state.leaderboard.demo);
+        || (state.leaderboard && state.leaderboard.demo)
+        || (state.saved && state.saved.demo);
       document.getElementById('demo-banner').className = demo
         ? 'mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300'
         : 'hidden';
@@ -4420,6 +4943,38 @@
       return html;
     }
 
+    function renderFollowing() {
+      if (state.errorInbox) return errorHtml(state.errorInbox);
+      if (!state.inbox || state.loadingInbox && !state.inbox.proposals) return skeletons();
+      if (!state.follows.length) {
+        return emptyHtml(
+          'No followed apps yet',
+          'Star an app in the app filter above the Inbox and its open proposals will show up here.',
+          BROWSE_CTA);
+      }
+      var rows = followingAppRows();
+      if (!rows.length) {
+        return emptyHtml(
+          'Nothing open from your apps',
+          'Every followed app is caught up right now. New proposals from them will show up here.',
+          REFRESH_CTA);
+      }
+      // One section per followed app that has an open proposal, the app's
+      // name as the header and its cards below. A followed app with nothing
+      // open gets no section at all, so the list only names apps with
+      // something to look at.
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        html += '<section data-following-group="' + esc(row.app.slug) + '" class="flex flex-col gap-3">'
+          + '<h2 class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">' + esc(row.app.name) + '</h2>'
+          + '<div data-following-cards class="flex flex-col gap-3">';
+        for (var j = 0; j < row.items.length; j++) html += proposalCard(row.items[j]);
+        html += '</div></section>';
+      }
+      return html;
+    }
+
     function renderVotes() {
       if (state.errorVotes) return errorHtml(state.errorVotes);
       if (!state.votes || state.loadingVotes && !state.votes.votes) return skeletons();
@@ -4504,6 +5059,24 @@
       }
       var html = '';
       for (var i = 0; i < rows.length; i++) html += watchRow(rows[i]);
+      return html;
+    }
+
+    // The Saved tab: this user's bookmarked proposals, newest save first.
+    // Same states as the Watchlist: error, skeletons, and a friendly empty
+    // state pointing back at the Inbox.
+    function renderSaved() {
+      if (state.errorSaved) return errorHtml(state.errorSaved);
+      if (!state.saved || state.loadingSaved && !state.saved.rows) return skeletons();
+      var rows = state.saved.rows || [];
+      if (!rows.length) {
+        return emptyHtml(
+          'Nothing saved yet',
+          'Bookmark proposals in the Inbox to find them here.',
+          BROWSE_CTA);
+      }
+      var html = '';
+      for (var i = 0; i < rows.length; i++) html += savedRow(rows[i]);
       return html;
     }
 
@@ -5376,6 +5949,70 @@
       el.hidden = false;
     }
 
+    // One-line summary under the header on the Following tab, computed from
+    // the loaded inbox (no extra request): the followed apps' open
+    // proposals, and how many of them still need this person's vote. The
+    // data-following-needed / data-following-apps attributes carry the
+    // numbers for the declared checks.
+    function renderFollowingSummary() {
+      var el = document.getElementById('following-summary');
+      if (!el) return;
+      var proposals = state.inbox && state.inbox.proposals;
+      var open = 0;
+      var needed = 0;
+      var apps = {};
+      if (proposals) {
+        for (var i = 0; i < proposals.length; i++) {
+          var p = proposals[i];
+          if (p.status === 'merged' || !isFollowing(p.appSlug)) continue;
+          open++;
+          if (!isVoted(p)) needed++;
+          apps[p.appSlug] = true;
+        }
+      }
+      if (state.tab !== 'following' || state.membersView || state.errorInbox
+        || !state.follows.length || !proposals) {
+        el.hidden = true;
+        return;
+      }
+      el.textContent = open + ' open, ' + needed
+        + (needed === 1 ? ' vote needed' : ' votes needed');
+      el.setAttribute('data-following-needed', String(needed));
+      el.setAttribute('data-following-apps', Object.keys(apps).sort().join(','));
+      el.hidden = false;
+    }
+
+    // One-line summary under the header on the Saved tab, from the loaded
+    // rows (no extra request): how many are bookmarked and how many are
+    // already merged or closed (worth revisiting or clearing).
+    function renderSavedSummary() {
+      var el = document.getElementById('saved-summary');
+      if (!el) return;
+      var rows = state.saved && state.saved.rows;
+      var total = rows ? rows.length : 0;
+      // Same zero rule as the inbox and votes summaries.
+      if (state.tab !== 'saved' || state.membersView || state.errorSaved
+        || !state.saved) {
+        el.hidden = true;
+        return;
+      }
+      var settled = 0;
+      var seen = {};
+      if (state.inbox && state.inbox.proposals) {
+        for (var i = 0; i < state.inbox.proposals.length; i++) {
+          seen[state.inbox.proposals[i].sessionId] = state.inbox.proposals[i].status;
+        }
+      }
+      for (var j = 0; j < rows.length; j++) {
+        // Rows carry a status when the server knows one; the loaded inbox
+        // fills in the rest (no extra platform calls).
+        var st = rows[j].status || seen[rows[j].sessionId];
+        if (st === 'merged' || st === 'closed') settled++;
+      }
+      el.textContent = total + ' saved, ' + settled + ' settled';
+      el.hidden = false;
+    }
+
     // One-line summary under the header while the Members directory is open,
     // computed from the loaded roster (no extra request). Without a search
     // it reads "N members · M active this week"; with one it narrows to
@@ -5417,7 +6054,28 @@
       el.hidden = false;
     }
 
+    // Top-level rows that belong to the two-tab list screens only. The
+    // compose screen hides them (it has its own header row and controls)
+    // and the main render shows them again.
+    var MAIN_CHROME_IDS = ['list-controls', 'sort-row', 'votes-order-row',
+      'inbox-updated', 'inbox-summary', 'votes-summary', 'demo-banner'];
+
+    function renderCompose() {
+      for (var i = 0; i < MAIN_CHROME_IDS.length; i++) {
+        var el = document.getElementById(MAIN_CHROME_IDS[i]);
+        if (el) el.classList.add('hidden');
+      }
+      document.getElementById('view').innerHTML = composeHtml();
+      if (!state.compose.sentLoaded) loadSent();
+      runComposeFixtures();
+    }
+
     function render() {
+      if (state.screen === 'compose') { renderCompose(); return; }
+      for (var ci = 0; ci < MAIN_CHROME_IDS.length; ci++) {
+        var chrome = document.getElementById(MAIN_CHROME_IDS[ci]);
+        if (chrome) chrome.classList.remove('hidden');
+      }
       syncFilter();
       syncTagFilter();
       syncOneAway();
@@ -5439,6 +6097,8 @@
       renderShareImagePanel();
       renderDigest();
       renderWatchlistSummary();
+      renderFollowingSummary();
+      renderSavedSummary();
       renderMembersSummary();
       var viewHtml;
       if (state.membersView) {
@@ -5460,8 +6120,14 @@
         if (!state.snoozeView && !state.detail && !state.compareView) {
           viewHtml = celebrationCardsHtml() + viewHtml;
         }
+      } else if (state.tab === 'following') {
+        // A proposal opened from the Following tab shows the same detail the
+        // inbox would; with no proposal open, the tab's own list.
+        viewHtml = state.detail && findProposal(state.detail) ? renderDetail() : renderFollowing();
       } else if (state.tab === 'votes') {
         viewHtml = renderVotes();
+      } else if (state.tab === 'saved') {
+        viewHtml = renderSaved();
       } else if (state.tab === 'leaderboard') {
         viewHtml = renderLeaderboard();
       } else {
@@ -5484,6 +6150,39 @@
       enhanceTitles();
       updateLbPin();
       if (DEMO) stampDensityBasic();
+    }
+
+    // ------------------------------------------------------------------
+    // Compose data + actions
+    // ------------------------------------------------------------------
+
+    // The Sent list fills on the compose screen's first render and updates
+    // its own container only (a full re-render here would reset the
+    // caret in whatever field the user is typing in).
+    var sentRequested = false;
+
+    function loadSent() {
+      if (sentRequested) return;
+      sentRequested = true;
+      api('/api/proposals').then(function (data) {
+        state.compose.sent = (data && data.proposals) || [];
+        state.compose.sentLoaded = true;
+        state.compose.sentError = false;
+        var list = document.getElementById('sent-list');
+        if (list) list.innerHTML = sentListHtml();
+      }).catch(function () {
+        state.compose.sentLoaded = true;
+        state.compose.sentError = true;
+        var list = document.getElementById('sent-list');
+        if (list) list.innerHTML = sentListHtml();
+      });
+    }
+
+    function openCompose() {
+      state.screen = 'compose';
+      state.compose.error = null;
+      render();
+      window.scrollTo(0, 0);
     }
 
     // ------------------------------------------------------------------
@@ -5611,6 +6310,98 @@
       return settled;
     }
 
+    function backToMain() {
+      state.screen = 'main';
+      state.compose.error = null;
+      render();
+      window.scrollTo(0, 0);
+      // A compose deep link skipped the boot fetch (nothing of the list
+      // was showing), so the tab the user is now looking at loads now.
+      if (state.tab === 'votes') {
+        if (!state.votes && !state.loadingVotes) loadVotes(true);
+      } else if (state.tab === 'watchlist') {
+        if (!state.watchlist) loadWatchlist(true);
+      } else if (!state.inbox && !state.loadingInbox) {
+        loadInbox(true);
+      }
+    }
+
+    // Picking a template refills both fields with its prefill. Switching
+    // replaces whatever is there: the prefill is a starting point the user
+    // edits, not something to merge.
+    function pickTemplate(id) {
+      var tpl = null;
+      for (var i = 0; i < TEMPLATES.length; i++) {
+        if (TEMPLATES[i].id === id) tpl = TEMPLATES[i];
+      }
+      if (!tpl) return;
+      state.compose.template = tpl.id;
+      state.compose.title = tpl.title;
+      state.compose.body = tpl.body;
+      state.compose.error = null;
+      render();
+    }
+
+    function resetComposeForm() {
+      state.compose.template = null;
+      state.compose.title = '';
+      state.compose.body = '';
+      state.compose.sending = false;
+      state.compose.error = null;
+      state.compose.sentTitle = null;
+      render();
+    }
+
+    // Keep the Send pill's disabled state in step without a re-render
+    // (which would steal focus from the field being typed in).
+    function updateSendPill() {
+      var btn = document.querySelector('[data-send-proposal]');
+      if (!btn) return;
+      var c = state.compose;
+      var ok = !!c.title.trim() && !!c.body.trim() && !c.sending && c.sentTitle == null;
+      btn.disabled = !ok;
+    }
+
+    // Send records the composed proposal (the platform's app-facing API is
+    // read-only, so the app keeps what its users compose here). Client side
+    // first: both fields must be non-empty, mirroring the server.
+    function sendProposal() {
+      var c = state.compose;
+      if (c.sending) return;
+      var title = c.title.trim();
+      var body = c.body.trim();
+      if (!title || !body) {
+        c.error = !title ? 'A title is required' : 'A description is required';
+        render();
+        return;
+      }
+      c.sending = true;
+      c.error = null;
+      render();
+      api('/api/proposals', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ template: c.template || 'blank', title: title, body: body }),
+      }).then(function (data) {
+        c.sending = false;
+        var row = data && data.proposal;
+        c.sent = [{
+          id: row ? row.id : null,
+          template: row ? row.template : (c.template || 'blank'),
+          title: title,
+          created_at: row ? row.created_at : null,
+        }].concat(c.sent || []);
+        c.sentLoaded = true;
+        c.sentError = false;
+        c.sentTitle = title;
+        render();
+      }).catch(function (err) {
+        c.sending = false;
+        c.error = err && err.message ? err.message : 'Sending failed. Try again.';
+        render();
+      });
+    }
+
     // Post a comment (parentId null) or a reply (parentId = the top-level
     // comment's id, as a string in the markup). The busy state disables the
     // submit button in place: a re-render here would wipe the form's text.
@@ -5644,6 +6435,53 @@
         if (btn && document.contains(btn)) btn.disabled = false;
         toast('Could not post the comment: ' + (err.message || 'try again'));
       });
+    }
+
+    // ------------------------------------------------------------------
+    // Compose check fixtures: replay one user path through the real
+    // controls, the way ?tap-no=1 votes through the real vote button.
+    // Demo only; runs once, at the first compose render.
+    // ------------------------------------------------------------------
+
+    var composeFixturesRan = false;
+
+    function tapTemplateChip(id) {
+      var chip = document.querySelector(
+        '[data-template-option][data-template-id="' + id + '"]');
+      if (!chip) return;
+      chip.click(); // the real chip, through the real delegated handler
+    }
+
+    // Type into a field the way typing would: set the value, then fire the
+    // input event the real keyboard produces, so state and the derived
+    // bits (value mirror, counter, Send pill) update through the real path.
+    function typeIntoField(el, value) {
+      if (!el) return;
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function runComposeFixtures() {
+      if (composeFixturesRan) return;
+      composeFixturesRan = true;
+      if (state.screen !== 'compose' || state.compose.sentTitle != null) return;
+      // Switching fixture: land on Bugfix first so there is a prefill to
+      // switch away from.
+      if (COMPOSE_SWITCH) tapTemplateChip('bugfix');
+      if (COMPOSE_TEMPLATE) tapTemplateChip(COMPOSE_TEMPLATE);
+      if (COMPOSE_TITLE) typeIntoField(document.getElementById('compose-title'), COMPOSE_TITLE);
+      if (COMPOSE_BODY) typeIntoField(document.getElementById('compose-body'), COMPOSE_BODY);
+      if (COMPOSE_SWITCH) tapTemplateChip(COMPOSE_SWITCH);
+      if (COMPOSE_SEND) {
+        var sendBtn = document.querySelector('[data-send-proposal]');
+        // An empty form leaves Send disabled and does nothing here; the
+        // checks use that to pin the disabled state.
+        if (sendBtn && !sendBtn.disabled) sendBtn.click();
+      }
+      if (COMPOSE_BACK) {
+        var backBtn = document.querySelector('[data-compose-back]');
+        if (backBtn) backBtn.click();
+      }
     }
 
     // ------------------------------------------------------------------
@@ -5842,6 +6680,83 @@
       if (clearBtn) clearBtn.disabled = n === 0 || state.bulkBusy;
     }
 
+    // Followed apps. A real toggle button lives inside each app row of the
+    // filter list (a <button> cannot nest inside the row's own <button>, so
+    // app rows are divs with the option role and the row stays the pick
+    // target). The star mirrors the card star's amber active treatment;
+    // aria-pressed carries the state for screen readers.
+    var FOLLOW_STAR_IDLE_CLASS = 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-300 transition-colors hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400';
+    var FOLLOW_STAR_ACTIVE_CLASS = 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-amber-500 transition-colors hover:text-amber-600 dark:text-amber-300 dark:hover:text-amber-200';
+
+    function isFollowing(slug) {
+      return state.follows.indexOf(slug) !== -1;
+    }
+
+    function followStarHtml(slug) {
+      var active = isFollowing(slug);
+      return '<button type="button" data-follow-toggle data-app="' + esc(slug) + '"'
+        + ' aria-pressed="' + (active ? 'true' : 'false') + '"'
+        + ' aria-label="' + (active ? 'Unfollow ' + esc(slug) : 'Follow ' + esc(slug)) + '"'
+        + ' class="' + (active ? FOLLOW_STAR_ACTIVE_CLASS : FOLLOW_STAR_IDLE_CLASS) + '">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="' + (active ? 'currentColor' : 'none') + '"'
+        + ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<path d="M11.48 3.5a.56.56 0 0 1 1.04 0l2.13 4.46 4.9.62c.5.06.7.68.33 1.02l-3.6 3.32.92 4.85a.56.56 0 0 1-.8.6L12 16.06l-4.4 2.31a.56.56 0 0 1-.8-.6l.92-4.85-3.6-3.32a.56.56 0 0 1 .33-1.02l4.9-.62z"/></svg></button>';
+    }
+
+    // Follow / unfollow one app: updates the stored set, repaints the open
+    // filter list (so the star flips in place) and re-renders (tab badges,
+    // the Following tab). A slug the inbox no longer lists keeps its stored
+    // entry — the set is a preference, not derived data.
+    function toggleFollow(slug) {
+      var list = state.follows.slice();
+      var at = list.indexOf(slug);
+      if (at === -1) list.push(slug);
+      else list.splice(at, 1);
+      state.follows = list;
+      saveFollows(list);
+      if (openFilter && activeFilterRender) activeFilterRender();
+      render();
+    }
+
+    // The Following tab's headline count: open proposals of followed apps
+    // that still need this person's vote. Null until the inbox has loaded,
+    // so the tab badge stays hidden rather than reading 0 too early.
+    function followingNeededCount() {
+      if (!state.follows.length) return 0;
+      var proposals = state.inbox && state.inbox.proposals;
+      if (!proposals) return null;
+      var n = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        var p = proposals[i];
+        if (p.status === 'merged') continue;
+        if (!isFollowing(p.appSlug)) continue;
+        if (!isVoted(p)) n++;
+      }
+      return n;
+    }
+
+    // Followed apps with at least one open proposal, in filter-list order.
+    // Apps with nothing open are skipped here, so the Following tab never
+    // renders a group for them.
+    function followingAppRows() {
+      var proposals = state.inbox && state.inbox.proposals;
+      if (!proposals) return [];
+      var apps = filterApps();
+      var rows = [];
+      for (var a = 0; a < apps.length; a++) {
+        var app = apps[a];
+        if (!isFollowing(app.slug)) continue;
+        var items = [];
+        for (var i = 0; i < proposals.length; i++) {
+          var p = proposals[i];
+          if (p.appSlug !== app.slug || p.status === 'merged') continue;
+          items.push(p);
+        }
+        if (items.length) rows.push({ app: app, items: items });
+      }
+      return rows;
+    }
+
     // One app-filter row. The "All apps" row keeps its single line; an app
     // row shows three fixed-height lines so the row's size never depends on
     // the values (the layout stays stable while the stats load): the name
@@ -5850,9 +6765,15 @@
     // While the inbox reloads (loading) every value slot is a grey
     // placeholder block instead, and no stat values are emitted.
     function filterRowEl(app, selected, stats, loading) {
-      var btn = document.createElement('button');
-      btn.type = 'button';
+      var btn = app
+        // App rows carry a follow star, which is a real <button> — it cannot
+        // nest inside the row's own <button>, so app rows are divs with the
+        // option role and the click delegation below treats them the same.
+        ? document.createElement('div')
+        : document.createElement('button');
+      if (!app) btn.type = 'button';
       btn.setAttribute('role', 'option');
+      if (!app) btn.tabIndex = 0;
       btn.setAttribute('aria-selected', selected ? 'true' : 'false');
       btn.setAttribute('data-app-option', app ? app.slug : '');
       btn.className = 'flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm '
@@ -5910,7 +6831,8 @@
           + '<div class="flex min-w-0 flex-1 flex-col gap-0.5">'
           + '<div data-app-stat-line class="flex h-4 items-center gap-1.5 whitespace-nowrap leading-4">'
           + '<span class="min-w-0 flex-1 truncate">' + esc(app.name) + '</span>'
-          + sparkHtml + '</div>'
+          + sparkHtml
+          + followStarHtml(app.slug) + '</div>'
           + '<div data-app-stat-line class="flex h-4 items-center whitespace-nowrap text-xs font-normal leading-4 tabular-nums text-zinc-500 dark:text-zinc-400">'
           + waitingHtml + '</div>'
           + '<div data-app-stat-line class="flex h-4 items-center whitespace-nowrap text-xs font-normal leading-4 tabular-nums text-zinc-500 dark:text-zinc-400">'
@@ -5977,9 +6899,30 @@
       }
 
       content.addEventListener('click', function (event) {
+        // The follow star is its own control: it must win over the row pick
+        // (the star sits inside the row, so closest() would find the row
+        // first otherwise).
+        var star = event.target.closest ? event.target.closest('[data-follow-toggle]') : null;
+        if (star) {
+          toggleFollow(star.getAttribute('data-app'));
+          return;
+        }
         var btn = event.target.closest ? event.target.closest('[data-app-option]') : null;
         if (!btn) return;
         var slug = btn.getAttribute('data-app-option');
+        pickFilter(slug ? findFilterApp(slug) : null);
+      });
+      // App rows are divs with the option role (their star is a nested
+      // button), so Enter and Space pick the app when the row itself is
+      // focused. Focus on the star keeps the button's own click handling.
+      content.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        var target = event.target;
+        if (!target || target.closest('[data-follow-toggle]')) return;
+        var row = target.closest ? target.closest('[data-app-option]') : null;
+        if (!row || row.tagName !== 'DIV') return;
+        event.preventDefault();
+        var slug = row.getAttribute('data-app-option');
         pickFilter(slug ? findFilterApp(slug) : null);
       });
       input.addEventListener('input', renderList);
@@ -6061,6 +7004,7 @@
       render();
     }
 
+    var appFilterOpened = false; // ?app-filter=open fires once per page load
     // ------------------------------------------------------------------
     // Tag filter dropdown: the same machinery as the app filter above —
     // trigger, kit popover with a plain-panel fallback, click-outside and
@@ -6381,6 +7325,12 @@
         // extra merged fixtures so the app filter's time-to-merge stats
         // have history to read. Never sent without demo data.
         if (params.get('mergestats') === '1') query.push('mergestats=1');
+        // Bookmark fixture knobs: the display-only preset, the per-user
+        // fixture and the saved-set marker page (that one has nothing to
+        // forward itself, but its ?saved-mine= reader lives on the Saved
+        // tab, not here). Never sent without demo data.
+        if (PRESET_BOOKMARK) query.push('preset-bookmark=' + encodeURIComponent(PRESET_BOOKMARK));
+        if (DEMO && params.get('saved-other') === '1') query.push('saved-other=1');
       }
       // One-shot delay (the ?stats-layout=1 hook): hold the fetch back so
       // the open dropdown is observable showing its placeholders mid-refresh.
@@ -6400,6 +7350,7 @@
           // the change summary uses.
           state.celebrations = Array.isArray(data.celebrations) ? data.celebrations : [];
           if (data.demo) reanchorDemo(data);
+          applyNewSince(data);
           resolveCompareSelection();
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
@@ -6420,6 +7371,11 @@
           maybeTapAppOption();
           maybeStatsLayout();
           maybeFilterPhone();
+          if (APP_FILTER_OPEN && !appFilterOpened && state.inbox
+            && state.tab === 'inbox' && !state.errorInbox) {
+            appFilterOpened = true;
+            openAppFilter();
+          }
           maybeTurnoutRefresh();
           maybeTapNo();
           maybeTapShare();
@@ -6428,6 +7384,9 @@
           maybeAutoOpenTagFilter();
           maybeTapTag();
           maybeTapStar();
+          maybeTapFollow();
+          maybeTapBookmark();
+          maybeTapUnbookmark();
           maybeTapSnooze();
           maybeSetSnooze();
           maybeTapUnsnooze();
@@ -6509,8 +7468,10 @@
 
     function refreshCurrent() {
       if (state.membersView) return loadMembers(true);
-      return state.tab === 'inbox' ? loadInbox(true)
+      // The Following tab reads the same inbox data the Inbox loads.
+      return state.tab === 'inbox' || state.tab === 'following' ? loadInbox(true)
         : state.tab === 'votes' ? loadVotes(true)
+        : state.tab === 'saved' ? loadSaved(true)
         : state.tab === 'leaderboard' ? loadLeaderboard(true)
         : loadWatchlist(true);
     }
@@ -6570,6 +7531,7 @@
       render();
       window.scrollTo(0, 0);
       if (state.tab === 'votes') loadVotes(!state.votes);
+      else if (state.tab === 'saved') loadSaved(!state.saved);
       else if (state.tab === 'watchlist') loadWatchlist(!state.watchlist);
       else if (state.tab === 'leaderboard') loadLeaderboard(!state.leaderboard);
       else loadInbox(!state.inbox);
@@ -6658,6 +7620,41 @@
           if (state.queuedWatchlist) {
             state.queuedWatchlist = false;
             loadWatchlist(true);
+          }
+        });
+    }
+
+    // The Saved tab's data: this user's bookmarked rows. Same queued-refetch
+    // contract as the other tabs. Demo forwards the ?saved-mine= and
+    // ?saved-empty= knobs to the demo route; production ignores them.
+    function loadSaved(force) {
+      if (state.loadingSaved) {
+        if (force) state.queuedSaved = true;
+        return Promise.resolve();
+      }
+      state.loadingSaved = true;
+      state.errorSaved = null;
+      if (force) state.saved = null;
+      render();
+      var query = [];
+      if (DEMO) query.push('demo=1');
+      if (SAVED_MINE) query.push('saved-mine=' + encodeURIComponent(SAVED_MINE));
+      if (SAVED_EMPTY) query.push('saved-empty=1');
+      return api('/api/bookmarks' + (query.length ? '?' + query.join('&') : ''))
+        .then(function (data) {
+          state.saved = data;
+        })
+        .catch(function (err) {
+          state.errorSaved = err.message || 'Could not load your saved proposals.';
+        })
+        .then(function () {
+          state.loadingSaved = false;
+          render();
+          maybeTapBookmark();
+          maybeTapUnbookmark();
+          if (state.queuedSaved) {
+            state.queuedSaved = false;
+            loadSaved(true);
           }
         });
     }
@@ -7036,6 +8033,67 @@
       });
     }
 
+    // Bookmark / unbookmark from wherever the button sits: an inbox card or
+    // the detail's action bar. Optimistic in both directions, rolled back on
+    // failure; the save request carries the card's own fields so the server
+    // can store the row without a second lookup. Unbookmarking a Saved-row
+    // drops the row at once (the immediate-removal rule).
+    function toggleBookmark(sessionId) {
+      var r = null;
+      if (state.saved && state.saved.rows) {
+        var rows = state.saved.rows;
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].sessionId === sessionId) { r = rows[i]; break; }
+        }
+      }
+      var p = findProposal(sessionId);
+      if (!p && !r) return;
+      var pendingKey = 'bookmark:' + sessionId;
+      if (state.savedPending[pendingKey]) return;
+      // A row on the Saved tab is a bookmark by definition, even when the
+      // inbox card under it has not been stamped (demo fixture rows carry
+      // no stamp). Otherwise the card's own state decides.
+      var wasBookmarked = r ? true : !!p.myBookmark;
+      var from = p || r;
+      var rowIdx = r ? state.saved.rows.indexOf(r) : -1;
+      var payload = {
+        sessionId: sessionId,
+        appSlug: from.appSlug,
+        appName: from.appName,
+        title: from.title,
+        proposalId: from.proposalId,
+        demo: !!((p && state.inbox && state.inbox.demo)
+          || (state.saved && state.saved.demo)),
+      };
+      state.savedPending[pendingKey] = true;
+      var original = p ? !!p.myBookmark : null;
+      if (p) p.myBookmark = !wasBookmarked;
+      if (r) state.saved.rows.splice(rowIdx, 1);
+      render();
+      var request = wasBookmarked
+        ? api('/api/bookmarks/unsave', {
+            method: 'POST',
+            headers: headers({ 'content-type': 'application/json' }),
+            body: JSON.stringify({ sessionId: sessionId, demo: payload.demo }),
+          })
+        : api('/api/bookmarks/save', {
+            method: 'POST',
+            headers: headers({ 'content-type': 'application/json' }),
+            body: JSON.stringify(payload),
+          });
+      request.then(function () {
+        toast(wasBookmarked ? 'Removed from Saved' : 'Saved to your list');
+      }).catch(function (err) {
+        // Roll the optimistic state back so the card/row shows the truth.
+        if (p) p.myBookmark = original === null ? wasBookmarked : original;
+        if (r && rowIdx >= 0) state.saved.rows.splice(rowIdx, 0, r);
+        toast('Could not update your saved list: ' + (err.message || 'try again'));
+      }).then(function () {
+        delete state.savedPending[pendingKey];
+        render();
+      });
+    }
+
     // ------------------------------------------------------------------
     // Snooze: tuck a proposal away until a wake date. The wake stamp is per
     // user and purely a view concern — it never touches the vote or the
@@ -7231,11 +8289,57 @@
       btn.click();
     }
 
+    // Staging demo hook: ?demo=1&tap-bookmark=<sessionId> clicks that card's
+    // bookmark button once its list has rendered — the real button, through
+    // the real delegated click handler. Works on the Inbox and the Saved tab
+    // alike. Demo only; one-shot.
+    var tapBookmarkDone = false;
+    function maybeTapBookmark() {
+      if (!DEMO || !TAP_BOOKMARK || tapBookmarkDone) return;
+      var btn = document.querySelector(
+        '[data-bookmark-toggle][data-session="' + TAP_BOOKMARK + '"]');
+      if (!btn) return;
+      tapBookmarkDone = true;
+      btn.click();
+    }
+
+    // Staging demo hook: ?tap-unbookmark=<sessionId> with ?preset-bookmark=
+    // <same id> renders the card bookmarked and then taps its button, so the
+    // unsave direction runs through the real tap path with no stored row.
+    // Demo only; one-shot.
+    var tapUnbookmarkDone = false;
+    function maybeTapUnbookmark() {
+      if (!DEMO || !TAP_UNBOOKMARK || tapUnbookmarkDone) return;
+      var btn = document.querySelector(
+        '[data-bookmark-toggle][data-session="' + TAP_UNBOOKMARK + '"]');
+      if (!btn) return;
+      tapUnbookmarkDone = true;
+      btn.click();
+    }
+
     // Staging demo hook: ?demo=1&tap-summary=<sessionId> clicks that card's
     // summary line once the demo inbox has rendered — the real button,
     // through the real delegated click handler — so expansion (and, paired
     // with ?expand-summary=<same id>, collapsing) runs through the real tap
     // path. Demo only; one-shot.
+    // Staging demo hook: ?demo=1&tap-follow=<slug> / ?tap-unfollow=<slug>
+    // click that app row's follow star once the app filter has rendered —
+    // the real button, through the filter content's own delegated click
+    // handler. The boot hook adjusted the stored set first, so the tap
+    // always starts from the intended direction. Pair with ?openfilter=1.
+    // Demo only; one-shot.
+    var tapFollowDone = false;
+    function maybeTapFollow() {
+      if (!DEMO || tapFollowDone) return;
+      var slug = params.get('tap-follow') || params.get('tap-unfollow');
+      if (!slug) return;
+      var btn = document.querySelector(
+        '[data-follow-toggle][data-app="' + slug + '"]');
+      if (!btn) return;
+      tapFollowDone = true;
+      btn.click();
+    }
+
     var tapSummaryDone = false;
     function maybeTapSummary() {
       if (!DEMO || !TAP_SUMMARY || tapSummaryDone) return;
@@ -8089,10 +9193,36 @@
 
     document.getElementById('view').addEventListener('click', function (event) {
       var target = event.target;
+      // Compose screen controls first: template chips, the Send pill, the
+      // back chevron and the post-send reset.
+      var tplChip = target.closest ? target.closest('[data-template-option]') : null;
+      if (tplChip) {
+        pickTemplate(tplChip.getAttribute('data-template-id'));
+        return;
+      }
+      if (target.closest && target.closest('[data-send-proposal]')) {
+        sendProposal();
+        return;
+      }
+      if (target.closest && target.closest('[data-compose-back]')) {
+        backToMain();
+        return;
+      }
+      if (target.closest && target.closest('[data-compose-again]')) {
+        resetComposeForm();
+        return;
+      }
       var actionEl = target.closest ? target.closest('[data-action]') : null;
       if (actionEl) {
         var action = actionEl.getAttribute('data-action');
         if (action === 'refresh') refreshCurrent();
+        else if (action === 'reload-sent') {
+          state.compose.sentError = false;
+          state.compose.sentLoaded = false;
+          sentRequested = false;
+          render();
+          loadSent();
+        }
         else if (action === 'clear-filter') {
           state.filter = '';
           state.filterName = '';
@@ -8176,6 +9306,11 @@
       var starBtn = target.closest ? target.closest('[data-star-toggle]') : null;
       if (starBtn) {
         toggleStar(starBtn.getAttribute('data-session'));
+        return;
+      }
+      var bookmarkBtn = target.closest ? target.closest('[data-bookmark-toggle]') : null;
+      if (bookmarkBtn) {
+        toggleBookmark(bookmarkBtn.getAttribute('data-session'));
         return;
       }
       // The Snooze button opens (or closes) the little inline menu with the
@@ -8270,6 +9405,30 @@
       if (cardEl) {
         openDetail(cardEl.getAttribute('data-session-id') || '');
       }
+    });
+
+    // Compose fields: keep state and the derived bits in step without a
+    // re-render (which would steal focus from the field being typed in).
+    // The title's value attribute is mirrored so the checks, which read
+    // markup, can assert on an edit; the description's character counter
+    // carries its state the same way.
+    document.getElementById('view').addEventListener('input', function (event) {
+      if (state.screen !== 'compose') return;
+      var t = event.target;
+      if (t.matches && t.matches('#compose-title')) {
+        state.compose.title = t.value;
+        t.setAttribute('value', t.value);
+        updateSendPill();
+      } else if (t.matches && t.matches('#compose-body')) {
+        state.compose.body = t.value;
+        var count = document.querySelector('[data-compose-count]');
+        if (count) count.textContent = t.value.length + ' characters';
+        updateSendPill();
+      }
+    });
+
+    document.getElementById('new-proposal-btn').addEventListener('click', function () {
+      openCompose();
     });
 
     // Share-as-image: the open button and the preview panel sit above #view,
@@ -8529,8 +9688,12 @@
         // and a tab switch used to keep the previous tab's scroll offset.
         window.scrollTo(0, 0);
         if (tab === 'votes') loadVotes(!state.votes);
+        else if (tab === 'saved') loadSaved(!state.saved);
         else if (tab === 'watchlist') loadWatchlist(!state.watchlist);
         else if (tab === 'leaderboard') loadLeaderboard(!state.leaderboard);
+        // The Following tab reads the inbox data; it needs a load of its own
+        // only when no inbox load has happened yet (e.g. deep-linked here).
+        else if (tab === 'following' && !state.inbox) loadInbox(false);
       });
     }
 
@@ -8570,9 +9733,16 @@
     if (searchBox && state.search) searchBox.value = state.search;
     var membersBox = document.getElementById('members-search');
     if (membersBox && state.memberQuery) membersBox.value = state.memberQuery;
-    if (state.membersView) loadMembers(true);
+    if (state.screen === 'compose') {
+      // The ?compose=1 deep link opens the New proposal screen; the list
+      // behind it is not shown, so its data loads when the user leaves
+      // compose (backToMain), not on boot.
+    } else if (state.membersView) loadMembers(true);
     else if (state.tab === 'votes') loadVotes(true);
+    else if (state.tab === 'saved') loadSaved(true);
     else if (state.tab === 'watchlist') loadWatchlist(true);
+    // The Following tab reads the inbox data, so its boot load is the same.
+    else if (state.tab === 'following') loadInbox(true);
     else if (state.tab === 'leaderboard') {
       bootBoardLoad = loadLeaderboard(true);
       // A ?cast= check on the Leaderboard tab still needs the demo inbox:

@@ -99,16 +99,55 @@ user's vote history.
 
 ## App-specific conventions
 
-- Three local tables: `my_votes` (one person's vote history) and
+- Local tables: `my_votes` (one person's vote history) and
   `watchlist` (one person's starred proposals, plus the status each row
   was last seen in) are both marked `staging:private` (per-person data).
   `saved_searches` (one person's saved inbox searches: name, query,
   filters, last-seen stamp) is the third private table, and `snoozes`
   (one person's snoozed proposals and their wake dates) is a fourth,
   also `staging:private`. `proposal_reads` (one person's opened proposals:
-  append-only session-id rows) is the fifth, also `staging:private`.
+  append-only session-id rows) is the fifth, also `staging:private`, and
+  `bookmarks` (one person's bookmarked proposals: app, title, saved date)
+  is the sixth, also `staging:private`. `my_proposals` (proposals composed
+  in the app's New proposal screen — the platform's app-facing API is
+  read-only, so a sent proposal is recorded here and the Sent list renders
+  from it; nothing is submitted to any approval pipeline from this app) is
+  the seventh, also `staging:private`.
   Proposal data stays on the platform — with one exception: the discussion
   thread.
+- Bookmarks: the Bookmark button on every proposal card and in the
+  detail's action bar saves a proposal to the person's Saved tab (next to
+  Inbox, My Votes and Watchlist; badge shows the row count, hidden at
+  zero). Saving is per member (a `bookmarks` row keyed by user id, so it
+  survives reloads and follows the account); un-bookmarking removes the
+  row at once, optimistically on the client with a rollback on failure
+  (same pattern as stars and votes). The button is a quiet ghost pill —
+  "Bookmark" idle, violet "Bookmarked" saved — independent of starring,
+  voting and snoozing, and works on voted and merged proposals too.
+  Cards show the saved date on Saved rows ("Saved 5 Oct"); the tab's
+  summary line reads "N saved, M settled" (settled = merged or closed,
+  from the row's own status when the server supplies one, else from the
+  loaded inbox data — no extra platform calls). The empty state says
+  "Nothing saved yet" with a Browse apps button like the inbox's.
+  Demo knobs (staging + `?demo=1` only): `?tab=saved` opens the tab on
+  two fixture rows (demo-5 saved 6 days ago, demo-6 2 days ago); the
+  inbox demo load stamps `myBookmark` onto cards like stars (from the
+  caller's real rows, or `?preset-bookmark=<id>` display-only); saving
+  through the demo route stores a real row for the signed-in account so
+  persistence is observable. Hooks, all through the real buttons or
+  routes: `?tap-bookmark=<id>` (clears that proposal's stored row first,
+  then taps the card's button); `?set-bookmark=<id>` (saves for real then
+  reloads without the param — pair with `?tab=saved`, which turns on
+  `?saved-mine=` on the reload so the persisted row is listed);
+  `?tap-unbookmark=<id>` (taps the button from a bookmarked render; pair
+  with `?preset-bookmark=<same id>` on the inbox, or use it directly on
+  the Saved tab where the fixture rows render bookmarked);
+  `?saved-empty=1` empties the Saved tab (the empty state); and
+  `?saved-other=1` stores a bookmark for a fake member (staging-demo-user
+  on demo-4) after resetting the caller's rows on the six fixture ids, so
+  the per-member check sees the caller's list without it. `set-bookmark`,
+  `tap-bookmark` and `saved-other` all reset the caller's fixture rows
+  first, so repeated check runs start clean.
 - Read tracking: opening a proposal (Discuss, or a `?proposal=` deep link)
   marks it read for the signed-in account only — an append-only row in
   `proposal_reads`, so read state survives reloads, follows the account and
@@ -131,6 +170,19 @@ user's vote history.
   `set-read`/`markallread`/`open-merged`/`read-other` first resets the
   caller's rows on the six fixture ids, so checks never depend on earlier
   runs.
+- New since last visit: every successful inbox load saves the newest loaded
+  proposal (`{ id, at proposedAt }`) to localStorage
+  `vote-inbox:newest-seen` — per device and browser, like the Hide voted
+  switch — and resolves it into a baseline time (the remembered proposal's
+  own time when still loaded, else the stored stamp). Cards proposed after
+  that baseline show a small violet "New" badge (`data-new-badge`,
+  aria-label "New since your last visit") beside the title, right after the
+  unread dot; badges persist across re-renders and clear on the next fetch.
+  First visit, blocked storage, a missing proposed date or a zero-proposal
+  load marks nothing New. Demo hook (staging + `?demo=1` only, client-only,
+  nothing forwarded): `?newbadge=1` sets the baseline to the demo-6 fixture,
+  so demo-2 and demo-4 read as New and a later plain `?demo=1` load stays
+  badge-free.
 - Snooze: each person can snooze a proposal for one day or one week from
   the card's Snooze button, so it leaves their inbox until its wake date
   and reappears automatically after it (expiry is lazy: rows whose wake
@@ -142,6 +194,20 @@ user's vote history.
   button that returns the proposal immediately; unsnoozing the last one
   returns to the inbox, and an all-snoozed inbox gets its own empty
   state pointing at the filter.
+- App following: each app row in the app filter carries a star toggle
+  (aria-pressed); following an app (persisted in localStorage
+  `vote-inbox:follows`) adds it to the Following tab, which groups the
+  followed apps' open (non-merged) proposals per app with a summary line
+  ("N open, M votes needed" via `data-following-needed` / `data-following-apps`)
+  and a tab badge. Unfollowing removes the star and the app's group. An app
+  with no open proposals renders no group; a followed proposal counts as
+  needing a vote until it is voted or merged. The Inbox is untouched.
+  Following demo hooks (staging + `?demo=1` only): `?set-follow=<slug,slug>`
+  replaces the caller's followed set (reloads at `clear-set-follow=1`, the
+  same pattern as set-filter); `?clear-follows=1` empties it for that load;
+  `?tap-follow=<slug>` / `?tap-unfollow=<slug>` tap the star through the real
+  delegated handler (boot-time storage adjust makes the tap act from the
+  intended direction).
 - Snooze demo hooks (staging + `?demo=1` only): `?tap-snooze=<id>` opens
   that card's snooze menu; `?set-snooze=<id>&snooze-days=1|7` snoozes for
   real (a DB row for the signed-in account) then reloads at a
@@ -245,6 +311,14 @@ user's vote history.
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- Compose check fixtures (demo only, one-shot, replayed through the real
+  controls after the compose screen renders): `?compose=1` itself is a
+  real deep link (all environments, not demo-gated); `&template=<id>`,
+  `&switch-template=<id>`, `&set-title=<text>`, `&set-body=<text>` and
+  `&send=1` walk one user path, and `&back=1` taps the compose screen's
+  back chevron at the end of the chain. Check paths must URL-encode
+  spaces (`%20`): the platform's test reader rejects paths with literal
+  whitespace.
 - Onboarding tour: a three-step panel (what a proposal is, how to vote,
   where My Votes lives) shown to first-time visitors. It renders in its own
   `#tour-slot` above `#view` (never inside the list, so the cards'
