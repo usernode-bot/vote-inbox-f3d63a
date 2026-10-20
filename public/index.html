@@ -136,6 +136,7 @@
     </p>
     <p id="votes-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="watchlist-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
+    <p id="following-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="saved-summary" class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <p id="members-summary" data-members-summary class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
@@ -143,6 +144,7 @@
     <div id="list-controls" class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
       <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
+        <button data-tab="following" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Following<span class="tab-badge"></span></button>
         <button data-tab="saved" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Saved<span class="tab-badge"></span></button>
         <button data-tab="watchlist" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Watchlist<span class="tab-badge"></span></button>
         <button data-tab="votes" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">My Votes<span data-tab-count></span><span class="tab-badge"></span></button>
@@ -698,6 +700,7 @@
       tab: params.get('tab') === 'votes' ? 'votes'
         : params.get('tab') === 'saved' ? 'saved'
         : params.get('tab') === 'watchlist' ? 'watchlist'
+        : params.get('tab') === 'following' ? 'following'
         : params.get('tab') === 'leaderboard' ? 'leaderboard' : 'inbox',
       // Which top-level screen is showing: 'main' (the two tabs) or
       // 'compose' (the New proposal screen). Not persisted; the ?compose=
@@ -1210,6 +1213,91 @@
       var remainingQ = remainingParams.toString();
       location.replace(location.pathname + (remainingQ ? '?' + remainingQ : '') + location.hash);
       return;
+    }
+
+    // ------------------------------------------------------------------
+    // Followed apps. A set of slugs persisted in localStorage; the app
+    // filter rows carry a follow star for each and the Following tab lists
+    // the followed apps' open proposals. The Inbox never changes shape
+    // because of a follow — the set only adds a tab. Storage can be
+    // refused in an iframe — follows then just don't persist.
+    // ------------------------------------------------------------------
+
+    var FOLLOW_KEY = 'vote-inbox:follows';
+
+    function loadFollows() {
+      try {
+        var v = JSON.parse(localStorage.getItem(FOLLOW_KEY) || '[]');
+        if (!Array.isArray(v)) return [];
+        var out = [];
+        for (var i = 0; i < v.length; i++) {
+          if (typeof v[i] === 'string' && v[i] && out.indexOf(v[i]) === -1) out.push(v[i]);
+        }
+        return out;
+      } catch (e) { return []; }
+    }
+
+    function saveFollows(list) {
+      try { localStorage.setItem(FOLLOW_KEY, JSON.stringify(list)); } catch (e) { /* not persistable here */ }
+    }
+
+    state.follows = loadFollows();
+
+    // One-load cleanup for the set-follow hook below: the reloaded page has
+    // restored the follows into state, then empties them again, so the hook
+    // leaves storage the way it found it (a check run shares one browser
+    // profile across routes; later routes must not inherit the set).
+    if (params.get('clear-set-follow') === '1') saveFollows([]);
+
+    // Staging-check hook: ?set-follow=<slug,slug> writes the follow set the
+    // way taps on the rows' stars would, then reloads without the
+    // parameter, so one check URL observes follow → reload → still followed
+    // (behavior 7). The plain routes never touch the set from a parameter.
+    var setFollowParam = params.get('set-follow');
+    if (setFollowParam && DEMO) {
+      var seededFollows = state.follows.slice();
+      setFollowParam.split(',').forEach(function (slug) {
+        var s = slug.trim();
+        if (s && seededFollows.indexOf(s) === -1) seededFollows.push(s);
+      });
+      saveFollows(seededFollows);
+      var remainingFollowParams = new URLSearchParams(params);
+      remainingFollowParams.delete('set-follow');
+      remainingFollowParams.set('clear-set-follow', '1');
+      var remainingFollowQ = remainingFollowParams.toString();
+      location.replace(location.pathname + (remainingFollowQ ? '?' + remainingFollowQ : '') + location.hash);
+      return;
+    }
+
+    // Staging-check hook: ?clear-follows=1 empties the follow set for one
+    // load (no reload), so the Following tab's no-follows empty state is
+    // reachable by checks regardless of what earlier routes stored. Demo only.
+    if (params.get('clear-follows') === '1' && DEMO) {
+      state.follows = [];
+      saveFollows([]);
+    }
+
+    // Staging-check hooks: ?tap-follow=<slug> and ?tap-unfollow=<slug> tap
+    // that app row's follow star through the real delegated click handler
+    // once the filter has rendered (pair with ?openfilter=1). localStorage
+    // is synchronous, so the stored set is adjusted right here before any
+    // render: a tap-follow URL always acts from an unfollowed row and a
+    // tap-unfollow URL from a followed one, whatever earlier checks left
+    // behind. Demo only.
+    var tapFollowParam = params.get('tap-follow');
+    var tapUnfollowParam = params.get('tap-unfollow');
+    if (tapFollowParam && DEMO) {
+      var unfollowed = state.follows.slice();
+      var at = unfollowed.indexOf(tapFollowParam);
+      if (at !== -1) { unfollowed.splice(at, 1); saveFollows(unfollowed); state.follows = unfollowed; }
+    }
+    if (tapUnfollowParam && DEMO) {
+      var refollowed = state.follows.slice();
+      if (refollowed.indexOf(tapUnfollowParam) === -1) {
+        refollowed.push(tapUnfollowParam);
+        saveFollows(refollowed);
+        state.follows = refollowed;
+      }
     }
 
     // ------------------------------------------------------------------
@@ -4392,6 +4480,7 @@
       var inboxCount = state.inbox && state.inbox.proposals ? state.inbox.proposals.length : null;
       var votesCount = state.votes && state.votes.votes ? state.votes.votes.length : null;
       var watchlistCount = state.watchlist && state.watchlist.rows ? state.watchlist.rows.length : null;
+      var followingCount = followingNeededCount();
       var savedCount = state.saved && state.saved.rows ? state.saved.rows.length : null;
       for (var i = 0; i < buttons.length; i++) {
         var btn = buttons[i];
@@ -4401,6 +4490,7 @@
         var count = tab === 'inbox' ? inboxCount
           : tab === 'saved' ? savedCount
           : tab === 'watchlist' ? watchlistCount
+          : tab === 'following' ? followingCount
           : tab === 'votes' ? votesCount : null;
         btn.className = 'tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors '
           + (active ? TAB_ACTIVE : TAB_IDLE);
@@ -4755,6 +4845,38 @@
           + '<h2 data-age-header class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">' + group.label + '</h2>'
           + '<div data-age-cards class="flex flex-col gap-3">';
         for (var j = 0; j < items.length; j++) html += proposalCard(items[j]);
+        html += '</div></section>';
+      }
+      return html;
+    }
+
+    function renderFollowing() {
+      if (state.errorInbox) return errorHtml(state.errorInbox);
+      if (!state.inbox || state.loadingInbox && !state.inbox.proposals) return skeletons();
+      if (!state.follows.length) {
+        return emptyHtml(
+          'No followed apps yet',
+          'Star an app in the app filter above the Inbox and its open proposals will show up here.',
+          BROWSE_CTA);
+      }
+      var rows = followingAppRows();
+      if (!rows.length) {
+        return emptyHtml(
+          'Nothing open from your apps',
+          'Every followed app is caught up right now. New proposals from them will show up here.',
+          REFRESH_CTA);
+      }
+      // One section per followed app that has an open proposal, the app's
+      // name as the header and its cards below. A followed app with nothing
+      // open gets no section at all, so the list only names apps with
+      // something to look at.
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        html += '<section data-following-group="' + esc(row.app.slug) + '" class="flex flex-col gap-3">'
+          + '<h2 class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">' + esc(row.app.name) + '</h2>'
+          + '<div data-following-cards class="flex flex-col gap-3">';
+        for (var j = 0; j < row.items.length; j++) html += proposalCard(row.items[j]);
         html += '</div></section>';
       }
       return html;
@@ -5734,6 +5856,39 @@
       el.hidden = false;
     }
 
+    // One-line summary under the header on the Following tab, computed from
+    // the loaded inbox (no extra request): the followed apps' open
+    // proposals, and how many of them still need this person's vote. The
+    // data-following-needed / data-following-apps attributes carry the
+    // numbers for the declared checks.
+    function renderFollowingSummary() {
+      var el = document.getElementById('following-summary');
+      if (!el) return;
+      var proposals = state.inbox && state.inbox.proposals;
+      var open = 0;
+      var needed = 0;
+      var apps = {};
+      if (proposals) {
+        for (var i = 0; i < proposals.length; i++) {
+          var p = proposals[i];
+          if (p.status === 'merged' || !isFollowing(p.appSlug)) continue;
+          open++;
+          if (!isVoted(p)) needed++;
+          apps[p.appSlug] = true;
+        }
+      }
+      if (state.tab !== 'following' || state.membersView || state.errorInbox
+        || !state.follows.length || !proposals) {
+        el.hidden = true;
+        return;
+      }
+      el.textContent = open + ' open, ' + needed
+        + (needed === 1 ? ' vote needed' : ' votes needed');
+      el.setAttribute('data-following-needed', String(needed));
+      el.setAttribute('data-following-apps', Object.keys(apps).sort().join(','));
+      el.hidden = false;
+    }
+
     // One-line summary under the header on the Saved tab, from the loaded
     // rows (no extra request): how many are bookmarked and how many are
     // already merged or closed (worth revisiting or clearing).
@@ -5849,6 +6004,7 @@
       renderShareImagePanel();
       renderDigest();
       renderWatchlistSummary();
+      renderFollowingSummary();
       renderSavedSummary();
       renderMembersSummary();
       var viewHtml;
@@ -5871,6 +6027,10 @@
         if (!state.snoozeView && !state.detail && !state.compareView) {
           viewHtml = celebrationCardsHtml() + viewHtml;
         }
+      } else if (state.tab === 'following') {
+        // A proposal opened from the Following tab shows the same detail the
+        // inbox would; with no proposal open, the tab's own list.
+        viewHtml = state.detail && findProposal(state.detail) ? renderDetail() : renderFollowing();
       } else if (state.tab === 'votes') {
         viewHtml = renderVotes();
       } else if (state.tab === 'saved') {
@@ -6368,10 +6528,93 @@
       if (clearBtn) clearBtn.disabled = n === 0 || state.bulkBusy;
     }
 
+    // Followed apps. A real toggle button lives inside each app row of the
+    // filter list (a <button> cannot nest inside the row's own <button>, so
+    // app rows are divs with the option role and the row stays the pick
+    // target). The star mirrors the card star's amber active treatment;
+    // aria-pressed carries the state for screen readers.
+    var FOLLOW_STAR_IDLE_CLASS = 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-300 transition-colors hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400';
+    var FOLLOW_STAR_ACTIVE_CLASS = 'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-amber-500 transition-colors hover:text-amber-600 dark:text-amber-300 dark:hover:text-amber-200';
+
+    function isFollowing(slug) {
+      return state.follows.indexOf(slug) !== -1;
+    }
+
+    function followStarHtml(slug) {
+      var active = isFollowing(slug);
+      return '<button type="button" data-follow-toggle data-app="' + esc(slug) + '"'
+        + ' aria-pressed="' + (active ? 'true' : 'false') + '"'
+        + ' aria-label="' + (active ? 'Unfollow ' + esc(slug) : 'Follow ' + esc(slug)) + '"'
+        + ' class="' + (active ? FOLLOW_STAR_ACTIVE_CLASS : FOLLOW_STAR_IDLE_CLASS) + '">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="' + (active ? 'currentColor' : 'none') + '"'
+        + ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<path d="M11.48 3.5a.56.56 0 0 1 1.04 0l2.13 4.46 4.9.62c.5.06.7.68.33 1.02l-3.6 3.32.92 4.85a.56.56 0 0 1-.8.6L12 16.06l-4.4 2.31a.56.56 0 0 1-.8-.6l.92-4.85-3.6-3.32a.56.56 0 0 1 .33-1.02l4.9-.62z"/></svg></button>';
+    }
+
+    // Follow / unfollow one app: updates the stored set, repaints the open
+    // filter list (so the star flips in place) and re-renders (tab badges,
+    // the Following tab). A slug the inbox no longer lists keeps its stored
+    // entry — the set is a preference, not derived data.
+    function toggleFollow(slug) {
+      var list = state.follows.slice();
+      var at = list.indexOf(slug);
+      if (at === -1) list.push(slug);
+      else list.splice(at, 1);
+      state.follows = list;
+      saveFollows(list);
+      if (openFilter && activeFilterRender) activeFilterRender();
+      render();
+    }
+
+    // The Following tab's headline count: open proposals of followed apps
+    // that still need this person's vote. Null until the inbox has loaded,
+    // so the tab badge stays hidden rather than reading 0 too early.
+    function followingNeededCount() {
+      if (!state.follows.length) return 0;
+      var proposals = state.inbox && state.inbox.proposals;
+      if (!proposals) return null;
+      var n = 0;
+      for (var i = 0; i < proposals.length; i++) {
+        var p = proposals[i];
+        if (p.status === 'merged') continue;
+        if (!isFollowing(p.appSlug)) continue;
+        if (!isVoted(p)) n++;
+      }
+      return n;
+    }
+
+    // Followed apps with at least one open proposal, in filter-list order.
+    // Apps with nothing open are skipped here, so the Following tab never
+    // renders a group for them.
+    function followingAppRows() {
+      var proposals = state.inbox && state.inbox.proposals;
+      if (!proposals) return [];
+      var apps = filterApps();
+      var rows = [];
+      for (var a = 0; a < apps.length; a++) {
+        var app = apps[a];
+        if (!isFollowing(app.slug)) continue;
+        var items = [];
+        for (var i = 0; i < proposals.length; i++) {
+          var p = proposals[i];
+          if (p.appSlug !== app.slug || p.status === 'merged') continue;
+          items.push(p);
+        }
+        if (items.length) rows.push({ app: app, items: items });
+      }
+      return rows;
+    }
+
     function filterRowEl(app, selected, openCount, mergedCount) {
-      var btn = document.createElement('button');
-      btn.type = 'button';
+      var btn = app
+        // App rows carry a follow star, which is a real <button> — it cannot
+        // nest inside the row's own <button>, so app rows are divs with the
+        // option role and the click delegation below treats them the same.
+        ? document.createElement('div')
+        : document.createElement('button');
+      if (!app) btn.type = 'button';
       btn.setAttribute('role', 'option');
+      if (!app) btn.tabIndex = 0;
       btn.setAttribute('aria-selected', selected ? 'true' : 'false');
       btn.setAttribute('data-app-option', app ? app.slug : '');
       btn.className = 'flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm '
@@ -6392,6 +6635,7 @@
           + '<span data-app-merged="' + mergedCount + '" title="Merged in the last 7 days"'
           + ' class="shrink-0 whitespace-nowrap text-xs font-normal tabular-nums text-zinc-500 dark:text-zinc-400">· '
           + mergedCount + ' merged this week</span>'
+          + followStarHtml(app.slug)
           + (selected ? FILTER_CHECK : '');
       } else {
         btn.innerHTML = FILTER_ALL_ICON
@@ -6445,9 +6689,30 @@
       }
 
       content.addEventListener('click', function (event) {
+        // The follow star is its own control: it must win over the row pick
+        // (the star sits inside the row, so closest() would find the row
+        // first otherwise).
+        var star = event.target.closest ? event.target.closest('[data-follow-toggle]') : null;
+        if (star) {
+          toggleFollow(star.getAttribute('data-app'));
+          return;
+        }
         var btn = event.target.closest ? event.target.closest('[data-app-option]') : null;
         if (!btn) return;
         var slug = btn.getAttribute('data-app-option');
+        pickFilter(slug ? findFilterApp(slug) : null);
+      });
+      // App rows are divs with the option role (their star is a nested
+      // button), so Enter and Space pick the app when the row itself is
+      // focused. Focus on the star keeps the button's own click handling.
+      content.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        var target = event.target;
+        if (!target || target.closest('[data-follow-toggle]')) return;
+        var row = target.closest ? target.closest('[data-app-option]') : null;
+        if (!row || row.tagName !== 'DIV') return;
+        event.preventDefault();
+        var slug = row.getAttribute('data-app-option');
         pickFilter(slug ? findFilterApp(slug) : null);
       });
       input.addEventListener('input', renderList);
@@ -6871,6 +7136,7 @@
           maybeAutoOpenTagFilter();
           maybeTapTag();
           maybeTapStar();
+          maybeTapFollow();
           maybeTapBookmark();
           maybeTapUnbookmark();
           maybeTapSnooze();
@@ -6954,7 +7220,8 @@
 
     function refreshCurrent() {
       if (state.membersView) return loadMembers(true);
-      return state.tab === 'inbox' ? loadInbox(true)
+      // The Following tab reads the same inbox data the Inbox loads.
+      return state.tab === 'inbox' || state.tab === 'following' ? loadInbox(true)
         : state.tab === 'votes' ? loadVotes(true)
         : state.tab === 'saved' ? loadSaved(true)
         : state.tab === 'leaderboard' ? loadLeaderboard(true)
@@ -7807,6 +8074,24 @@
     // through the real delegated click handler — so expansion (and, paired
     // with ?expand-summary=<same id>, collapsing) runs through the real tap
     // path. Demo only; one-shot.
+    // Staging demo hook: ?demo=1&tap-follow=<slug> / ?tap-unfollow=<slug>
+    // click that app row's follow star once the app filter has rendered —
+    // the real button, through the filter content's own delegated click
+    // handler. The boot hook adjusted the stored set first, so the tap
+    // always starts from the intended direction. Pair with ?openfilter=1.
+    // Demo only; one-shot.
+    var tapFollowDone = false;
+    function maybeTapFollow() {
+      if (!DEMO || tapFollowDone) return;
+      var slug = params.get('tap-follow') || params.get('tap-unfollow');
+      if (!slug) return;
+      var btn = document.querySelector(
+        '[data-follow-toggle][data-app="' + slug + '"]');
+      if (!btn) return;
+      tapFollowDone = true;
+      btn.click();
+    }
+
     var tapSummaryDone = false;
     function maybeTapSummary() {
       if (!DEMO || !TAP_SUMMARY || tapSummaryDone) return;
@@ -9064,6 +9349,9 @@
         else if (tab === 'saved') loadSaved(!state.saved);
         else if (tab === 'watchlist') loadWatchlist(!state.watchlist);
         else if (tab === 'leaderboard') loadLeaderboard(!state.leaderboard);
+        // The Following tab reads the inbox data; it needs a load of its own
+        // only when no inbox load has happened yet (e.g. deep-linked here).
+        else if (tab === 'following' && !state.inbox) loadInbox(false);
       });
     }
 
@@ -9111,6 +9399,8 @@
     else if (state.tab === 'votes') loadVotes(true);
     else if (state.tab === 'saved') loadSaved(true);
     else if (state.tab === 'watchlist') loadWatchlist(true);
+    // The Following tab reads the inbox data, so its boot load is the same.
+    else if (state.tab === 'following') loadInbox(true);
     else if (state.tab === 'leaderboard') {
       bootBoardLoad = loadLeaderboard(true);
       // A ?cast= check on the Leaderboard tab still needs the demo inbox:

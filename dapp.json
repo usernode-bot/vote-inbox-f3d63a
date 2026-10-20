@@ -3748,6 +3748,17 @@
       ]
     },
     {
+      "id": "follow.star-on-rows",
+      "name": "Each app row in the filter has a follow star",
+      "path": "/?demo=1&openfilter=1&clear-follows=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-follow-toggle][aria-pressed='false']",
+      "expectText": "Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "read.hide-read-off",
       "name": "Turning Hide read off brings read proposals back",
       "path": "/?demo=1&set-read=demo-2&hide-read=1&tap-hide-read=1",
@@ -4192,6 +4203,18 @@
       ]
     },
     {
+      "id": "follow.tap-star-follows",
+      "name": "Tapping the star follows the app",
+      "path": "/?demo=1&openfilter=1&tap-follow=staging-demo-notes&clear-follows=1",
+      "expectSelector": "[data-follow-toggle][data-app='staging-demo-notes'][aria-pressed='true']",
+      "expectText": "Unfollow staging-demo-notes",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "compose.edit-body",
       "name": "Prefilled description stays editable",
       "path": "/?demo=1&compose=1&template=bugfix&set-body=Edited%20description%20text",
@@ -4204,10 +4227,32 @@
       ]
     },
     {
+      "id": "follow.tab-appears",
+      "name": "A Following tab appears and opens",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following",
+      "expectSelector": "[data-tab='following'][aria-selected='true']",
+      "expectText": "votes needed",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "compose.edit-send-ready",
       "name": "Editing the prefilled title leaves Send ready",
       "path": "/?demo=1&compose=1&template=bugfix&set-title=Custom%20title",
       "expectSelector": "[data-send-proposal]:not([disabled])",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.tab-lists-followed-only",
+      "name": "Following tab lists only the followed app's open proposals",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following",
+      "expectSelector": "[data-following-cards] [data-proposal-card][data-session-id='demo-4']",
       "impact": [
         "public/index.html",
         "dapp.json"
@@ -4226,10 +4271,31 @@
       ]
     },
     {
+      "id": "follow.tab-excludes-others",
+      "name": "Following tab leaves out unfollowed apps' proposals",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following",
+      "expectSelector": "body:not(:has([data-following-cards] [data-proposal-card][data-session-id='demo-2']))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "compose.switch-replaces-edit",
       "name": "Switching templates replaces an edited title too",
       "path": "/?demo=1&compose=1&template=bugfix&set-title=My%20custom%20title&switch-template=feature",
       "expectSelector": "#compose-title[value='Add [feature name]']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.count",
+      "name": "Following tab shows how many need a vote",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following",
+      "expectSelector": "[data-following-needed='2']",
+      "expectText": "2 votes needed",
       "impact": [
         "public/index.html",
         "dapp.json"
@@ -4249,6 +4315,18 @@
       ]
     },
     {
+      "id": "follow.unfollow",
+      "name": "Unfollowing removes the star and the app from the tab",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following&openfilter=1&tap-unfollow=staging-demo-notes",
+      "expectSelector": "[data-follow-toggle][data-app='staging-demo-notes'][aria-pressed='false']",
+      "expectText": "No followed apps yet",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "compose.send-shows-title",
       "name": "Confirmation names the sent proposal",
       "path": "/?demo=1&compose=1&template=bugfix&send=1",
@@ -4256,6 +4334,17 @@
       "impact": [
         "public/index.html",
         "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.survives-reload",
+      "name": "The followed set survives a reload",
+      "path": "/?demo=1&set-follow=staging-demo-notes&openfilter=1",
+      "expectSelector": "[data-follow-toggle][data-app='staging-demo-notes'][aria-pressed='true']",
+      "expectText": "Unfollow staging-demo-notes",
+      "impact": [
+        "public/index.html",
         "dapp.json"
       ]
     },
@@ -4268,6 +4357,16 @@
       "impact": [
         "public/index.html",
         "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.inbox-unaffected",
+      "name": "Inbox still shows proposals from all apps",
+      "path": "/?demo=1&set-follow=staging-demo-notes",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-2']):has([data-proposal-card][data-session-id='demo-4'])",
+      "impact": [
+        "public/index.html",
         "dapp.json"
       ]
     },
@@ -4307,10 +4406,32 @@
       ]
     },
     {
+      "id": "follow.empty-state",
+      "name": "Empty Following tab shows a hint to star an app",
+      "path": "/?demo=1&tab=following&clear-follows=1",
+      "expectSelector": "[data-tab='following'][aria-selected='true']",
+      "expectText": "No followed apps yet",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "compose.opens-without-demo",
       "name": "New proposal screen opens from the deep link with no demo data",
       "path": "/?compose=1",
       "expectSelector": "[data-compose-screen]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.skips-empty-app",
+      "name": "A followed app with no open proposals is skipped",
+      "path": "/?demo=1&set-follow=staging-demo-notes,staging-demo-archive&tab=following",
+      "expectSelector": "[data-following-group='staging-demo-notes']",
       "impact": [
         "public/index.html",
         "dapp.json"
@@ -4328,6 +4449,16 @@
       ]
     },
     {
+      "id": "follow.skips-empty-app-absent",
+      "name": "The empty followed app renders no group",
+      "path": "/?demo=1&set-follow=staging-demo-notes,staging-demo-archive&tab=following",
+      "expectSelector": "body:not(:has([data-following-group='staging-demo-archive']))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "compose.back-to-list",
       "name": "Leaving compose restores the main list",
       "path": "/?demo=1&compose=1&template=bugfix&back=1",
@@ -4336,6 +4467,16 @@
       "impact": [
         "public/index.html",
         "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.star-aria",
+      "name": "Star reflects pressed state for screen readers",
+      "path": "/?demo=1&openfilter=1&tap-follow=staging-demo-app&clear-follows=1",
+      "expectSelector": "[data-follow-toggle][data-app='staging-demo-app'][aria-pressed='true'][aria-label='Unfollow staging-demo-app']",
+      "impact": [
+        "public/index.html",
         "dapp.json"
       ]
     }
