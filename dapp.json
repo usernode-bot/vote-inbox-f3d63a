@@ -674,7 +674,7 @@
       "name": "App filter shows open proposal count next to each app",
       "path": "/?demo=1&app-filter=open",
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count]",
-      "expectText": "(3)",
+      "expectText": "3 waiting",
       "visual": true,
       "impact": [
         "public/index.html",
