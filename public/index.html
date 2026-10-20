@@ -310,6 +310,10 @@
     // reachable by a check. Same idea for ?allmerged=1 and the Hide merged
     // toggle. Neither is ever sent without demo data.
     var ALL_VOTED = params.get('allvoted') === '1';
+    // Deep link ?app-filter=open opens the app filter once the inbox has
+    // loaded, for shareable links and for the staging checks, which cannot
+    // tap. Same shape as ?q=: a one-load hint read at startup.
+    var APP_FILTER_OPEN = params.get('app-filter') === 'open';
     // Staging-check fixture: ?openfilter=1 opens the app filter dropdown on
     // load, so a check can assert on the list without clicking. Never sent
     // without demo data.
@@ -6139,6 +6143,7 @@
       render();
     }
 
+    var appFilterOpened = false; // ?app-filter=open fires once per page load
     // ------------------------------------------------------------------
     // Tag filter dropdown: the same machinery as the app filter above —
     // trigger, kit popover with a plain-panel fallback, click-outside and
@@ -6467,6 +6472,11 @@
           render();
           maybeRerenderFilter();
           maybeAutoOpenFilter();
+          if (APP_FILTER_OPEN && !appFilterOpened && state.inbox
+            && state.tab === 'inbox' && !state.errorInbox) {
+            appFilterOpened = true;
+            openAppFilter();
+          }
           maybeTurnoutRefresh();
           maybeTapNo();
           maybeTapShare();
