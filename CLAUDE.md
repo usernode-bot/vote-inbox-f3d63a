@@ -170,6 +170,19 @@ user's vote history.
   `set-read`/`markallread`/`open-merged`/`read-other` first resets the
   caller's rows on the six fixture ids, so checks never depend on earlier
   runs.
+- New since last visit: every successful inbox load saves the newest loaded
+  proposal (`{ id, at proposedAt }`) to localStorage
+  `vote-inbox:newest-seen` — per device and browser, like the Hide voted
+  switch — and resolves it into a baseline time (the remembered proposal's
+  own time when still loaded, else the stored stamp). Cards proposed after
+  that baseline show a small violet "New" badge (`data-new-badge`,
+  aria-label "New since your last visit") beside the title, right after the
+  unread dot; badges persist across re-renders and clear on the next fetch.
+  First visit, blocked storage, a missing proposed date or a zero-proposal
+  load marks nothing New. Demo hook (staging + `?demo=1` only, client-only,
+  nothing forwarded): `?newbadge=1` sets the baseline to the demo-6 fixture,
+  so demo-2 and demo-4 read as New and a later plain `?demo=1` load stays
+  badge-free.
 - Snooze: each person can snooze a proposal for one day or one week from
   the card's Snooze button, so it leaves their inbox until its wake date
   and reappears automatically after it (expiry is lazy: rows whose wake

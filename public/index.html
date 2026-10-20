@@ -582,6 +582,12 @@
     var MARK_ALL_READ = DEMO && params.get('markallread') === '1';
     var OPEN_MERGED = DEMO && params.get('open-merged') === '1';
     var TAP_HIDE_READ = DEMO && params.get('tap-hide-read') === '1';
+    // New-since-last-visit hook (demo only): ?newbadge=1 sets the
+    // remembered newest proposal to the demo-6 fixture for that load, so
+    // cards proposed after it (demo-2, demo-4) read as New. Client-only:
+    // nothing is forwarded to /api/inbox; the comparison and the write-back
+    // run the real code (see applyNewSince).
+    var NEWBADGE = DEMO && params.get('newbadge') === '1';
     // Demo-inbox params forwarded to /api/inbox: the read-check fixtures make
     // the server reset the caller's rows, and ?read=1 overlays the persisted
     // reads on demand.
@@ -740,6 +746,10 @@
       celebShownPromise: null,
       celebDismissPromise: null,
       inboxLoadedAt: null,
+      // Baseline time (ms) for the "New" badges on this load, set once per
+      // successful fetch by applyNewSince (see NEWEST_SEEN_KEY). null =
+      // no baseline (first visit, blocked storage): nothing shows as New.
+      newSinceMs: null,
       filter: '',
       filterName: '',
       // Tag filter, one of the fixed list or '' for all. Persisted like the
@@ -993,6 +1003,74 @@
 
     function isVoted(p) {
       return p.myVote === 'yes' || p.myVote === 'no';
+    }
+
+    // ------------------------------------------------------------------
+    // New-since-last-visit badges. localStorage remembers the newest
+    // proposal seen on this device ({ id, at }) and applyNewSince turns it
+    // into a baseline time once per successful inbox load: cards proposed
+    // after that baseline show a small "New" badge beside the title until
+    // the next fetch. Per device and browser, like the hide-voted switch.
+    // Storage can be refused in an iframe — then nothing shows as New.
+    // ------------------------------------------------------------------
+
+    var NEWEST_SEEN_KEY = 'vote-inbox:newest-seen';
+
+    function loadNewestSeen() {
+      try {
+        var raw = localStorage.getItem(NEWEST_SEEN_KEY);
+        if (!raw) return null;
+        var rec = JSON.parse(raw);
+        return rec && rec.id ? rec : null;
+      } catch (e) { return null; }
+    }
+
+    function saveNewestSeen(rec) {
+      try { localStorage.setItem(NEWEST_SEEN_KEY, JSON.stringify(rec)); } catch (e) { /* not persistable here */ }
+    }
+
+    // Called once per successful load, right after reanchorDemo. Re-renders
+    // (votes, filters, tab switches) never call this, so badges persist
+    // until the next fetch; a failed fetch leaves the baseline and the key
+    // alone.
+    function applyNewSince(data) {
+      // ?newbadge=1 (demo only) swaps the remembered record for an older
+      // fixture so the badge is check-reachable; the rest runs the real code.
+      var baseline = NEWBADGE ? { id: 'demo-6' } : loadNewestSeen();
+      var list = Array.isArray(data && data.proposals) ? data.proposals : [];
+      // Newest proposal on this load, from everything loaded (unfiltered),
+      // so filters or hide toggles can never make something look new later.
+      var newest = null;
+      for (var i = 0; i < list.length; i++) {
+        var t = list[i].proposedAt ? Date.parse(list[i].proposedAt) : NaN;
+        if (!isNaN(t) && (!newest || t > newest.t)) newest = { id: list[i].sessionId, at: list[i].proposedAt, t: t };
+      }
+      // Baseline time: the remembered proposal's own time when it is still
+      // loaded (keeps plain ?demo=1 loads deterministic even though
+      // reanchorDemo moves fixture times forward), else the stored at stamp
+      // (the proposal has left the inbox). No record or an unparseable time
+      // means no badges — a first visit marks nothing New.
+      state.newSinceMs = null;
+      if (baseline) {
+        var bt = NaN;
+        for (var j = 0; j < list.length; j++) {
+          if (list[j].sessionId === baseline.id) {
+            bt = list[j].proposedAt ? Date.parse(list[j].proposedAt) : NaN;
+            break;
+          }
+        }
+        if (isNaN(bt)) bt = baseline.at ? Date.parse(baseline.at) : NaN;
+        if (!isNaN(bt)) state.newSinceMs = bt;
+      }
+      // Overwritten after every successful load; an empty inbox writes
+      // nothing, so the previous baseline is kept.
+      if (newest) saveNewestSeen({ id: newest.id, at: newest.at });
+    }
+
+    function isNewSince(p) {
+      if (state.newSinceMs == null) return false;
+      var t = p.proposedAt ? Date.parse(p.proposedAt) : NaN;
+      return !isNaN(t) && t > state.newSinceMs;
     }
 
     // ------------------------------------------------------------------
@@ -2346,6 +2424,9 @@
     var TAG_TRIGGER_IDLE = 'flex shrink-0 items-center justify-between gap-2 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
     var TAG_TRIGGER_ACTIVE = 'flex shrink-0 items-center justify-between gap-2 whitespace-nowrap rounded-xl border border-violet-500/60 bg-white py-2 pl-3 pr-3 text-sm font-medium text-violet-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-violet-500/60 dark:bg-zinc-900 dark:text-violet-300';
     var TAG_CHIP = 'inline-block whitespace-nowrap rounded-full bg-zinc-200/70 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
+    // "New" badge on cards proposed since the last inbox load (see
+    // NEWEST_SEEN_KEY). Violet, to match the unread dot it sits beside.
+    var NEW_BADGE = 'mr-1.5 inline-block whitespace-nowrap rounded-full bg-violet-100 px-1.5 py-px align-middle text-[11px] font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300';
     var TAG_CHIP_COUNT = 'font-normal tabular-nums text-zinc-500 dark:text-zinc-400';
     var FILTER_CHECK = '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
     var FILTER_ALL_ICON = '<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400" aria-hidden="true">'
@@ -3198,6 +3279,11 @@
         // this account has never opened. Read cards render the title alone.
         + (isRead(p) ? ''
           : '<span data-unread-dot aria-label="Unread" class="mr-1.5 inline-block h-2 w-2 rounded-full bg-violet-600 align-middle dark:bg-violet-400"></span>')
+        // New badge: proposed since this device's last inbox load (see
+        // isNewSince). A label, not a button — no click handling.
+        + (isNewSince(p)
+          ? '<span data-new-badge aria-label="New since your last visit" class="' + NEW_BADGE + '">New</span>'
+          : '')
         + esc(p.title) + '</h2>'
         + tagChipsRow(p)
         + changeSummaryRow(p)
@@ -7106,6 +7192,7 @@
           // the change summary uses.
           state.celebrations = Array.isArray(data.celebrations) ? data.celebrations : [];
           if (data.demo) reanchorDemo(data);
+          applyNewSince(data);
           resolveCompareSelection();
           state.inboxLoadedAt = new Date().toISOString();
           reapplyRetryQueue();
