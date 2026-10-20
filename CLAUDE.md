@@ -99,7 +99,7 @@ user's vote history.
 
 ## App-specific conventions
 
-- Three local tables: `my_votes` (one person's vote history) and
+- Local tables: `my_votes` (one person's vote history) and
   `watchlist` (one person's starred proposals, plus the status each row
   was last seen in) are both marked `staging:private` (per-person data).
   `saved_searches` (one person's saved inbox searches: name, query,
@@ -108,7 +108,11 @@ user's vote history.
   also `staging:private`. `proposal_reads` (one person's opened proposals:
   append-only session-id rows) is the fifth, also `staging:private`, and
   `bookmarks` (one person's bookmarked proposals: app, title, saved date)
-  is the sixth, also `staging:private`.
+  is the sixth, also `staging:private`. `my_proposals` (proposals composed
+  in the app's New proposal screen — the platform's app-facing API is
+  read-only, so a sent proposal is recorded here and the Sent list renders
+  from it; nothing is submitted to any approval pipeline from this app) is
+  the seventh, also `staging:private`.
   Proposal data stays on the platform — with one exception: the discussion
   thread.
 - Bookmarks: the Bookmark button on every proposal card and in the
@@ -280,6 +284,14 @@ user's vote history.
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- Compose check fixtures (demo only, one-shot, replayed through the real
+  controls after the compose screen renders): `?compose=1` itself is a
+  real deep link (all environments, not demo-gated); `&template=<id>`,
+  `&switch-template=<id>`, `&set-title=<text>`, `&set-body=<text>` and
+  `&send=1` walk one user path, and `&back=1` taps the compose screen's
+  back chevron at the end of the chain. Check paths must URL-encode
+  spaces (`%20`): the platform's test reader rejects paths with literal
+  whitespace.
 - Onboarding tour: a three-step panel (what a proposal is, how to vote,
   where My Votes lives) shown to first-time visitors. It renders in its own
   `#tour-slot` above `#view` (never inside the list, so the cards'

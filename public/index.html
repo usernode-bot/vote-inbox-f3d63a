@@ -111,6 +111,9 @@
           <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">Open proposals across Homeroom</p>
         </div>
       </div>
+      <button id="new-proposal-btn" data-new-proposal aria-label="New proposal" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      </button>
       <button id="members-btn" data-members-link type="button" aria-label="Members"
         class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-600 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
         <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -137,7 +140,7 @@
     <p id="members-summary" data-members-summary class="-mt-1.5 pb-2.5 text-xs text-zinc-500 dark:text-zinc-400" hidden></p>
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
-    <div class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
+    <div id="list-controls" class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
       <div class="flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
         <button data-tab="inbox" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="saved" class="tab-btn flex-1 rounded-full py-1.5 text-sm font-semibold transition-colors">Saved<span class="tab-badge"></span></button>
@@ -352,6 +355,26 @@
     // ?tap-share=<sessionId> (demo only) taps that card's share button once
     // the inbox has rendered, the way ?tap-no=1 taps a vote button.
     var TAP_SHARE = DEMO ? (params.get('tap-share') || '') : '';
+    // ?compose=1 opens the New proposal screen on load. A real deep link,
+    // not a demo fixture: the same screen the header + button opens, and it
+    // works in every environment. The other compose fixture parameters
+    // (template, switch-template, set-title, set-body, send) replay one
+    // user path through the real controls, the way ?tap-no=1 does. Demo
+    // gated like the other check fixtures.
+    var COMPOSE = params.get('compose') === '1';
+    var COMPOSE_TEMPLATE = DEMO ? (params.get('template') || '') : '';
+    // ?switch-template=feature means: tap the Bugfix chip first (so there is
+    // a prefill on screen), then switch to the named one — proving the
+    // switch replaces the prefill rather than appending to it.
+    var COMPOSE_SWITCH = DEMO ? (params.get('switch-template') || '') : '';
+    var COMPOSE_TITLE = DEMO ? (params.get('set-title') || '') : '';
+    var COMPOSE_BODY = DEMO ? (params.get('set-body') || '') : '';
+    var COMPOSE_SEND = DEMO && params.get('send') === '1';
+    // ?back=1 taps the compose screen's back chevron at the end of the
+    // fixture chain, so a check can pin that leaving compose restores the
+    // main list.
+    var COMPOSE_BACK = DEMO && params.get('back') === '1';
+
     // Share-as-image hooks (demo only), one URL per check behaviour:
     // ?shareimg=sheet|fallback|error forces which path the share-image card
     // uses (error makes the draw throw, through the real error path);
@@ -676,6 +699,25 @@
         : params.get('tab') === 'saved' ? 'saved'
         : params.get('tab') === 'watchlist' ? 'watchlist'
         : params.get('tab') === 'leaderboard' ? 'leaderboard' : 'inbox',
+      // Which top-level screen is showing: 'main' (the two tabs) or
+      // 'compose' (the New proposal screen). Not persisted; the ?compose=
+      // parameter opens compose for one load, the + button after that.
+      screen: COMPOSE ? 'compose' : 'main',
+      compose: {
+        // Which template chip is selected: 'bugfix' | 'feature' | 'copy' |
+        // 'blank' | null (nothing picked yet). null keeps both fields empty.
+        template: null,
+        title: '',
+        body: '',
+        sending: false,
+        error: null,
+        // Title of the last sent proposal, which switches the screen to the
+        // confirmation block; null means the compose form is showing.
+        sentTitle: null,
+        sent: null,
+        sentLoaded: false,
+        sentError: false,
+      },
       inbox: null,
       votes: null,
       watchlist: null,
@@ -4194,6 +4236,157 @@
         + '</div>';
     }
 
+    // ------------------------------------------------------------------
+    // New proposal screen: template picker, prefilled (and fully
+    // editable) title and description, Send, and the Sent list.
+    //
+    // A template only FILLS the two fields: the prefill lands in ordinary
+    // inputs the user edits freely before sending, and what is sent is
+    // whatever the fields hold at that moment. Picking another template
+    // refills both fields, so switching is an undoable-by-typing choice,
+    // not a merge.
+    // ------------------------------------------------------------------
+
+    var TEMPLATES = [
+      { id: 'bugfix', label: 'Bugfix',
+        title: 'Fix: [what is broken]',
+        body: 'Problem\n[What is broken and where it shows up.]\n\nSteps to reproduce\n1. [First step]\n2. [Second step]\n\nExpected\n[What should happen instead.]\n\nFix\n[What you propose changing.]' },
+      { id: 'feature', label: 'Feature',
+        title: 'Add [feature name]',
+        body: 'What\n[The feature in one sentence.]\n\nWhy\n[The problem it solves or the value it adds.]\n\nHow it works\n[What a person sees, step by step.]\n\nScope\n[What is included, and what is left out.]' },
+      { id: 'copy', label: 'Copy change',
+        title: 'Copy change: [where]',
+        body: 'Where\n[The screen or text that changes.]\n\nCurrent text\n[What it says today.]\n\nNew text\n[What it should say.]\n\nReason\n[Why the new wording is better.]' },
+      { id: 'blank', label: 'Blank', title: '', body: '' },
+    ];
+
+    // Whole-literal class strings for the Tailwind compiler. The back
+    // button mirrors the header's circular icon buttons; the fields mirror
+    // the inbox search box's look.
+    var COMPOSE_BACK_CLASS = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400';
+    var COMPOSE_CHIP_ACTIVE = 'rounded-full bg-violet-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-sm transition-transform active:scale-95';
+    var COMPOSE_CHIP_IDLE = 'rounded-full border border-zinc-300 bg-white px-3.5 py-1.5 text-sm font-semibold text-zinc-700 transition-transform active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200';
+    var COMPOSE_FIELD = 'w-full rounded-xl border border-zinc-300 bg-white py-2.5 pl-3 pr-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500';
+    var SEND_PILL_CLASS = 'shrink-0 rounded-full bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition-transform active:scale-95 disabled:opacity-50';
+    var SENT_ROW_CLASS = 'rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/70';
+
+    function templateLabel(id) {
+      for (var i = 0; i < TEMPLATES.length; i++) {
+        if (TEMPLATES[i].id === id) return TEMPLATES[i].label;
+      }
+      return 'Blank';
+    }
+
+    function composeChipsHtml() {
+      var html = '';
+      for (var i = 0; i < TEMPLATES.length; i++) {
+        var t = TEMPLATES[i];
+        var on = state.compose.template === t.id;
+        html += '<button type="button" data-template-option data-template-id="' + t.id + '"'
+          + ' aria-pressed="' + (on ? 'true' : 'false') + '"'
+          + ' class="' + (on ? COMPOSE_CHIP_ACTIVE : COMPOSE_CHIP_IDLE) + '">'
+          + esc(t.label) + '</button>';
+      }
+      return '<div class="flex flex-wrap gap-2">' + html + '</div>';
+    }
+
+    // The compose form: template chips on top, then the two fields the
+    // prefill lands in. The title's current value is mirrored onto the
+    // value attribute (kept in step by the input handler) so the staging
+    // checks, which read markup rather than input properties, can assert
+    // on an edit; the description's state is visible in its character
+    // counter the same way.
+    function composeFormHtml() {
+      var c = state.compose;
+      return '<section class="flex flex-col gap-2">'
+        + '<p class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Start from a template</p>'
+        + composeChipsHtml()
+        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">A template fills the title and description. Everything stays editable before you send.</p>'
+        + '</section>'
+        + '<section class="flex flex-col gap-1.5">'
+        + '<label for="compose-title" class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Title</label>'
+        + '<input id="compose-title" data-compose-title type="text" autocomplete="off"'
+        + ' value="' + esc(c.title) + '" class="' + COMPOSE_FIELD + '">'
+        + '</section>'
+        + '<section class="flex flex-col gap-1.5">'
+        + '<label for="compose-body" class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Description</label>'
+        + '<textarea id="compose-body" data-compose-body rows="10" class="' + COMPOSE_FIELD + ' resize-y">' + esc(c.body) + '</textarea>'
+        + '<p data-compose-count class="text-xs tabular-nums text-zinc-400 dark:text-zinc-500">' + c.body.length + ' characters</p>'
+        + '</section>'
+        + (c.error
+          ? '<p data-compose-error class="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs font-medium text-red-700 dark:text-red-300">' + esc(c.error) + '</p>'
+          : '');
+    }
+
+    // The sent state: confirmation block instead of the form, with the sent
+    // title echoed. Send records the proposal in this app (see the Sent
+    // list note below); the copy says so plainly.
+    function composeConfirmationHtml() {
+      var c = state.compose;
+      return '<div data-send-confirmation class="flex flex-col gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">'
+        + '<p class="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>'
+        + 'Proposal sent</p>'
+        + '<p class="text-xs text-zinc-600 dark:text-zinc-300">"' + esc(c.sentTitle) + '" is in your Sent list below.</p>'
+        + '<button type="button" data-compose-again class="self-start rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-transform active:scale-95">Compose another</button>'
+        + '</div>';
+    }
+
+    function sentListHtml() {
+      var c = state.compose;
+      if (c.sentError) {
+        return '<p class="text-xs text-zinc-500 dark:text-zinc-400">Could not load sent proposals.</p>'
+          + '<button type="button" data-action="reload-sent" class="self-start rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Try again</button>';
+      }
+      if (!c.sentLoaded) return '<p class="text-xs text-zinc-400 dark:text-zinc-500">Loading…</p>';
+      var rows = c.sent || [];
+      if (!rows.length) {
+        return '<p data-sent-empty class="text-xs text-zinc-500 dark:text-zinc-400">Nothing sent yet</p>';
+      }
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var when = '';
+        if (r.created_at) {
+          try { when = new Date(r.created_at).toLocaleDateString(); } catch (e) { when = ''; }
+        }
+        html += '<article data-sent-row class="' + SENT_ROW_CLASS + '">'
+          + '<p class="line-clamp-2 text-sm font-medium text-zinc-900 dark:text-zinc-100">' + esc(r.title) + '</p>'
+          + '<p class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(templateLabel(r.template))
+          + (when ? ' · ' + esc(when) : '') + '</p>'
+          + '</article>';
+      }
+      return html;
+    }
+
+    function composeHtml() {
+      var c = state.compose;
+      var sent = c.sentTitle != null;
+      var canSend = !!c.title.trim() && !!c.body.trim() && !c.sending && !sent;
+      // Back and Send share the top row, iOS-compose style: the primary
+      // action stays visible above the keyboard while the description is
+      // being typed.
+      return '<div data-compose-screen class="flex flex-col gap-4 pt-1">'
+        + '<div class="flex items-center justify-between gap-2">'
+        + '<div class="flex min-w-0 items-center gap-2">'
+        + '<button type="button" data-compose-back aria-label="Back to the list"'
+        + ' class="' + COMPOSE_BACK_CLASS + '">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>'
+        + '</button>'
+        + '<h2 class="truncate text-lg font-bold tracking-tight">New proposal</h2>'
+        + '</div>'
+        + (sent ? '' : '<button type="button" data-send-proposal class="' + SEND_PILL_CLASS + '"'
+          + (canSend ? '' : ' disabled') + '>Send</button>')
+        + '</div>'
+        + (sent ? composeConfirmationHtml() : composeFormHtml())
+        + '<section class="flex flex-col gap-2 pt-2">'
+        + '<h3 class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Sent</h3>'
+        + '<p class="text-xs text-zinc-500 dark:text-zinc-400">Kept in this app. Paste a proposal into the app&#39;s dev chat to open it for a vote.</p>'
+        + '<div id="sent-list" class="flex flex-col gap-2">' + sentListHtml() + '</div>'
+        + '</section>'
+        + '</div>';
+    }
+
     function renderTabs() {
       var buttons = document.querySelectorAll('.tab-btn');
       var inboxCount = state.inbox && state.inbox.proposals ? state.inbox.proposals.length : null;
@@ -5613,7 +5806,28 @@
       el.hidden = false;
     }
 
+    // Top-level rows that belong to the two-tab list screens only. The
+    // compose screen hides them (it has its own header row and controls)
+    // and the main render shows them again.
+    var MAIN_CHROME_IDS = ['list-controls', 'sort-row', 'votes-order-row',
+      'inbox-updated', 'inbox-summary', 'votes-summary', 'demo-banner'];
+
+    function renderCompose() {
+      for (var i = 0; i < MAIN_CHROME_IDS.length; i++) {
+        var el = document.getElementById(MAIN_CHROME_IDS[i]);
+        if (el) el.classList.add('hidden');
+      }
+      document.getElementById('view').innerHTML = composeHtml();
+      if (!state.compose.sentLoaded) loadSent();
+      runComposeFixtures();
+    }
+
     function render() {
+      if (state.screen === 'compose') { renderCompose(); return; }
+      for (var ci = 0; ci < MAIN_CHROME_IDS.length; ci++) {
+        var chrome = document.getElementById(MAIN_CHROME_IDS[ci]);
+        if (chrome) chrome.classList.remove('hidden');
+      }
       syncFilter();
       syncTagFilter();
       syncOneAway();
@@ -5683,6 +5897,39 @@
       enhanceTitles();
       updateLbPin();
       if (DEMO) stampDensityBasic();
+    }
+
+    // ------------------------------------------------------------------
+    // Compose data + actions
+    // ------------------------------------------------------------------
+
+    // The Sent list fills on the compose screen's first render and updates
+    // its own container only (a full re-render here would reset the
+    // caret in whatever field the user is typing in).
+    var sentRequested = false;
+
+    function loadSent() {
+      if (sentRequested) return;
+      sentRequested = true;
+      api('/api/proposals').then(function (data) {
+        state.compose.sent = (data && data.proposals) || [];
+        state.compose.sentLoaded = true;
+        state.compose.sentError = false;
+        var list = document.getElementById('sent-list');
+        if (list) list.innerHTML = sentListHtml();
+      }).catch(function () {
+        state.compose.sentLoaded = true;
+        state.compose.sentError = true;
+        var list = document.getElementById('sent-list');
+        if (list) list.innerHTML = sentListHtml();
+      });
+    }
+
+    function openCompose() {
+      state.screen = 'compose';
+      state.compose.error = null;
+      render();
+      window.scrollTo(0, 0);
     }
 
     // ------------------------------------------------------------------
@@ -5810,6 +6057,98 @@
       return settled;
     }
 
+    function backToMain() {
+      state.screen = 'main';
+      state.compose.error = null;
+      render();
+      window.scrollTo(0, 0);
+      // A compose deep link skipped the boot fetch (nothing of the list
+      // was showing), so the tab the user is now looking at loads now.
+      if (state.tab === 'votes') {
+        if (!state.votes && !state.loadingVotes) loadVotes(true);
+      } else if (state.tab === 'watchlist') {
+        if (!state.watchlist) loadWatchlist(true);
+      } else if (!state.inbox && !state.loadingInbox) {
+        loadInbox(true);
+      }
+    }
+
+    // Picking a template refills both fields with its prefill. Switching
+    // replaces whatever is there: the prefill is a starting point the user
+    // edits, not something to merge.
+    function pickTemplate(id) {
+      var tpl = null;
+      for (var i = 0; i < TEMPLATES.length; i++) {
+        if (TEMPLATES[i].id === id) tpl = TEMPLATES[i];
+      }
+      if (!tpl) return;
+      state.compose.template = tpl.id;
+      state.compose.title = tpl.title;
+      state.compose.body = tpl.body;
+      state.compose.error = null;
+      render();
+    }
+
+    function resetComposeForm() {
+      state.compose.template = null;
+      state.compose.title = '';
+      state.compose.body = '';
+      state.compose.sending = false;
+      state.compose.error = null;
+      state.compose.sentTitle = null;
+      render();
+    }
+
+    // Keep the Send pill's disabled state in step without a re-render
+    // (which would steal focus from the field being typed in).
+    function updateSendPill() {
+      var btn = document.querySelector('[data-send-proposal]');
+      if (!btn) return;
+      var c = state.compose;
+      var ok = !!c.title.trim() && !!c.body.trim() && !c.sending && c.sentTitle == null;
+      btn.disabled = !ok;
+    }
+
+    // Send records the composed proposal (the platform's app-facing API is
+    // read-only, so the app keeps what its users compose here). Client side
+    // first: both fields must be non-empty, mirroring the server.
+    function sendProposal() {
+      var c = state.compose;
+      if (c.sending) return;
+      var title = c.title.trim();
+      var body = c.body.trim();
+      if (!title || !body) {
+        c.error = !title ? 'A title is required' : 'A description is required';
+        render();
+        return;
+      }
+      c.sending = true;
+      c.error = null;
+      render();
+      api('/api/proposals', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ template: c.template || 'blank', title: title, body: body }),
+      }).then(function (data) {
+        c.sending = false;
+        var row = data && data.proposal;
+        c.sent = [{
+          id: row ? row.id : null,
+          template: row ? row.template : (c.template || 'blank'),
+          title: title,
+          created_at: row ? row.created_at : null,
+        }].concat(c.sent || []);
+        c.sentLoaded = true;
+        c.sentError = false;
+        c.sentTitle = title;
+        render();
+      }).catch(function (err) {
+        c.sending = false;
+        c.error = err && err.message ? err.message : 'Sending failed. Try again.';
+        render();
+      });
+    }
+
     // Post a comment (parentId null) or a reply (parentId = the top-level
     // comment's id, as a string in the markup). The busy state disables the
     // submit button in place: a re-render here would wipe the form's text.
@@ -5843,6 +6182,53 @@
         if (btn && document.contains(btn)) btn.disabled = false;
         toast('Could not post the comment: ' + (err.message || 'try again'));
       });
+    }
+
+    // ------------------------------------------------------------------
+    // Compose check fixtures: replay one user path through the real
+    // controls, the way ?tap-no=1 votes through the real vote button.
+    // Demo only; runs once, at the first compose render.
+    // ------------------------------------------------------------------
+
+    var composeFixturesRan = false;
+
+    function tapTemplateChip(id) {
+      var chip = document.querySelector(
+        '[data-template-option][data-template-id="' + id + '"]');
+      if (!chip) return;
+      chip.click(); // the real chip, through the real delegated handler
+    }
+
+    // Type into a field the way typing would: set the value, then fire the
+    // input event the real keyboard produces, so state and the derived
+    // bits (value mirror, counter, Send pill) update through the real path.
+    function typeIntoField(el, value) {
+      if (!el) return;
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function runComposeFixtures() {
+      if (composeFixturesRan) return;
+      composeFixturesRan = true;
+      if (state.screen !== 'compose' || state.compose.sentTitle != null) return;
+      // Switching fixture: land on Bugfix first so there is a prefill to
+      // switch away from.
+      if (COMPOSE_SWITCH) tapTemplateChip('bugfix');
+      if (COMPOSE_TEMPLATE) tapTemplateChip(COMPOSE_TEMPLATE);
+      if (COMPOSE_TITLE) typeIntoField(document.getElementById('compose-title'), COMPOSE_TITLE);
+      if (COMPOSE_BODY) typeIntoField(document.getElementById('compose-body'), COMPOSE_BODY);
+      if (COMPOSE_SWITCH) tapTemplateChip(COMPOSE_SWITCH);
+      if (COMPOSE_SEND) {
+        var sendBtn = document.querySelector('[data-send-proposal]');
+        // An empty form leaves Send disabled and does nothing here; the
+        // checks use that to pin the disabled state.
+        if (sendBtn && !sendBtn.disabled) sendBtn.click();
+      }
+      if (COMPOSE_BACK) {
+        var backBtn = document.querySelector('[data-compose-back]');
+        if (backBtn) backBtn.click();
+      }
     }
 
     // ------------------------------------------------------------------
@@ -8180,10 +8566,36 @@
 
     document.getElementById('view').addEventListener('click', function (event) {
       var target = event.target;
+      // Compose screen controls first: template chips, the Send pill, the
+      // back chevron and the post-send reset.
+      var tplChip = target.closest ? target.closest('[data-template-option]') : null;
+      if (tplChip) {
+        pickTemplate(tplChip.getAttribute('data-template-id'));
+        return;
+      }
+      if (target.closest && target.closest('[data-send-proposal]')) {
+        sendProposal();
+        return;
+      }
+      if (target.closest && target.closest('[data-compose-back]')) {
+        backToMain();
+        return;
+      }
+      if (target.closest && target.closest('[data-compose-again]')) {
+        resetComposeForm();
+        return;
+      }
       var actionEl = target.closest ? target.closest('[data-action]') : null;
       if (actionEl) {
         var action = actionEl.getAttribute('data-action');
         if (action === 'refresh') refreshCurrent();
+        else if (action === 'reload-sent') {
+          state.compose.sentError = false;
+          state.compose.sentLoaded = false;
+          sentRequested = false;
+          render();
+          loadSent();
+        }
         else if (action === 'clear-filter') {
           state.filter = '';
           state.filterName = '';
@@ -8366,6 +8778,30 @@
       if (cardEl) {
         openDetail(cardEl.getAttribute('data-session-id') || '');
       }
+    });
+
+    // Compose fields: keep state and the derived bits in step without a
+    // re-render (which would steal focus from the field being typed in).
+    // The title's value attribute is mirrored so the checks, which read
+    // markup, can assert on an edit; the description's character counter
+    // carries its state the same way.
+    document.getElementById('view').addEventListener('input', function (event) {
+      if (state.screen !== 'compose') return;
+      var t = event.target;
+      if (t.matches && t.matches('#compose-title')) {
+        state.compose.title = t.value;
+        t.setAttribute('value', t.value);
+        updateSendPill();
+      } else if (t.matches && t.matches('#compose-body')) {
+        state.compose.body = t.value;
+        var count = document.querySelector('[data-compose-count]');
+        if (count) count.textContent = t.value.length + ' characters';
+        updateSendPill();
+      }
+    });
+
+    document.getElementById('new-proposal-btn').addEventListener('click', function () {
+      openCompose();
     });
 
     // Share-as-image: the open button and the preview panel sit above #view,
@@ -8667,7 +9103,11 @@
     if (searchBox && state.search) searchBox.value = state.search;
     var membersBox = document.getElementById('members-search');
     if (membersBox && state.memberQuery) membersBox.value = state.memberQuery;
-    if (state.membersView) loadMembers(true);
+    if (state.screen === 'compose') {
+      // The ?compose=1 deep link opens the New proposal screen; the list
+      // behind it is not shown, so its data loads when the user leaves
+      // compose (backToMain), not on boot.
+    } else if (state.membersView) loadMembers(true);
     else if (state.tab === 'votes') loadVotes(true);
     else if (state.tab === 'saved') loadSaved(true);
     else if (state.tab === 'watchlist') loadWatchlist(true);
