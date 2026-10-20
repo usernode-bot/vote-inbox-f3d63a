@@ -368,17 +368,21 @@ function normalizeProposal(raw, appItem) {
   // The proposal's yes voters, when the platform response names them: an
   // optional field under any of the usual spellings, entries either plain
   // username strings or objects carrying a username. Normalised to
-  // { username, name } for the cards' avatar row; null when the response
-  // carries no usable list (the row simply does not render then). Capped to
-  // keep a pathological payload from bloating the inbox response.
+  // { username, name, votedAt } for the cards' avatar row and the detail
+  // screen's timeline (votedAt is the optional per-vote timestamp, '' when
+  // the response carries none); null when the response carries no usable
+  // list (the row simply does not render then). Capped to keep a
+  // pathological payload from bloating the inbox response.
   const rawVoters = [raw.yes_voters, raw.yesVoters, raw.voters_for, raw.votersFor]
     .find(Array.isArray) || null;
   const yesVoters = rawVoters === null ? null : rawVoters
     .map((v) => {
-      if (typeof v === 'string') return { username: v.trim(), name: '' };
+      if (typeof v === 'string') return { username: v.trim(), name: '', votedAt: '' };
       if (v && typeof v === 'object' && typeof v.username === 'string') {
         const name = typeof v.name === 'string' ? v.name.trim() : '';
-        return { username: v.username.trim(), name };
+        const votedAt = [v.voted_at, v.votedAt]
+          .find((t) => typeof t === 'string' && t) || '';
+        return { username: v.username.trim(), name, votedAt };
       }
       return null;
     })
@@ -555,6 +559,23 @@ async function migrate() {
   `);
   await pool.query(
     'ALTER TABLE my_votes ADD COLUMN IF NOT EXISTS merged_at TIMESTAMPTZ');
+  // Proposals the user composed in the app's New proposal screen. The
+  // app-facing platform API is read-only, so a sent proposal is recorded
+  // here (see the routes below); it is one person's own composed text,
+  // which is the same private-by-nature case as the vote history.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS my_proposals (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      template VARCHAR(16) NOT NULL DEFAULT 'blank',
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'sent',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    COMMENT ON TABLE my_proposals IS 'staging:private';
+  `);
   // The user's starred proposals and the status each row was last seen in.
   // Like my_votes this is one person's own data (what they watch), so it is
   // staging:private. No foreign keys; proposal content stays on the platform.
@@ -641,6 +662,69 @@ async function migrate() {
       UNIQUE (user_id, session_id)
     );
     COMMENT ON TABLE snoozes IS 'staging:private';
+  `);
+  // Read tracking: proposals each person has opened. Like my_votes and
+  // snoozes this is per-user data, so it is staging:private. Append-only:
+  // a row is simply the fact "this person opened this proposal", keyed on
+  // the session id alone, so a status change (voting, merging, closed) never
+  // makes it unread again. No proposal content; it stays on the platform.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS proposal_reads (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE proposal_reads IS 'staging:private';
+  `);
+  // Merge celebrations: one row per (user, proposal) the app should
+  // celebrate having merged. Like my_votes and snoozes this is one
+  // person's own tracking data, so it is staging:private, and it carries
+  // only what the card renders (title, app, the caller's choice) — the
+  // proposal itself stays on the platform. `shown` is set once the card
+  // has rendered (a celebration is a one-time card per proposal);
+  // `dismissed` is set when the user dismisses it. Both persist.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS merge_celebrations (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      choice VARCHAR(4) NOT NULL DEFAULT 'yes',
+      merged_at TIMESTAMPTZ,
+      shown BOOLEAN NOT NULL DEFAULT FALSE,
+      dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE merge_celebrations IS 'staging:private';
+  `);
+  // Bookmarked proposals: one person's "save this to revisit" marks. Like
+  // watchlist this is one person's own data, so it is staging:private. A row
+  // is the bookmark itself: removing the bookmark deletes it, and the row
+  // keeps only what the Saved tab renders (app, title, when it was saved) —
+  // the proposal stays on the platform.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      app_slug VARCHAR(255) NOT NULL DEFAULT '',
+      app_name VARCHAR(255) NOT NULL DEFAULT '',
+      session_id VARCHAR(128) NOT NULL,
+      proposal_id VARCHAR(128),
+      title TEXT NOT NULL,
+      saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, session_id)
+    );
+    COMMENT ON TABLE bookmarks IS 'staging:private';
   `);
 }
 
@@ -857,6 +941,95 @@ async function detectNotifications(proposals, req) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Read tracking: which proposals the user has opened. Rows are per user
+// (staging:private, same reasoning as watchlist and snoozes). Writes are
+// insert-only; nothing updates or deletes a row in normal use, so once read
+// a proposal stays read for that person forever.
+// ---------------------------------------------------------------------------
+
+// The session ids this user has opened, for stamping the inbox cards.
+async function readSetFor(userId) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT session_id FROM proposal_reads WHERE user_id = $1', [userId]);
+    return new Set(rows.map((r) => r.session_id));
+  } catch {
+    return new Set();
+  }
+}
+
+// Stamp each proposal with the caller's own read mark. A read already on
+// the proposal survives as a fallback (a demo load may carry one; production
+// responses never do, so this changes nothing there).
+async function withMyReads(proposals, userId) {
+  const mine = await readSetFor(userId);
+  for (const p of proposals) {
+    p.read = mine.has(p.sessionId) || p.read === true;
+  }
+  return proposals;
+}
+
+// ---------------------------------------------------------------------------
+// Merge celebrations. When a proposal the caller voted on (through this app)
+// is now reported merged, a one-time celebration card shows at the top of
+// their inbox: the title, the app, and "you voted yes". Detection happens
+// wherever the caller's recorded votes meet the merge state (the inbox load,
+// and the demo fixtures behind ?celeb=1); `merged` must be recent, since a
+// merge first seen weeks later is history, not news. One row per (user,
+// proposal), created only once in production — the `reset` demo mode re-arms
+// the caller's rows so every check run starts from unseen cards.
+// ---------------------------------------------------------------------------
+
+const CELEBRATION_MERGE_WINDOW_MS = 7 * 24 * 3600 * 1000;
+
+async function syncMergeCelebrations(proposals, user, opts) {
+  const now = Date.now();
+  for (const p of proposals) {
+    if (!p.myVote || p.status !== 'merged' || !p.mergedAt) continue;
+    const merged = Date.parse(p.mergedAt);
+    if (!isFinite(merged) || now - merged > CELEBRATION_MERGE_WINDOW_MS) continue;
+    const conflict = opts && opts.reset
+      ? 'DO UPDATE SET shown = FALSE, dismissed = FALSE, choice = EXCLUDED.choice,'
+        + ' merged_at = EXCLUDED.merged_at, title = EXCLUDED.title'
+      : 'DO NOTHING';
+    try {
+      await pool.query(`
+        INSERT INTO merge_celebrations
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title, choice, merged_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (user_id, session_id) ${conflict}
+      `, [user.id, user.username, p.appSlug || '', p.appName || '', p.sessionId,
+          p.proposalId || null, p.title, p.myVote, p.mergedAt]);
+    } catch {
+      // Celebration bookkeeping never blocks the inbox.
+    }
+  }
+}
+
+// The caller's pending celebrations: not yet shown and not dismissed,
+// newest recorded first (so several merges stack newest on top).
+async function pendingCelebrations(userId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT app_slug, app_name, session_id, proposal_id, title, choice, merged_at
+       FROM merge_celebrations
+       WHERE user_id = $1 AND shown = FALSE AND dismissed = FALSE
+       ORDER BY id DESC`, [userId]);
+    return rows.map((r) => ({
+      sessionId: r.session_id,
+      proposalId: r.proposal_id,
+      appSlug: r.app_slug,
+      appName: r.app_name || r.app_slug,
+      title: r.title,
+      choice: r.choice,
+      mergedAt: r.merged_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // Status a row is on now, for the "since last look" badge. Current status
 // comes from the app's promoted list when the platform answers for it:
 // still listed means open ('voting', or the platform's own merging state),
@@ -905,6 +1078,57 @@ function watchRowPayload(r) {
 }
 
 // ---------------------------------------------------------------------------
+// Bookmarks: proposals the user saved to revisit. Rows are per user
+// (staging:private, same reasoning as watchlist). A bookmark is purely the
+// person's own marker: it never touches votes, stars or the platform's merge
+// state, and the row keeps only what the Saved tab renders.
+// ---------------------------------------------------------------------------
+
+// The session ids this user has bookmarked, for stamping the inbox cards.
+async function bookmarkSetFor(userId) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT session_id FROM bookmarks WHERE user_id = $1', [userId]);
+    return new Set(rows.map((r) => r.session_id));
+  } catch {
+    return new Set();
+  }
+}
+
+// Stamp each proposal with the caller's own bookmark. Real rows always win;
+// a myBookmark already on the proposal survives as a fallback (a demo load
+// may carry one; production responses never do, so this changes nothing
+// there).
+// Stamp each proposal with the caller's own bookmark. Real rows always win;
+// ?preset-bookmark=<sessionId,...> (demo checks) marks extra ones bookmarked
+// for that one load without touching storage.
+async function withMyBookmarks(proposals, userId, req) {
+  const mine = await bookmarkSetFor(userId);
+  const preset = req && req.query['preset-bookmark']
+    ? String(req.query['preset-bookmark']).split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  for (const p of proposals) {
+    p.myBookmark = mine.has(p.sessionId) || preset.includes(p.sessionId) || p.myBookmark === true;
+  }
+  return proposals;
+}
+
+// One Saved-tab row. Bookmarks carry no last-seen status and no change
+// badges: the tab is a "to revisit" list, so it shows what was saved, where
+// it lives and when.
+function bookmarkRowPayload(r) {
+  return {
+    sessionId: r.session_id,
+    appSlug: r.app_slug,
+    appName: r.app_name || r.app_slug,
+    icon: r.icon || null,
+    proposalId: r.proposal_id || null,
+    title: r.title,
+    savedAt: r.saved_at || null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Staging demo data (?demo=1)
 //
 // The inbox and history screens render against real platform calls in
@@ -924,11 +1148,19 @@ function demoInbox() {
     // landing on it sees the "Show all apps" empty state of a real filter.
     { slug: 'staging-demo-archive', name: 'Staging Demo Archive', icon: '🗄️' },
   ];
-  // Fake yes-voter identities for the cards' avatar row; "(demo)" in the
-  // display name keeps them obviously made up, matching the seed rules.
-  const voter = (u) => ({
+  // Fake yes-voter identities for the cards' avatar row and the detail
+  // screen's timeline; "(demo)" in the display name keeps them obviously
+  // made up, matching the seed rules. `agoMs` optionally stamps when the
+  // vote was cast (ms ago), for the timeline's relative "2h ago" label;
+  // ages are chosen mid-bucket (2.5h, 1.5d) so relTime's output never
+  // changes across an hourly or daily bucket boundary, and are NOT
+  // midnight-capped: a vote row's age crossing into yesterday only moves
+  // "2h ago" to "3h ago" for a few hours, never breaks a check (checks read
+  // demo-4's rows, whose ages stay inside today at any hour).
+  const voter = (u, agoMs) => ({
     username: 'staging-demo-' + u.toLowerCase(),
     name: u + ' (demo)',
+    votedAt: agoMs != null ? new Date(Date.now() - agoMs).toISOString() : '',
   });
   // `anchor` is a demo hint the frontend uses to re-place the fixture on the
   // viewer's own calendar (see reanchorDemo in public/index.html): days back
@@ -979,9 +1211,10 @@ function demoInbox() {
   // Two of the six are marked already voted so the Hide voted toggle has
   // something to filter in previews. Statuses cover the three card labels:
   // null (an open proposal, Voting), 'merging' and 'merged'. demo-5 is the
-  // one merged proposal, and it merged 2 days ago (within the week) so the
-  // app filter's merged-this-week count is nonzero for its app while the
-  // other app reads 0. demo-4 carries
+  // one merged proposal, and it merged 2.5 days ago (within the week, and
+  // mid-bucket so the detail timeline's "2d ago" merged label never shifts)
+  // so the app filter's merged-this-week count is nonzero for its app while
+  // the other app reads 0. demo-4 carries
   // seven yes voters (with a threshold keeping its "+2" avatar chip) so the
   // avatar row shows its max-5-then-"+N" case in previews and checks, and a
   // deliberately long title (3+ rendered lines) so the expandable-title
@@ -994,13 +1227,13 @@ function demoInbox() {
   // demo-4/demo-2/demo-1/demo-6. demo-1 and demo-6 each sit exactly one yes
   // vote from their threshold so the One vote away chip has something to show.
   const proposals = [
-    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya')], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
+    mk('staging-demo-app', 'demo-2', 90201, 'Staging demo proposal: weekly summary email', 1, 0, 4, null, Math.min(3 * H, todayCap()), null, [voter('Maya', 2.5 * H)], { days: 0, hoursAgo: 3, clampMin: 2 }, null),
     mk('staging-demo-notes', 'demo-4', 90202, 'Staging demo proposal: keyboard shortcuts everywhere, plus a deliberately very long title that wraps past the second line so the card shows its More control in previews and checks', 7, 2, 11, null, Math.min(8 * H, todayCap()), null,
-      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map(voter), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
-    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar'), voter('Priya'), voter('Quinn')], { days: 2 }, null),
-    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya'), voter('Omar')], { days: 1 }, null),
-    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya'), voter('Priya'), voter('Raul'), voter('Sara')], { days: 5 }, null),
-    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn'), voter('Raul')], { days: 9 }, 2 * D),
+      ['Maya', 'Omar', 'Priya', 'Quinn', 'Raul', 'Sara', 'Tom'].map((u, i) => voter(u, (7.5 - i) * H)), { days: 0, hoursAgo: 8, clampMin: 1 }, null),
+    mk('staging-demo-app', 'demo-1', 90203, 'Staging demo proposal: add a dark mode toggle', 3, 1, 4, null, 2 * D, 'no', [voter('Omar', 1.75 * D), voter('Priya', 1.5 * D), voter('Quinn', 1.25 * D)], { days: 2 }, null),
+    mk('staging-demo-notes', 'demo-6', 90206, 'Staging demo proposal: tag colours', 2, 0, 3, null, 1 * D, null, [voter('Maya', 0.9 * D), voter('Omar', 0.8 * D)], { days: 1 }, null),
+    mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya', 4.5 * D), voter('Priya', 3.5 * D), voter('Raul', 2.5 * D), voter('Sara', 1.5 * D)], { days: 5 }, null),
+    mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn', 7.5 * D), voter('Raul', 6.5 * D)], { days: 9 }, 2.5 * D),
   ];
   // Change summaries for the cards' one-line summary row (demo only). Keyed
   // by sessionId; every fixture not covered gets an explicit null pair so
@@ -1110,6 +1343,15 @@ function demoInbox() {
 // only genuinely queued proposals carrying a position.
 function demoInboxPayload(req) {
   const demo = demoInbox();
+  // ?empty=1 (staging demo only): the fixture with every proposal removed
+  // (the app list kept, so the empty state's Browse apps action opens a
+  // populated filter), giving checks a stable URL for the genuinely empty
+  // inbox: its copy, its Browse apps action and the header's zero counts.
+  // Applied before every other variant; no declared check combines them.
+  if (req.query.empty === '1') {
+    demo.proposals = [];
+    return demo;
+  }
   if (req.query.queue === '1') applyQueueScenario(demo.proposals, req);
   // Same ordering the production inbox uses, so the demo list's default
   // order mirrors the real one (and the sort checks are meaningful: the
@@ -1270,6 +1512,135 @@ async function applyDemoSnoozeFixtures(req) {
   }
 }
 
+// Read-check fixtures (staging demo only), applied to a demo inbox load
+// before the caller's own read rows are stamped on:
+//   Any of ?set-read= / ?markallread=1 / ?open-merged=1 / ?read-other=1
+//                      resets the caller's read rows on the six fixture
+//                      proposals, so every such check starts from all-unread
+//                      and never depends on what an earlier check marked.
+//   ?read-other=1      also records a read row on demo-3 for a fake member
+//                      (staging-demo-user), so the per-user rule is
+//                      observable: another member's reading never clears the
+//                      caller's dot.
+// Both write only fake or check-fixture rows and only under ?demo=1.
+async function applyDemoReadFixtures(req) {
+  const hooked = ['set-read', 'markallread', 'open-merged', 'read-other']
+    .some((k) => req.query[k]);
+  if (!hooked) return;
+  const ids = demoInbox().proposals.map((p) => p.sessionId);
+  await pool.query(
+    'DELETE FROM proposal_reads WHERE user_id = $1 AND session_id = ANY($2)',
+    [req.user.id, ids]);
+  if (req.query['read-other'] === '1') {
+    const p = demoInbox().proposals.find((x) => x.sessionId === 'demo-3');
+    if (p) {
+      await pool.query(`
+        INSERT INTO proposal_reads (user_id, username, app_slug, session_id)
+        VALUES (900002, 'staging-demo-user', $1, $2)
+        ON CONFLICT (user_id, session_id) DO NOTHING`,
+        [p.appSlug, p.sessionId]);
+    }
+  }
+}
+
+// Bookmark-check fixtures (staging demo only), applied to a demo inbox load
+// before the caller's own bookmark rows are stamped on:
+//   Any of ?set-bookmark= / ?tap-bookmark= / ?saved-other=1
+//                      resets the caller's bookmark rows on the six fixture
+//                      proposals, so every such check starts from all-unsaved
+//                      and never depends on what an earlier check saved.
+//   ?saved-other=1     also records a bookmark on demo-4 for a fake member
+//                      (staging-demo-user), so the per-user rule is
+//                      observable: another member's bookmark never reaches
+//                      the caller's cards, badge count or Saved tab.
+// Both write only fake or check-fixture rows and only under ?demo=1.
+async function applyDemoBookmarkFixtures(req) {
+  const hooked = ['set-bookmark', 'tap-bookmark', 'saved-other']
+    .some((k) => req.query[k]);
+  if (!hooked) return;
+  const ids = demoInbox().proposals.map((p) => p.sessionId);
+  await pool.query(
+    'DELETE FROM bookmarks WHERE user_id = $1 AND session_id = ANY($2)',
+    [req.user.id, ids]);
+  if (req.query['saved-other'] === '1') {
+    const p = demoInbox().proposals.find((x) => x.sessionId === 'demo-4');
+    if (p) {
+      await pool.query(`
+        INSERT INTO bookmarks
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title)
+        VALUES (900002, 'staging-demo-user', $1, $2, $3, $4, $5)
+        ON CONFLICT (user_id, session_id) DO NOTHING`,
+        [p.appSlug, p.appName, p.sessionId, p.proposalId, p.title]);
+    }
+  }
+}
+
+// Celebration check fixtures (staging demo only), applied to a demo inbox
+// load only when the load opts in with ?celeb=1 — the marker the celebration
+// checks' pages and their reloaded marker pages carry, mirroring ?snooze=1 —
+// so a plain ?demo=1 load never shows or creates celebration cards:
+//   ?celebvote=<ids>  marks those fixture proposals as voted by the caller
+//                     (the fixture's own choice stands; unvoted ones become
+//                     yes) and merged, so the real detection path sees them;
+//                     the caller's rows for them are re-armed too, so every
+//                     check run starts from unseen cards no matter what an
+//                     earlier run left behind.
+//   ?celeb-clear=1    empties the caller's celebration rows first, so the
+//                     "absent for proposals the caller did not vote on"
+//                     check never sees leftovers from other checks.
+async function applyDemoCelebrationFixtures(req, proposals) {
+  if (req.query['celeb-clear'] === '1') {
+    await pool.query('DELETE FROM merge_celebrations WHERE user_id = $1', [req.user.id]);
+  }
+  const ids = String(req.query.celebvote || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!ids.length) return;
+  const byId = new Map(proposals.map((p) => [p.sessionId, p]));
+  for (const id of ids) {
+    const p = byId.get(id);
+    if (!p) continue;
+    if (!p.myVote) p.myVote = 'yes';
+    if (p.status !== 'merged') {
+      p.status = 'merged';
+      p.eta = null;
+      delete p.queuePos;
+      p.mergedAt = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    }
+  }
+}
+
+// Shared tail of both demo inbox branches: the caller's stars, plus — behind
+// the ?celeb=1 opt-in — the celebration fixtures, the real detection pass and
+// the caller's pending celebration cards. Without the opt-in the payload
+// stays celebration-free, the same determinism rule the snooze fixtures use.
+async function finishDemoInbox(req, demo) {
+  if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
+  // The caller's persisted read rows follow the same opt-in rule as the
+  // snooze overlay: they are only stamped when the load asks with ?read=1
+  // (the marker the read checks' reloaded pages carry), so one check's
+  // reads can never reach another check's plain ?demo=1 load, which stays
+  // all-unread.
+  await applyDemoReadFixtures(req);
+  await applyDemoBookmarkFixtures(req);
+  if (req.query.read === '1') await withMyReads(demo.proposals, req.user.id);
+  await withMyStars(demo.proposals, req.user.id, req);
+  // The caller's persisted bookmarks are stamped unconditionally, the same
+  // rule the stars follow: a bookmark recorded through the demo save route
+  // (or the ?set-bookmark= check hook) survives a reload on the cards.
+  await withMyBookmarks(demo.proposals, req.user.id, req);
+  // Event detection is opt-in on the demo fixture (?noti-detect=1): the
+  // default demo stays deterministic.
+  if (req.query['noti-detect'] === '1') {
+    await detectNotifications(demo.proposals, req);
+  }
+  demo.celebrations = [];
+  if (req.query.celeb === '1') {
+    await applyDemoCelebrationFixtures(req, demo.proposals);
+    await syncMergeCelebrations(demo.proposals, req.user, { reset: true });
+    demo.celebrations = await pendingCelebrations(req.user.id);
+  }
+  return demo;
+}
+
 function demoVoteRows() {
   const row = (sessionId, appSlug, appName, title, choice, status, yes, no,
                required, at, mergedAt) => ({
@@ -1297,6 +1668,79 @@ function demoVoteRows() {
         daysAgo(2)),
     row('demo-v3', 'staging-demo-notes', 'Staging Demo Notes',
         'Staging demo proposal: pinned notes', 'yes', 'closed', 4, 2, 5, daysAgo(9)),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Weekly-digest fixtures (?demo=1&digest=week|quiet), staging only. Rows
+// carry a demo_anchor { weeksAgo, weekday } the frontend re-stamps to local
+// noon of that weekday (see reanchorDigestDemo), so the digest's week
+// buckets are deterministic relative to whenever the check runs. `week`
+// gives 6 votes this week (2 of them merged), 4 last week (1 merged), 1
+// two weeks ago and 1 four weeks ago: streak 3, "Up from 4 last week", and
+// top apps App, Notes, Archive (Extras loses the alphabetical tie at the
+// third slot). `quiet` gives nothing this week: streak 0 (the tile is left
+// out), "Down from 2 last week", every bar zero, "None merged yet". Without
+// ?digest= the default three demoVoteRows() are served, unchanged.
+// ---------------------------------------------------------------------------
+
+function demoDigestRows(kind) {
+  const row = (id, sessionId, appSlug, appName, title, choice, status,
+               yes, no, required, weeksAgo, weekday, merged) => ({
+    id,
+    app_slug: appSlug,
+    app_name: appName,
+    session_id: sessionId,
+    title,
+    choice,
+    status,
+    votes_for: yes,
+    votes_against: no,
+    votes_required: required,
+    created_at: new Date(0).toISOString(), // re-stamped client-side
+    updated_at: new Date(0).toISOString(),
+    merged_at: merged ? new Date(0).toISOString() : null,
+    demo_anchor: { weeksAgo, weekday },
+  });
+  if (kind === 'quiet') {
+    return [
+      row('dq-1', 'demo-q1', 'staging-demo-app', 'Staging Demo App',
+          'Staging demo proposal: digest quiet export', 'no', 'closed', 2, 3, 5, 1, 1),
+      row('dq-2', 'demo-q2', 'staging-demo-notes', 'Staging Demo Notes',
+          'Staging demo proposal: digest quiet themes', 'yes', 'voting', 4, 1, 5, 1, 3),
+      row('dq-3', 'demo-q3', 'staging-demo-archive', 'Staging Demo Archive',
+          'Staging demo proposal: digest quiet search', 'yes', 'closed', 5, 0, 5, 3, 2),
+    ];
+  }
+  return [
+    // This week: 6 votes, 2 merged (one in App, one in Notes).
+    row('dg-1', 'demo-w1', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest weekly recap', 'yes', 'voting', 3, 1, 5, 0, 0),
+    row('dg-2', 'demo-w2', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest custom themes', 'yes', 'merged', 6, 0, 5, 0, 1, true),
+    row('dg-3', 'demo-w3', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest pinned notes', 'yes', 'voting', 4, 2, 5, 0, 1),
+    row('dg-4', 'demo-w4', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest export button', 'yes', 'merged', 6, 0, 5, 0, 2, true),
+    row('dg-5', 'demo-w5', 'staging-demo-archive', 'Staging Demo Archive',
+        'Staging demo proposal: digest archive search', 'no', 'voting', 2, 3, 5, 0, 2),
+    row('dg-6', 'demo-w6', 'staging-demo-extras', 'Staging Demo Extras',
+        'Staging demo proposal: digest quiet hours', 'yes', 'voting', 4, 1, 5, 0, 3),
+    // Last week: 4 votes, 1 merged.
+    row('dg-7', 'demo-w7', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest rate limits', 'yes', 'voting', 3, 2, 5, 1, 1),
+    row('dg-8', 'demo-w8', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest inline comments', 'yes', 'merged', 6, 1, 5, 1, 2, true),
+    row('dg-9', 'demo-w9', 'staging-demo-archive', 'Staging Demo Archive',
+        'Staging demo proposal: digest bulk move', 'no', 'closed', 2, 4, 5, 1, 3),
+    row('dg-10', 'demo-w10', 'staging-demo-extras', 'Staging Demo Extras',
+        'Staging demo proposal: digest dark mode', 'yes', 'voting', 5, 1, 5, 1, 4),
+    // Two weeks ago: 1 vote. Three weeks ago: none, so the streak stops at 3.
+    row('dg-11', 'demo-w11', 'staging-demo-app', 'Staging Demo App',
+        'Staging demo proposal: digest keyboard nav', 'yes', 'closed', 5, 0, 5, 2, 2),
+    // Four weeks ago: 1 vote.
+    row('dg-12', 'demo-w12', 'staging-demo-notes', 'Staging Demo Notes',
+        'Staging demo proposal: digest mobile layout', 'no', 'closed', 1, 4, 5, 4, 3),
   ];
 }
 
@@ -1344,6 +1788,82 @@ function demoWatchlistPayload(req) {
     }
   }
   if (req.query['watch-empty'] === '1') return { demo: true, rows: [] };
+  return { demo: true, rows };
+}
+
+// ---------------------------------------------------------------------------
+// Saved-tab demo data (?demo=1). Fixed fixture rows keyed to the demo inbox
+// proposals, so the Saved tab is deterministic in previews and checks: the
+// merged demo-5 (saved 6 days ago, a "revisit this" case) and demo-6 (2 days
+// ago). demo-1, demo-2 and demo-4 are deliberately absent — they are the ids
+// the bookmark check hooks use, so a check's own fixture never collides with
+// the tab's default one. Request-time injection, staging only.
+// ---------------------------------------------------------------------------
+
+function demoSavedRows() {
+  const byId = new Map(demoInbox().proposals.map((p) => [p.sessionId, p]));
+  const daysAgo = (d) => new Date(Date.now() - d * 24 * 3600 * 1000).toISOString();
+  const mk = (sessionId, savedDays) => {
+    const p = byId.get(sessionId);
+    if (!p) return null;
+    return {
+      sessionId,
+      appSlug: p.appSlug,
+      appName: p.appName,
+      icon: p.icon || null,
+      proposalId: p.proposalId,
+      title: p.title,
+      savedAt: daysAgo(savedDays),
+      status: p.status === 'proposed' ? 'voting' : (p.status || 'voting'),
+    };
+  };
+  return [mk('demo-5', 6), mk('demo-6', 2)].filter(Boolean);
+}
+
+// ?saved-empty=1 serves no rows (the empty state). ?saved-mine=<ids> (demo
+// checks) adds the caller's own real rows for exactly those sessions,
+// recorded through the ?set-bookmark= hook, so one URL observes bookmark →
+// reload → still listed from actual storage with a deterministic count (the
+// caller's other rows, if any earlier check left them, stay out).
+// ?saved-other=1 records a bookmark on demo-4 for a fake member
+// (staging-demo-user) so the per-user rule is observable: another member's
+// bookmark never reaches the caller's tab or count.
+async function demoBookmarksPayload(req) {
+  const rows = demoSavedRows();
+  if (req.query['saved-empty'] === '1') return { demo: true, rows: [] };
+  if (req.query['saved-other'] === '1') {
+    const p = demoInbox().proposals.find((x) => x.sessionId === 'demo-4');
+    if (p) {
+      await pool.query(`
+        INSERT INTO bookmarks
+          (user_id, username, app_slug, app_name, session_id, proposal_id, title)
+        VALUES (900002, 'staging-demo-user', $1, $2, $3, $4, $5)
+        ON CONFLICT (user_id, session_id) DO NOTHING`,
+        [p.appSlug, p.appName, p.sessionId, p.proposalId, p.title]);
+    }
+  }
+  const mineIds = String(req.query['saved-mine'] || '').split(',')
+    .map((s) => s.trim()).filter(Boolean);
+  if (mineIds.length) {
+    const byId = new Map(demoInbox().proposals.map((p) => [p.sessionId, p]));
+    const { rows: own } = await pool.query(
+      `SELECT app_slug, app_name, session_id, proposal_id, title, saved_at
+       FROM bookmarks WHERE user_id = $1 AND session_id = ANY($2)`,
+      [req.user.id, mineIds]);
+    for (const r of own) {
+      if (rows.some((x) => x.sessionId === r.session_id)) continue;
+      const fixture = byId.get(r.session_id);
+      rows.unshift({
+        sessionId: r.session_id,
+        appSlug: r.app_slug,
+        appName: r.app_name || r.app_slug,
+        icon: fixture ? fixture.icon : null,
+        proposalId: r.proposal_id,
+        title: r.title,
+        savedAt: r.saved_at,
+      });
+    }
+  }
   return { demo: true, rows };
 }
 
@@ -1425,14 +1945,7 @@ app.get('/api/inbox', async (req, res) => {
       const demo = demoInboxPayload(req);
       applyDemoNotiFixtures(req, demo.proposals);
       await applyDemoSnoozeFixtures(req);
-      if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
-      await withMyStars(demo.proposals, req.user.id, req);
-      // Event detection is opt-in on the demo fixture (?noti-detect=1): the
-      // default demo stays deterministic, the way ?snooze=1 gates the
-      // caller's persisted snoozes.
-      if (req.query['noti-detect'] === '1') {
-        await detectNotifications(demo.proposals, req);
-      }
+      await finishDemoInbox(req, demo);
       return res.json(demo);
     }
     if (!PLATFORM_ORIGIN) {
@@ -1442,11 +1955,7 @@ app.get('/api/inbox', async (req, res) => {
         const demo = demoInboxPayload(req);
         applyDemoNotiFixtures(req, demo.proposals);
         await applyDemoSnoozeFixtures(req);
-        if (req.query.snooze === '1') await withMySnoozes(demo.proposals, req.user.id);
-        await withMyStars(demo.proposals, req.user.id, req);
-        if (req.query['noti-detect'] === '1') {
-          await detectNotifications(demo.proposals, req);
-        }
+        await finishDemoInbox(req, demo);
         return res.json(demo);
       }
       return res.status(500).json({ error: 'Platform origin is not configured' });
@@ -1477,6 +1986,8 @@ app.get('/api/inbox', async (req, res) => {
     await withMyVotes(proposals, req.user.id);
     await withMySnoozes(proposals, req.user.id);
     await withMyStars(proposals, req.user.id, req);
+    await withMyBookmarks(proposals, req.user.id, req);
+    await withMyReads(proposals, req.user.id);
 
     // Notice proposal status changes for this user while the fresh list is
     // here (a failed detection never blocks the inbox response).
@@ -1488,6 +1999,11 @@ app.get('/api/inbox', async (req, res) => {
     // Where each approved proposal sits in its app's merge queue (1 =
     // next to merge); voting and merged proposals are left unstamped.
     stampQueuePositions(proposals);
+
+    // Celebrations for proposals the caller voted on that are now merged:
+    // record the new ones (once), then return the caller's pending cards.
+    await syncMergeCelebrations(proposals, req.user);
+    const celebrations = await pendingCelebrations(req.user.id);
 
     const filterApps = [];
     const seen = new Set();
@@ -1502,6 +2018,7 @@ app.get('/api/inbox', async (req, res) => {
       demo: false,
       apps: filterApps,
       proposals,
+      celebrations,
       failures,
       totalApps: apps.length,
     });
@@ -1606,12 +2123,27 @@ app.get('/api/my-votes', async (req, res) => {
     FROM my_votes WHERE user_id = $1 ORDER BY created_at DESC`;
   try {
     if (req.query.demo === '1' && IS_STAGING) {
+      // ?votes-empty=1 (staging demo only): an empty history, so the My
+      // Votes tab's empty state ("No votes yet", with the line about votes
+      // showing up here) and its "0 voted, 0 merged" summary are reachable
+      // by checks. Never combined with the fixture rows.
+      if (req.query['votes-empty'] === '1') {
+        return res.json({ demo: true, votes: [] });
+      }
       // Demo mode is a fixed fixture: exactly the three demo rows, so the
       // summary line and the declared checks ("3 voted, 1 merged") are
       // deterministic run to run. The caller's real history, including rows
       // the ?cast= demo hook persists for the vote → Undo check, is served
-      // by the plain route below, not mixed in here.
-      return res.json({ demo: true, votes: demoVoteRows() });
+      // by the plain route below, not mixed in here. ?no-votes=1 empties the
+      // fixture so the share-image empty-history card is reachable by checks.
+      const digestKind = req.query.digest;
+      if (digestKind === 'week' || digestKind === 'quiet') {
+        // Weekly-digest fixture variant (see demoDigestRows): rows spread
+        // across known weeks so the digest card's numbers are checkable.
+        return res.json({ demo: true, username: req.user.username, votes: demoDigestRows(digestKind) });
+      }
+      const votes = req.query['no-votes'] === '1' ? [] : demoVoteRows();
+      return res.json({ demo: true, username: req.user.username, votes });
     }
 
     const { rows } = await pool.query(select, [req.user.id]);
@@ -1653,11 +2185,41 @@ app.get('/api/my-votes', async (req, res) => {
             [id, status, yes, no, mergedAt]);
         }
         const { rows: fresh } = await pool.query(select, [req.user.id]);
-        return res.json({ demo: false, votes: fresh });
+        return res.json({ demo: false, username: req.user.username, votes: fresh });
       }
     }
 
-    res.json({ demo: false, votes: rows });
+    res.json({ demo: false, username: req.user.username, votes: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// New proposal screen: templates plus sending.
+//
+// Templates are a frontend concern (the picker prefills title and
+// description and everything stays editable); the server only needs to
+// know the valid template ids so a sent row records which one was used.
+// The platform's app-facing API is read-only — there is no endpoint an
+// app can call to submit a proposal into another app's approval
+// pipeline — so "sending" records the composed proposal in this app's
+// own Sent list (my_proposals above). That is also why these routes
+// touch no platform call at all.
+// ---------------------------------------------------------------------------
+
+const PROPOSAL_TEMPLATES = new Set(['blank', 'bugfix', 'feature', 'copy']);
+
+// The signed-in user's sent proposals, newest first. The compose screen's
+// Sent section renders from this; 50 is plenty for a review surface.
+app.get('/api/proposals', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, template, title, status, created_at
+       FROM my_proposals WHERE user_id = $1
+       ORDER BY created_at DESC, id DESC LIMIT 50`,
+      [req.user.id]);
+    res.json({ proposals: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1712,6 +2274,35 @@ app.get('/api/watchlist', async (req, res) => {
       [req.user.id]);
     await withCurrentStatuses(rows, userToken);
     res.json({ demo: false, rows: rows.map(watchRowPayload) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Send a composed proposal: validate the edited title and description
+// (the prefill is fully editable, so what arrives is whatever the user
+// left in the fields), record it, and hand the row back so the
+// confirmation and the Sent list can show it without a refetch.
+app.post('/api/proposals', async (req, res) => {
+  const body = req.body || {};
+  const title = typeof body.title === 'string' ? body.title.trim() : '';
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
+  const template = PROPOSAL_TEMPLATES.has(body.template) ? body.template : 'blank';
+  if (!title) return res.status(400).json({ error: 'A title is required' });
+  if (!text) return res.status(400).json({ error: 'A description is required' });
+  if (title.length > 300) {
+    return res.status(400).json({ error: 'Title is too long (300 characters max)' });
+  }
+  if (text.length > 20000) {
+    return res.status(400).json({ error: 'Description is too long (20000 characters max)' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO my_proposals (user_id, username, template, title, body)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, template, title, status, created_at`,
+      [req.user.id, req.user.username, template, title, text]);
+    res.status(201).json({ ok: true, proposal: rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1830,6 +2421,85 @@ app.post('/api/watchlist/seen', async (req, res) => {
         [req.user.id, String(s.sessionId), s.status]);
     }
     res.json({ ok: true, marked: statuses.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Bookmarks: proposals the signed-in user saved to revisit. Per person
+// (staging:private), keyed by (user_id, session_id); they never affect
+// votes, stars, snoozes or merge behaviour — purely this member's Saved tab.
+// ---------------------------------------------------------------------------
+
+// The Saved tab: this user's bookmarked proposals, newest save first. Each
+// row carries the app and title it was saved with; a merged/closed status is
+// stamped on from the loaded inbox data client-side, so no extra platform
+// calls. Demo loads serve the fixed fixture (see demoBookmarksPayload).
+app.get('/api/bookmarks', async (req, res) => {
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      return res.json(await demoBookmarksPayload(req));
+    }
+    const { rows } = await pool.query(
+      `SELECT app_slug, app_name, session_id, proposal_id, title, saved_at
+       FROM bookmarks WHERE user_id = $1 ORDER BY saved_at DESC`,
+      [req.user.id]);
+    res.json({ demo: false, rows: rows.map(bookmarkRowPayload) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bookmark a proposal. Demo bodies (staging only) carry just the session id
+// and take their metadata from the demo fixture, so a check URL can bookmark
+// a known proposal; real bookmarks carry what the card showed. Saving again
+// with the row already there is a no-op.
+app.post('/api/bookmarks/save', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    let meta = body;
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo bookmarking is staging-only' });
+      const p = demoInbox().proposals.find((x) => x.sessionId === sessionId);
+      if (!p) return res.status(400).json({ error: 'Unknown demo proposal' });
+      meta = {
+        appSlug: p.appSlug,
+        appName: p.appName,
+        proposalId: p.proposalId,
+        title: p.title,
+      };
+    }
+    await pool.query(`
+      INSERT INTO bookmarks
+        (user_id, username, app_slug, app_name, session_id, proposal_id, title)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (user_id, session_id) DO NOTHING
+    `, [req.user.id, req.user.username, meta.appSlug || '', meta.appName || '',
+        sessionId, meta.proposalId || null, meta.title || 'Untitled proposal']);
+    res.json({ ok: true, demo: body.demo === true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Unbookmark: remove this user's row for one session. Returns how many rows
+// went so the caller can tell a real removal from an already-absent one.
+app.post('/api/bookmarks/unsave', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM bookmarks WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, removed: rowCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1963,19 +2633,35 @@ app.post('/api/saved-searches/seed', async (req, res) => {
   if (!IS_STAGING) return res.status(400).json({ error: 'Demo seeding is staging-only' });
   const names = Array.isArray(body.names)
     ? body.names.filter((n) => typeof n === 'string' && n.trim()) : [];
+  // One transaction under a per-user advisory lock: check groups run in
+  // parallel against the same shared staging account, and a bare
+  // DELETE + INSERT pair races two concurrent seeds into unique-index
+  // violations (500s) and torn fixture lists.
+  const client = await pool.connect();
   try {
-    await pool.query('DELETE FROM saved_searches WHERE user_id = $1', [req.user.id]);
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('vote-inbox:saved-searches:' || $1::text))`,
+      [String(req.user.id)]);
+    await client.query('DELETE FROM saved_searches WHERE user_id = $1', [req.user.id]);
     for (const name of names) {
       const seed = SAVED_SEARCH_SEEDS[name.trim()];
       if (!seed) continue;
-      await pool.query(
+      await client.query(
         `INSERT INTO saved_searches (user_id, username, name, query, filters, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, NOW() - INTERVAL '3 days')`,
+         VALUES ($1, $2, $3, $4, $5, NOW() - INTERVAL '3 days')
+         ON CONFLICT (user_id, lower(name)) DO UPDATE
+           SET query = EXCLUDED.query, filters = EXCLUDED.filters,
+               last_seen_at = EXCLUDED.last_seen_at`,
         [req.user.id, req.user.username, name.trim(), seed.query, seed.filters]);
     }
+    await client.query('COMMIT');
     res.json({ ok: true });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -2128,6 +2814,101 @@ app.post('/api/notifications/seed', async (req, res) => {
       }
     }
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark one proposal read for the signed-in account. Append-only: a row that
+// is already there is a no-op, so repeated opens change nothing. Demo bodies
+// (staging only) carry just the session id and take their app from the demo
+// fixture, the way the demo star endpoint does.
+app.post('/api/reads', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    let appSlug = body.appSlug || '';
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo read marking is staging-only' });
+      const p = demoInbox().proposals.find((x) => x.sessionId === sessionId);
+      if (!p) return res.status(400).json({ error: 'Unknown demo proposal' });
+      appSlug = p.appSlug;
+    }
+    await pool.query(`
+      INSERT INTO proposal_reads (user_id, username, app_slug, session_id)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id, session_id) DO NOTHING
+    `, [req.user.id, req.user.username, appSlug, sessionId]);
+    res.json({ ok: true, demo: body.demo === true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark many proposals read at once (Mark all read). Ids are trimmed,
+// de-duplicated and capped so one call cannot balloon; demo bodies (staging
+// only) are filtered to the fixture ids. One insert over the whole list.
+app.post('/api/reads/all', async (req, res) => {
+  const body = req.body || {};
+  if (!Array.isArray(body.sessionIds)) {
+    return res.status(400).json({ error: 'sessionIds must be an array' });
+  }
+  let ids = [...new Set(body.sessionIds.map((s) => String(s).trim()).filter(Boolean))]
+    .slice(0, 500);
+  try {
+    if (body.demo === true) {
+      if (!IS_STAGING) return res.status(400).json({ error: 'Demo read marking is staging-only' });
+      const fixtures = new Set(demoInbox().proposals.map((x) => x.sessionId));
+      ids = ids.filter((id) => fixtures.has(id));
+    }
+    if (ids.length) {
+      await pool.query(`
+        INSERT INTO proposal_reads (user_id, username, app_slug, session_id)
+        SELECT $1, $2, '', u.id FROM unnest($3::text[]) AS u(id)
+        ON CONFLICT (user_id, session_id) DO NOTHING
+      `, [req.user.id, req.user.username, ids]);
+    }
+    res.json({ ok: true, marked: ids.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark celebration cards shown. The frontend calls this right after the
+// cards render, so each proposal's celebration is a one-time card: the next
+// inbox load no longer returns it. Only the caller's own rows are touched.
+app.post('/api/celebrations/shown', async (req, res) => {
+  const body = req.body || {};
+  const ids = Array.isArray(body.ids)
+    ? body.ids.map((s) => String(s)).filter(Boolean)
+    : [];
+  if (!ids.length) return res.json({ ok: true, updated: 0 });
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE merge_celebrations SET shown = TRUE WHERE user_id = $1 AND session_id = ANY($2)',
+      [req.user.id, ids]);
+    res.json({ ok: true, updated: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Dismiss one celebration: the card leaves the inbox now and the row is
+// marked dismissed, so the proposal never celebrates again.
+app.post('/api/celebrations/dismiss', async (req, res) => {
+  const body = req.body || {};
+  const sessionId = body.sessionId != null ? String(body.sessionId) : '';
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE merge_celebrations SET dismissed = TRUE, shown = TRUE WHERE user_id = $1 AND session_id = $2',
+      [req.user.id, sessionId]);
+    res.json({ ok: true, updated: rowCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2304,6 +3085,34 @@ function demoMembersPayload(req) {
   return { demo: true, ...membersPayload(demoMemberRows(req.now), req.now, { demo: true }) };
 }
 
+// The project's roster, read the way /api/members reads it: the caller's
+// forwarded identity (the platform answers only for actual members) and, in
+// production, the app token. Returns { list }, { notMember: true } for a
+// non-member, or { error } when the platform answered unusably.
+async function loadRosterList(req) {
+  const headers = { 'x-usernode-user-token': userTokenFrom(req) };
+  if (APP_TOKEN) headers['x-usernode-app-token'] = APP_TOKEN;
+  const r = await fetch(PLATFORM_API_BASE + '/members?limit=200', {
+    headers,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (r.status === 403) {
+    // Only members of the project get the roster. Everyone else gets an
+    // explicit flag so the screen can show why it is empty.
+    return { notMember: true };
+  }
+  if (!r.ok) {
+    return { error: 'Could not load the member list from the platform' };
+  }
+  const data = await r.json().catch(() => null);
+  const list = Array.isArray(data) ? data
+    : data && Array.isArray(data.members) ? data.members : null;
+  if (!list) {
+    return { error: 'Unexpected member list response' };
+  }
+  return { list };
+}
+
 app.get('/api/members', async (req, res) => {
   try {
     if (req.query.demo === '1' && IS_STAGING) {
@@ -2315,26 +3124,14 @@ app.get('/api/members', async (req, res) => {
       if (IS_STAGING) return res.json(demoMembersPayload(req));
       return res.status(500).json({ error: 'Platform API is not configured' });
     }
-    const headers = { 'x-usernode-user-token': userTokenFrom(req) };
-    if (APP_TOKEN) headers['x-usernode-app-token'] = APP_TOKEN;
-    const r = await fetch(PLATFORM_API_BASE + '/members?limit=200', {
-      headers,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (r.status === 403) {
-      // Only members of the project get the roster. Everyone else gets an
-      // explicit flag so the screen can show why it is empty.
+    const roster = await loadRosterList(req);
+    if (roster.notMember) {
       return res.json({ demo: false, notMember: true, members: [], activeThisWeek: 0 });
     }
-    if (!r.ok) {
-      return res.status(502).json({ error: 'Could not load the member list from the platform' });
+    if (roster.error) {
+      return res.status(502).json({ error: roster.error });
     }
-    const data = await r.json().catch(() => null);
-    const list = Array.isArray(data) ? data
-      : data && Array.isArray(data.members) ? data.members : null;
-    if (!list) {
-      return res.status(502).json({ error: 'Unexpected member list response' });
-    }
+    const list = roster.list;
     // Votes cast through this app, aggregated per member — the app's own
     // recorded history, not a guess. A query failure just leaves the counts
     // off the rows (the optional-field contract), never fails the roster.
@@ -2358,6 +3155,183 @@ app.get('/api/members', async (req, res) => {
       },
     });
     return res.json({ demo: false, ...payload });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Voters leaderboard
+//
+// Members ranked by the votes they cast through this app: the same my_votes
+// history My Votes reads, aggregated per member — counts only, the rows
+// themselves stay private (my_votes is staging:private). The roster comes
+// from the platform's member list (only members get an answer, so a
+// non-member gets the same explicit notMember flag the directory does), and
+// each member carries both ranges' counts (this week and all time) so the
+// This week / All time toggle re-ranks the loaded rows without a refetch.
+// "This week" is the same rolling seven-day window the directory's
+// active-this-week count uses, read through req.now.
+// ---------------------------------------------------------------------------
+
+// One aggregated member row in the shape the frontend renders. `you` marks
+// the signed-in caller's own row; it rides on the row so the client can
+// highlight and pin it without knowing its own username.
+function leaderboardRow(username, s) {
+  return {
+    username,
+    weekVotes: s.week_votes,
+    weekMerged: s.week_merged,
+    allVotes: s.all_votes,
+    allMerged: s.all_merged,
+  };
+}
+
+const LEADERBOARD_AGGREGATE = `
+  SELECT username,
+         COUNT(*)::int AS all_votes,
+         (COUNT(*) FILTER (WHERE status = 'merged'))::int AS all_merged,
+         (COUNT(*) FILTER (WHERE created_at >= $1))::int AS week_votes,
+         (COUNT(*) FILTER (WHERE status = 'merged' AND created_at >= $1))::int AS week_merged
+  FROM my_votes`;
+
+// Aggregate the signed-in caller's own vote history into one leaderboard row
+// (or null when they have not voted at all). Used by the demo overlay: the
+// fixture roster is fake, the caller's row is their real recorded votes.
+async function myLeaderboardStats(userId, cutoff) {
+  try {
+    const { rows } = await pool.query(
+      LEADERBOARD_AGGREGATE + ' WHERE user_id = $2 GROUP BY username', [cutoff, userId]);
+    return rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+// Staging demo fixture (?demo=1): the same six obviously-fake members the
+// members directory previews with, with fixed week and all-time counts. The
+// numbers make each check point observable: staging-demo-user leads both
+// ranges; quinn and priya tie on this week's votes (2) and the tie is broken
+// by merged votes (1 > 0), while all time priya (4) sits above quinn (2), so
+// the range toggle visibly reorders; raul never voted, so the footer chip
+// reads "5 of 6 members have voted". Request-time injection, staging only.
+function demoLeaderboardFixture() {
+  return [
+    { username: 'staging-demo-user', weekVotes: 5, weekMerged: 1, allVotes: 14, allMerged: 3 },
+    { username: 'staging-demo-maya', weekVotes: 4, weekMerged: 2, allVotes: 9, allMerged: 2 },
+    { username: 'staging-demo-omar', weekVotes: 3, weekMerged: 0, allVotes: 6, allMerged: 1 },
+    { username: 'staging-demo-quinn', weekVotes: 2, weekMerged: 1, allVotes: 2, allMerged: 1 },
+    { username: 'staging-demo-priya', weekVotes: 2, weekMerged: 0, allVotes: 4, allMerged: 1 },
+    { username: 'staging-demo-raul', weekVotes: 0, weekMerged: 0, allVotes: 0, allMerged: 0 },
+  ];
+}
+
+// Fixture variants for the checks (staging + ?demo=1 only): ?lb-many=1 makes
+// a 60-member board so the 50-row cap is observable; ?lb-tie=1 shrinks the
+// board to two members tied on votes with different merged counts; ?lb-empty=1
+// zeroes every member's week so the empty-week state renders.
+function demoLeaderboardRowsFor(req) {
+  if (req.query['lb-many'] === '1') {
+    const rows = [];
+    for (let n = 1; n <= 60; n++) {
+      const name = 'staging-demo-lb-' + (n < 10 ? '0' + n : n);
+      rows.push({ username: name, weekVotes: 61 - n, weekMerged: 0, allVotes: 61 - n, allMerged: 0 });
+    }
+    return rows;
+  }
+  if (req.query['lb-tie'] === '1') {
+    return [
+      { username: 'staging-demo-tie-a', weekVotes: 4, weekMerged: 1, allVotes: 4, allMerged: 1 },
+      { username: 'staging-demo-tie-b', weekVotes: 4, weekMerged: 2, allVotes: 4, allMerged: 2 },
+    ];
+  }
+  if (req.query['lb-empty'] === '1') {
+    return demoLeaderboardFixture().map((r) => ({ ...r, weekVotes: 0, weekMerged: 0 }));
+  }
+  return demoLeaderboardFixture();
+}
+
+async function demoLeaderboardPayload(req) {
+  const rows = demoLeaderboardRowsFor(req).map((r) => ({ ...r }));
+  // The chip counts members who have voted at all (all time), so it stays
+  // put across the range toggle and the empty-week variant.
+  let totalMembers = rows.length;
+  let voters = rows.filter((r) => r.allVotes > 0).length;
+  // ?lb=1 overlays the caller's own aggregated row on the fixture — their
+  // real recorded votes, the way the my_votes route serves them — so the
+  // own-row highlight, the pin and the after-a-fresh-vote update are
+  // reachable in a preview. ?lb-clear=1 first deletes the caller's demo-cast
+  // rows (the way the bulk hooks unvote before acting), so a check run that
+  // shares its staging database still starts from a known count.
+  if (req.query.lb === '1') {
+    if (req.query['lb-clear'] === '1') {
+      try {
+        await pool.query(
+          "DELETE FROM my_votes WHERE user_id = $1 AND app_slug LIKE 'staging-demo%'",
+          [req.user.id]);
+      } catch {}
+    }
+    const cutoff = new Date(req.now.getTime() - MEMBER_ACTIVE_WINDOW_MS);
+    const s = await myLeaderboardStats(req.user.id, cutoff);
+    if (s && s.all_votes > 0) {
+      rows.push({ ...leaderboardRow(req.user.username, s), you: true });
+      totalMembers += 1;
+      voters += 1;
+    }
+  }
+  return { demo: true, rows, totalMembers, voters };
+}
+
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      return res.json(await demoLeaderboardPayload(req));
+    }
+    if (!PLATFORM_API_BASE) {
+      // A staging container without the platform API only exists under a
+      // plain local launch; keep the screen reviewable there with fixtures.
+      if (IS_STAGING) return res.json(await demoLeaderboardPayload(req));
+      return res.status(500).json({ error: 'Platform API is not configured' });
+    }
+    const roster = await loadRosterList(req);
+    if (roster.notMember) {
+      return res.json({ demo: false, notMember: true, rows: [], totalMembers: 0, voters: 0 });
+    }
+    if (roster.error) {
+      return res.status(502).json({ error: roster.error });
+    }
+    const cutoff = new Date(req.now.getTime() - MEMBER_ACTIVE_WINDOW_MS);
+    let stats = new Map();
+    try {
+      const { rows } = await pool.query(
+        LEADERBOARD_AGGREGATE + ' GROUP BY username', [cutoff]);
+      stats = new Map(rows.map((s) => [String(s.username).toLowerCase(), s]));
+    } catch {}
+    const me = String(req.user.username || '').trim().toLowerCase();
+    const rows = [];
+    let voters = 0;
+    let seenMe = false;
+    for (const raw of roster.list) {
+      const username = (typeof raw === 'string' ? raw
+        : raw && typeof raw.username === 'string' ? raw.username : '').trim();
+      if (!username) continue;
+      const s = stats.get(username.toLowerCase());
+      if (!s || !s.all_votes) continue;
+      voters++;
+      const you = me && username.toLowerCase() === me;
+      if (you) seenMe = true;
+      rows.push({ ...leaderboardRow(username, s), you });
+    }
+    // The caller is always a member (the roster answered), but a roster
+    // spelling mismatch would drop their row; fall back to their own stats
+    // so their row and pin never depend on the roster's casing.
+    if (!seenMe && me) {
+      const s = stats.get(me);
+      if (s && s.all_votes) {
+        rows.push({ ...leaderboardRow(req.user.username, s), you: true });
+      }
+    }
+    return res.json({ demo: false, rows, totalMembers: roster.list.length, voters });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
