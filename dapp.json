@@ -658,6 +658,19 @@
       ]
     },
     {
+      "id": "app-filter.counts",
+      "name": "App filter shows open proposal count next to each app",
+      "path": "/?demo=1&app-filter=open",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count]",
+      "expectText": "(3)",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "inbox.title-search",
       "name": "Title search keeps only matching cards",
       "path": "/?demo=1&q=Keyboard",
@@ -4102,6 +4115,269 @@
       "visual": true,
       "impact": [
         "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.bugfix-chip",
+      "name": "New proposal screen lists a Bugfix template",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-template-option][data-template-id='bugfix']",
+      "expectText": "Bugfix",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.feature-chip",
+      "name": "New proposal screen lists a Feature template",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-template-option][data-template-id='feature']",
+      "expectText": "Feature",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.copy-chip",
+      "name": "New proposal screen lists a Copy change template",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-template-option][data-template-id='copy']",
+      "expectText": "Copy change",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.blank-chip",
+      "name": "New proposal screen lists a Blank option",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-template-option][data-template-id='blank']",
+      "expectText": "Blank",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.bugfix-prefill",
+      "name": "Bugfix template prefills title and description",
+      "path": "/?demo=1&compose=1&template=bugfix",
+      "expectSelector": "body:has([data-template-id='bugfix'][aria-pressed='true']) #compose-title[value='Fix: [what is broken]']",
+      "expectText": "174 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.feature-prefill",
+      "name": "Feature template prefills title and description",
+      "path": "/?demo=1&compose=1&template=feature",
+      "expectSelector": "body:has([data-template-id='feature'][aria-pressed='true']) #compose-title[value='Add [feature name]']",
+      "expectText": "185 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.copy-prefill",
+      "name": "Copy change template prefills title and description",
+      "path": "/?demo=1&compose=1&template=copy",
+      "expectSelector": "body:has([data-template-id='copy'][aria-pressed='true']) #compose-title[value='Copy change: [where]']",
+      "expectText": "149 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.blank-prefill",
+      "name": "Blank option keeps both fields empty",
+      "path": "/?demo=1&compose=1&template=blank",
+      "expectSelector": "#compose-title[value='']",
+      "expectText": "0 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-disabled-empty",
+      "name": "Send is disabled while title or description is empty",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-send-proposal][disabled]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.edit-title",
+      "name": "Prefilled title stays editable",
+      "path": "/?demo=1&compose=1&template=bugfix&set-title=Fix%20the%20retry%20pill",
+      "expectSelector": "#compose-title[value='Fix the retry pill']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.edit-body",
+      "name": "Prefilled description stays editable",
+      "path": "/?demo=1&compose=1&template=bugfix&set-body=Edited%20description%20text",
+      "expectSelector": "#compose-body",
+      "expectText": "23 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.edit-send-ready",
+      "name": "Editing the prefilled title leaves Send ready",
+      "path": "/?demo=1&compose=1&template=bugfix&set-title=Custom%20title",
+      "expectSelector": "[data-send-proposal]:not([disabled])",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.switch-template",
+      "name": "Switching templates replaces the prefill",
+      "path": "/?demo=1&compose=1&switch-template=feature",
+      "expectSelector": "body:has([data-template-id='feature'][aria-pressed='true']) #compose-title[value='Add [feature name]']",
+      "expectText": "185 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.switch-replaces-edit",
+      "name": "Switching templates replaces an edited title too",
+      "path": "/?demo=1&compose=1&template=bugfix&set-title=My%20custom%20title&switch-template=feature",
+      "expectSelector": "#compose-title[value='Add [feature name]']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-prefilled",
+      "name": "Sending a prefilled proposal shows confirmation",
+      "path": "/?demo=1&compose=1&template=bugfix&send=1",
+      "expectSelector": "[data-send-confirmation]",
+      "expectText": "Proposal sent",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-shows-title",
+      "name": "Confirmation names the sent proposal",
+      "path": "/?demo=1&compose=1&template=bugfix&send=1",
+      "expectText": "Fix: [what is broken]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-sent-row",
+      "name": "Sent proposal appears in the Sent list",
+      "path": "/?demo=1&compose=1&template=bugfix&send=1",
+      "expectSelector": "[data-sent-row]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-edited",
+      "name": "Sending uses the edited title, not the prefill",
+      "path": "/?demo=1&compose=1&template=bugfix&set-title=Fix%20the%20retry%20pill&send=1",
+      "expectText": "Fix the retry pill",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-blank",
+      "name": "A proposal composed without a template sends too",
+      "path": "/?demo=1&compose=1&set-title=Note%20from%20the%20inbox&set-body=Some%20details%20here&send=1",
+      "expectSelector": "[data-send-confirmation]",
+      "expectText": "Proposal sent",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-stays-disabled-empty",
+      "name": "Send never fires on an empty form",
+      "path": "/?demo=1&compose=1&send=1",
+      "expectSelector": "body:has([data-compose-screen]):not(:has([data-send-confirmation])) [data-send-proposal][disabled]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.opens-without-demo",
+      "name": "New proposal screen opens from the deep link with no demo data",
+      "path": "/?compose=1",
+      "expectSelector": "[data-compose-screen]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.sent-list-state",
+      "name": "Sent list renders a defined state",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "#sent-list:has([data-sent-empty]), #sent-list:has([data-sent-row])",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.back-to-list",
+      "name": "Leaving compose restores the main list",
+      "path": "/?demo=1&compose=1&template=bugfix&back=1",
+      "expectSelector": "[data-proposal-card]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
         "dapp.json"
       ]
     }
