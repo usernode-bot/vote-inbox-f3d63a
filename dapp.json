@@ -2744,6 +2744,16 @@
       "expectText": "(2)"
     },
     {
+      "name": "Header has no duplicated visible app title",
+      "path": "/?demo=1",
+      "expectSelector": "header > h1.sr-only[data-app-title] + #members-btn"
+    },
+    {
+      "name": "Section tabs scroll sideways with spaced tabs",
+      "path": "/?demo=1",
+      "expectSelector": "#tab-row.overflow-x-auto.gap-1 > .tab-btn.shrink-0.px-4[data-tab='leaderboard']"
+    },
+    {
       "id": "members.header-link",
       "name": "Header links to the members directory",
       "path": "/?demo=1",
