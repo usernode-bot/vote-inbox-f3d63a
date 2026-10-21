@@ -174,6 +174,17 @@
             </button>
             <div id="tag-filter-panel" class="hidden"></div>
           </div>
+          <!-- The three Hide switches live in a bottom sheet behind this one
+               button, so the list starts higher on the screen. The count
+               shows how many of them are on. -->
+          <button id="filter-sheet-btn" data-filter-sheet-btn type="button" aria-haspopup="dialog" data-filter-count="0"
+            class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+            <span class="inline-flex items-center gap-1.5">
+              <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+              <span>Filter</span>
+              <span data-filter-count-badge hidden class="rounded-full bg-violet-600 px-1.5 text-xs font-semibold text-white"></span>
+            </span>
+          </button>
         </div>
         <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
           <button id="select-mode-btn" data-select-mode-toggle type="button" aria-pressed="false"
@@ -182,18 +193,31 @@
             class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">One vote away</button>
           <button id="snoozed-chip" data-snoozed-chip type="button" aria-pressed="false"
             class="shrink-0 whitespace-nowrap rounded-xl border border-zinc-300 bg-white py-2 pl-3 pr-3 text-sm font-medium text-zinc-700 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Snoozed</button>
-          <label for="hide-voted" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-            <span>Hide voted</span>
-            <input id="hide-voted" type="checkbox" class="un-switch">
-          </label>
-          <label for="hide-merged" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-            <span>Hide merged</span>
-            <input id="hide-merged" type="checkbox" class="un-switch">
-          </label>
-          <label for="hide-read" class="flex shrink-0 select-none items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-            <span>Hide read</span>
-            <input id="hide-read" type="checkbox" class="un-switch">
-          </label>
+        </div>
+        <!-- Home of the Filter sheet's content while the sheet is closed:
+             the switches stay in the document (so their state and the
+             checks that tap them keep working) and the sheet adopts this
+             block when it opens, handing it back when it closes. -->
+        <div id="filter-sheet-home" hidden>
+          <div id="filter-sheet-content" data-filter-sheet class="px-4 pb-4">
+            <h2 class="pb-1 text-base font-semibold">Filter</h2>
+            <p class="pb-2 text-xs text-zinc-500 dark:text-zinc-400">Choose which proposals to tuck away.</p>
+            <div class="divide-y divide-zinc-200 dark:divide-zinc-800">
+              <label for="hide-voted" class="flex select-none items-center justify-between gap-3 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                <span>Hide voted</span>
+                <input id="hide-voted" type="checkbox" class="un-switch">
+              </label>
+              <label for="hide-merged" class="flex select-none items-center justify-between gap-3 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                <span>Hide merged</span>
+                <input id="hide-merged" type="checkbox" class="un-switch">
+              </label>
+              <label for="hide-read" class="flex select-none items-center justify-between gap-3 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                <span>Hide read</span>
+                <input id="hide-read" type="checkbox" class="un-switch">
+              </label>
+            </div>
+            <button data-filter-sheet-done type="button" class="mt-3 w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white active:scale-95">Done</button>
+          </div>
         </div>
       </div>
       <div id="search-row" data-search-row class="mt-2">
@@ -586,6 +610,9 @@
     var MARK_ALL_READ = DEMO && params.get('markallread') === '1';
     var OPEN_MERGED = DEMO && params.get('open-merged') === '1';
     var TAP_HIDE_READ = DEMO && params.get('tap-hide-read') === '1';
+    // ?tap-filter-sheet=1 (demo only) taps the Filter button once the inbox
+    // has rendered, so the Filter sheet with the Hide switches is open.
+    var TAP_FILTER_SHEET = DEMO && params.get('tap-filter-sheet') === '1';
     // New-since-last-visit hook (demo only): ?newbadge=1 sets the
     // remembered newest proposal to the demo-6 fixture for that load, so
     // cards proposed after it (demo-2, demo-4) read as New. Client-only:
@@ -1588,6 +1615,16 @@
         oneAway: state.oneAway, hideVoted: state.hideVoted,
         hideMerged: state.hideMerged, search: state.search.trim(),
       };
+    }
+
+    // True when any filter, chip or search is on, or the sort differs
+    // from the default: the moments Save view is offered. Covers what a
+    // view captures plus the tag filter, Hide read and the Snoozed chip.
+    function viewWorthSaving() {
+      var cfg = currentViewConfig();
+      return !!(cfg.filter || cfg.oneAway || cfg.hideVoted || cfg.hideMerged
+        || cfg.search || cfg.sort !== 'needed'
+        || state.tagFilter || state.hideRead || state.snoozeView);
     }
 
     function sameViewConfig(a, b) {
@@ -4871,7 +4908,15 @@
       var viewsRow = document.getElementById('views-row');
       if (viewsRow) {
         var showViews = state.tab === 'inbox' && !inMembers;
-        viewsRow.className = 'mt-2 flex items-center gap-2' + (showViews ? '' : ' hidden');
+        // Save view only shows once there is something to save; with no
+        // saved views either, the whole row steps aside so the list starts
+        // higher. data-hidden keeps meaning "not on this tab".
+        var canSave = viewWorthSaving();
+        var saveBtn = document.getElementById('save-view-btn');
+        if (saveBtn) saveBtn.classList.toggle('hidden', !canSave);
+        viewsRow.setAttribute('data-save-view-visible', canSave ? '1' : '0');
+        var collapsed = !canSave && !state.views.length;
+        viewsRow.className = 'mt-2 flex items-center gap-2' + (showViews && !collapsed ? '' : ' hidden');
         viewsRow.setAttribute('data-hidden', showViews ? '0' : '1');
       }
     }
@@ -6429,6 +6474,7 @@
       syncTagFilter();
       syncOneAway();
       syncSnoozedChip();
+      syncFilterSheetBtn();
       syncSelectMode();
       renderSelectBar();
       renderTabs();
@@ -6991,6 +7037,63 @@
       if (!snoozedChip) return;
       snoozedChip.className = state.snoozeView ? ONE_AWAY_ACTIVE : ONE_AWAY_IDLE;
       snoozedChip.setAttribute('aria-pressed', state.snoozeView ? 'true' : 'false');
+    }
+
+    // The Filter button stands in for the three Hide switches, which live
+    // in a bottom sheet. It takes the active chip look and a count badge
+    // while any of them is on, so a hidden part of the list never goes
+    // unnoticed.
+    var filterSheetBtn = document.getElementById('filter-sheet-btn');
+
+    function hideFilterCount() {
+      return (state.hideVoted ? 1 : 0) + (state.hideMerged ? 1 : 0) + (state.hideRead ? 1 : 0);
+    }
+
+    function syncFilterSheetBtn() {
+      if (!filterSheetBtn) return;
+      var n = hideFilterCount();
+      filterSheetBtn.className = n ? ONE_AWAY_ACTIVE : ONE_AWAY_IDLE;
+      filterSheetBtn.setAttribute('data-filter-count', String(n));
+      filterSheetBtn.setAttribute('aria-label', n ? 'Filter, ' + n + ' on' : 'Filter');
+      var badge = filterSheetBtn.querySelector('[data-filter-count-badge]');
+      if (badge) {
+        badge.textContent = n ? String(n) : '';
+        badge.hidden = !n;
+      }
+    }
+
+    // Opens the Filter sheet. The kit's sheet adopts the switches' block
+    // and hands it back to its hidden home when it closes, so the switches
+    // never leave the document. Without the kit the block simply shows in
+    // place, under the chips, and the same button closes it.
+    var filterSheet = null;
+
+    function openFilterSheet() {
+      var content = document.getElementById('filter-sheet-content');
+      var home = document.getElementById('filter-sheet-home');
+      if (!content || !home) return;
+      if (window.unNative && unNative.presentSheet) {
+        if (filterSheet) return;
+        filterSheet = unNative.presentSheet({
+          contentEl: content,
+          onDismiss: function () {
+            filterSheet = null;
+            home.appendChild(content);
+            if (filterSheetBtn) filterSheetBtn.setAttribute('aria-expanded', 'false');
+          },
+        });
+        if (filterSheetBtn) filterSheetBtn.setAttribute('aria-expanded', 'true');
+      } else {
+        home.hidden = !home.hidden;
+        if (filterSheetBtn) filterSheetBtn.setAttribute('aria-expanded', home.hidden ? 'false' : 'true');
+      }
+    }
+
+    function closeFilterSheet() {
+      if (filterSheet) { filterSheet.dismiss(); return; }
+      var home = document.getElementById('filter-sheet-home');
+      if (home) home.hidden = true;
+      if (filterSheetBtn) filterSheetBtn.setAttribute('aria-expanded', 'false');
     }
 
     // Keep the Select chip and the bulk bar in step with select mode. The
@@ -7816,6 +7919,7 @@
           maybeMarkAllRead();
           maybeOpenMerged();
           maybeTapHideRead();
+          maybeTapFilterSheet();
           maybeTapMenu();
           maybeTapDensity();
           maybeDensityFit();
@@ -9434,6 +9538,15 @@
       });
     }
 
+    var filterSheetTapped = false;
+    function maybeTapFilterSheet() {
+      if (!TAP_FILTER_SHEET || filterSheetTapped) return;
+      filterSheetTapped = true;
+      waitFor('[data-filter-sheet-btn]', function (btn) {
+        btn.click();
+      });
+    }
+
     // Density markers the checks read, stamped on every demo render: which
     // density the page rendered with, and whether any change-summary row
     // (the description preview) is on screen.
@@ -9988,6 +10101,10 @@
         setSelectMode(false);
       });
     }
+
+    if (filterSheetBtn) filterSheetBtn.addEventListener('click', openFilterSheet);
+    var filterSheetDone = document.querySelector('[data-filter-sheet-done]');
+    if (filterSheetDone) filterSheetDone.addEventListener('click', closeFilterSheet);
 
     document.getElementById('hide-voted').addEventListener('change', function (event) {
       setHideVoted(event.target.checked);

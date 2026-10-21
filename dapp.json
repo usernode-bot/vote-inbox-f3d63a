@@ -1471,9 +1471,9 @@
     },
     {
       "id": "views.row",
-      "name": "Saved views switcher row renders with a Save view button",
-      "path": "/?demo=1",
-      "expectSelector": "[data-views-row]",
+      "name": "Saved views switcher row renders with a Save view button once a filter is on",
+      "path": "/?demo=1&hide-voted=1",
+      "expectSelector": "[data-views-row][data-save-view-visible='1']:not(.hidden) #save-view-btn:not(.hidden)",
       "expectText": "Save view",
       "visual": true,
       "impact": [
@@ -1980,7 +1980,7 @@
     {
       "id": "views.delete-last-empty",
       "name": "Deleting the last view shows the empty hint again",
-      "path": "/?demo=1&seed-views=My%20apps&delete-view=My%20apps",
+      "path": "/?demo=1&seed-views=My%20apps&delete-view=My%20apps&hide-voted=1",
       "expectText": "No saved views yet",
       "impact": [
         "public/index.html",
@@ -4320,6 +4320,48 @@
       "impact": [
         "public/index.html",
         "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "filter.save-view-hidden-default",
+      "name": "Save view stays hidden while no filter, chip or search is on",
+      "path": "/?demo=1&hide-voted=0&hide-merged=0&hide-read=0&sort=needed&seed-views=none",
+      "expectSelector": "body:has([data-views-row][data-save-view-visible='0'].hidden) [data-proposal-card]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "filter.button-count",
+      "name": "The Filter button counts the Hide switches that are on",
+      "path": "/?demo=1&hide-voted=1&hide-read=1&hide-merged=0",
+      "expectSelector": "[data-filter-sheet-btn][data-filter-count='2'] [data-filter-count-badge]:not([hidden])",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "filter.button-no-count",
+      "name": "The Filter button shows no count when every Hide switch is off",
+      "path": "/?demo=1&hide-voted=0&hide-read=0&hide-merged=0",
+      "expectSelector": "[data-filter-sheet-btn][data-filter-count='0'] [data-filter-count-badge][hidden]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "filter.sheet-open",
+      "name": "The Filter button opens a sheet holding the Hide switches",
+      "path": "/?demo=1&tap-filter-sheet=1&hide-voted=1&hide-merged=0&hide-read=0",
+      "expectSelector": ".un-sheet [data-filter-sheet] #hide-voted:checked",
+      "expectText": "Hide read",
+      "visual": true,
+      "impact": [
+        "public/index.html",
         "dapp.json"
       ]
     },
