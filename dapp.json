@@ -3305,6 +3305,66 @@
       ]
     },
     {
+      "id": "empty.next-estimate",
+      "name": "Empty inbox estimates when the next proposal arrives",
+      "path": "/?demo=1&empty=1",
+      "expectSelector": "[data-next-estimate='soon']",
+      "expectText": "Next proposal likely in",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.estimate-unknown",
+      "name": "Empty inbox says when there is too little to estimate",
+      "path": "/?demo=1&empty=1&estimate=none",
+      "expectSelector": "[data-next-estimate='unknown']",
+      "expectText": "Not enough recent proposals",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.see-finished",
+      "name": "See finished proposals opens My Votes from the empty inbox",
+      "path": "/?demo=1&empty=1&tap-finished=1",
+      "expectSelector": "#votes-summary:not([hidden])",
+      "expectText": "3 voted, 1 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.alerts-on",
+      "name": "Turning on new proposal alerts from the empty inbox",
+      "path": "/?demo=1&empty=1&tap-alerts=1",
+      "expectSelector": "[data-alerts-state='on']",
+      "expectText": "Alerts on",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.alerts-arrive",
+      "name": "An alerts poll announces newly arrived proposals",
+      "path": "/?demo=1&empty=1&tap-alerts=1&alerts-arrive=1",
+      "expectSelector": "body[data-alerts-new='5']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "empty.votes",
       "name": "Empty My Votes explains votes show up here",
       "path": "/?demo=1&tab=votes&votes-empty=1",
