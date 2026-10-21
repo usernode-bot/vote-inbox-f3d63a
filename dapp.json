@@ -31,6 +31,18 @@
       ]
     },
     {
+      "id": "inbox.new-badge",
+      "name": "Proposals newer than the last seen one show a New badge",
+      "path": "/?demo=1&newbadge=1",
+      "expectSelector": "[data-proposal-card][data-session-id='demo-2'] [data-new-badge]",
+      "expectText": "New",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "inbox.share-button",
       "name": "Proposal cards offer a share button",
       "path": "/?demo=1",
@@ -100,8 +112,42 @@
       "id": "inbox.summary-line",
       "name": "Inbox header shows open and votes-needed summary",
       "path": "/?demo=1",
-      "expectSelector": "#inbox-summary",
-      "expectText": "6 open, 9 votes needed"
+      "expectSelector": "#inbox-summary [data-stat=\"open\"][aria-label=\"6 open, 9 votes needed\"]",
+      "expectText": "9 needed"
+    },
+    {
+      "id": "inbox.stat-cards",
+      "name": "Inbox stat cards show votes this week, streak and rank",
+      "path": "/?demo=1",
+      "expectSelector": "#inbox-summary [data-stat=\"week\"][data-week=\"2\"] ~ [data-stat=\"streak\"][data-streak=\"1\"] ~ [data-stat=\"rank\"][data-rank-of=\"6\"]",
+      "expectText": "You voted 2 times this week and sit at #",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.stat-cards-empty",
+      "name": "Inbox stat cards at zero votes nudge toward the open proposals",
+      "path": "/?demo=1&votes-empty=1",
+      "expectSelector": "#inbox-summary [data-stat=\"week\"][data-week=\"0\"] ~ [data-stat=\"streak\"][data-streak=\"0\"] ~ [data-stat=\"rank\"][data-rank=\"none\"]",
+      "expectText": "No votes yet this week. 6 proposals are waiting for you."
+    },
+    {
+      "id": "inbox.stat-cards-empty-inbox",
+      "name": "Inbox stat cards with an empty inbox and no votes",
+      "path": "/?demo=1&empty=1&votes-empty=1",
+      "expectSelector": "#inbox-summary [data-stat=\"week\"][data-week=\"0\"]",
+      "expectText": "No votes yet this week. New proposals will show up here."
+    },
+    {
+      "id": "inbox.stat-cards-error",
+      "name": "Inbox stat cards say when the stats could not load",
+      "path": "/?demo=1&stats-fail=1",
+      "expectSelector": "#inbox-summary [data-stat=\"week\"][data-stat-error=\"1\"]",
+      "expectText": "Your vote stats could not load. Refresh to try again."
     },
     {
       "id": "inbox.updated-line",
@@ -396,7 +442,7 @@
       "name": "App filter shows open counts per app",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-count]",
-      "expectText": "(3)",
+      "expectText": "3 waiting",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -434,7 +480,7 @@
       "name": "App filter shows Staging Demo App's open count of 3",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='3']",
-      "expectText": "(3)",
+      "expectText": "3 waiting",
       "impact": [
         "public/index.html",
         "server.js",
@@ -458,7 +504,7 @@
       "name": "App filter shows Staging Demo Notes' open count of 2",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
-      "expectText": "(2)",
+      "expectText": "2 waiting",
       "impact": [
         "public/index.html",
         "server.js",
@@ -483,7 +529,7 @@
       "name": "App filter shows Staging Demo Archive's open count of 0",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-count='0']",
-      "expectText": "(0)",
+      "expectText": "0 waiting",
       "impact": [
         "public/index.html",
         "server.js",
@@ -537,7 +583,7 @@
       "name": "Hide voted and hide merged do not change the filter counts",
       "path": "/?demo=1&openfilter=1&hide-voted=1&hide-merged=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
-      "expectText": "(2)",
+      "expectText": "2 waiting",
       "impact": [
         "public/index.html",
         "dapp.json"
@@ -548,7 +594,7 @@
       "name": "After a data refresh Staging Demo App's open count drops to 2",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='2']",
-      "expectText": "(2)",
+      "expectText": "2 waiting",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -573,7 +619,7 @@
       "name": "After a data refresh Staging Demo Notes' open count drops to 1",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='1']",
-      "expectText": "(1)",
+      "expectText": "1 waiting",
       "impact": [
         "public/index.html",
         "server.js",
@@ -665,6 +711,19 @@
       "expectSelector": "[data-app-option='staging-demo-notes']:has([data-app-count='1']):has([data-app-merged='2'])",
       "impact": [
         "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.counts",
+      "name": "App filter shows open proposal count next to each app",
+      "path": "/?demo=1&app-filter=open",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count]",
+      "expectText": "3 waiting",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
         "dapp.json"
       ]
     },
@@ -2837,8 +2896,8 @@
       "id": "snooze.counts-in-summary",
       "name": "Snoozed proposal still counts in the header totals",
       "path": "/?demo=1&set-snooze=demo-2&snooze-days=1",
-      "expectSelector": "#inbox-summary",
-      "expectText": "6 open, 9 votes needed"
+      "expectSelector": "#inbox-summary [data-stat=\"open\"][aria-label=\"6 open, 9 votes needed\"]",
+      "expectText": "9 needed"
     },
     {
       "id": "snooze.per-user",
@@ -3257,6 +3316,66 @@
       ]
     },
     {
+      "id": "empty.next-estimate",
+      "name": "Empty inbox estimates when the next proposal arrives",
+      "path": "/?demo=1&empty=1",
+      "expectSelector": "[data-next-estimate='soon']",
+      "expectText": "Next proposal likely in",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.estimate-unknown",
+      "name": "Empty inbox says when there is too little to estimate",
+      "path": "/?demo=1&empty=1&estimate=none",
+      "expectSelector": "[data-next-estimate='unknown']",
+      "expectText": "Not enough recent proposals",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.see-finished",
+      "name": "See finished proposals opens My Votes from the empty inbox",
+      "path": "/?demo=1&empty=1&tap-finished=1",
+      "expectSelector": "#votes-summary:not([hidden])",
+      "expectText": "3 voted, 1 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.alerts-on",
+      "name": "Turning on new proposal alerts from the empty inbox",
+      "path": "/?demo=1&empty=1&tap-alerts=1",
+      "expectSelector": "[data-alerts-state='on']",
+      "expectText": "Alerts on",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "empty.alerts-arrive",
+      "name": "An alerts poll announces newly arrived proposals",
+      "path": "/?demo=1&empty=1&tap-alerts=1&alerts-arrive=1",
+      "expectSelector": "body[data-alerts-new='5']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "empty.votes",
       "name": "Empty My Votes explains votes show up here",
       "path": "/?demo=1&tab=votes&votes-empty=1",
@@ -3293,8 +3412,8 @@
       "id": "empty.zero-counts",
       "name": "Empty inbox keeps the header counts at zero",
       "path": "/?demo=1&empty=1",
-      "expectSelector": "#inbox-summary",
-      "expectText": "0 open, 0 votes needed",
+      "expectSelector": "#inbox-summary [data-stat=\"open\"][aria-label=\"0 open, 0 votes needed\"]",
+      "expectText": "0 needed",
       "impact": [
         "public/index.html",
         "server.js",
@@ -3746,6 +3865,17 @@
       ]
     },
     {
+      "id": "follow.star-on-rows",
+      "name": "Each app row in the filter has a follow star",
+      "path": "/?demo=1&openfilter=1&clear-follows=1",
+      "expectSelector": "[data-app-option='staging-demo-notes'] [data-follow-toggle][aria-pressed='false']",
+      "expectText": "Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "read.hide-read-off",
       "name": "Turning Hide read off brings read proposals back",
       "path": "/?demo=1&set-read=demo-2&hide-read=1&tap-hide-read=1",
@@ -3813,6 +3943,19 @@
       ]
     },
     {
+      "id": "app-filter.stats-median",
+      "name": "App filter shows the median time to merge per app",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-median='2d']",
+      "expectText": "Median to merge (30 days): 2d",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "density.menu-control",
       "name": "The header menu has a Density control",
       "path": "/?demo=1&tap-menu=1",
@@ -3825,12 +3968,48 @@
       ]
     },
     {
+      "id": "app-filter.stats-merged-week",
+      "name": "App filter still shows merged this week per app",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-merged='1']",
+      "expectText": "1 merged this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "density.menu-options",
       "name": "The Density control offers Comfortable and Compact",
       "path": "/?demo=1&tap-menu=1",
       "expectSelector": "body:has([data-density-option='comfortable']):has([data-density-option='compact']) [data-density-menu]",
       "impact": [
         "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-waiting",
+      "name": "App filter shows how many proposals are still waiting per app",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-waiting='3']",
+      "expectText": "3 waiting",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-sparkline",
+      "name": "App filter shows a weekly merge sparkline per app",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-spark='1,0,1,1'] [data-spark-bar]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
         "dapp.json"
       ]
     },
@@ -3846,12 +4025,70 @@
       ]
     },
     {
+      "id": "app-filter.stats-tap-applies",
+      "name": "Tapping an app filter row still applies the filter",
+      "path": "/?demo=1&openfilter=1&mergestats=1&tap-app-option=staging-demo-notes",
+      "expectSelector": "#view:not(:has([data-session-id='demo-2'])) [data-proposal-card][data-session-id='demo-4']",
+      "expectText": "Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "density.default-comfortable",
       "name": "Comfortable is the default density",
       "path": "/?demo=1&density-clear=1",
       "expectSelector": "body[data-density-summary-visible='1'] [data-proposal-card][data-session-id='demo-1'][data-density='comfortable']",
       "impact": [
         "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-dash",
+      "name": "An app with no merge data shows a dash",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-archive']:has([data-app-median='none']):has([data-app-spark='none'])",
+      "expectText": "Median to merge (30 days): –",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-window",
+      "name": "The median uses only merges from the last 30 days",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-median='2d'][data-app-merged30='3']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-history",
+      "name": "The stats match the proposal history",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-notes']:has([data-app-median='7d']):has([data-app-waiting='2']):has([data-app-merged='1']):has([data-app-spark='0,0,0,1'])",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-stable-loading",
+      "name": "The filter rows keep their size while the stats load",
+      "path": "/?demo=1&openfilter=1&mergestats=1&stats-layout=1",
+      "expectSelector": "[data-app-filter-panel][data-layout-stable='1']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
         "dapp.json"
       ]
     },
@@ -3863,6 +4100,18 @@
       "visual": true,
       "impact": [
         "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-phone",
+      "name": "The filter stats render at phone width",
+      "path": "/?demo=1&openfilter=1&mergestats=1&filter-phone=1",
+      "expectSelector": "[data-app-filter-panel][data-phone-fit='1'] [data-app-option='staging-demo-app'] [data-app-spark] [data-spark-bar]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
         "dapp.json"
       ]
     },
@@ -4071,6 +4320,399 @@
       "impact": [
         "public/index.html",
         "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.bugfix-chip",
+      "name": "New proposal screen lists a Bugfix template",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-template-option][data-template-id='bugfix']",
+      "expectText": "Bugfix",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.feature-chip",
+      "name": "New proposal screen lists a Feature template",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-template-option][data-template-id='feature']",
+      "expectText": "Feature",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.copy-chip",
+      "name": "New proposal screen lists a Copy change template",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-template-option][data-template-id='copy']",
+      "expectText": "Copy change",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.blank-chip",
+      "name": "New proposal screen lists a Blank option",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-template-option][data-template-id='blank']",
+      "expectText": "Blank",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.bugfix-prefill",
+      "name": "Bugfix template prefills title and description",
+      "path": "/?demo=1&compose=1&template=bugfix",
+      "expectSelector": "body:has([data-template-id='bugfix'][aria-pressed='true']) #compose-title[value='Fix: [what is broken]']",
+      "expectText": "174 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.feature-prefill",
+      "name": "Feature template prefills title and description",
+      "path": "/?demo=1&compose=1&template=feature",
+      "expectSelector": "body:has([data-template-id='feature'][aria-pressed='true']) #compose-title[value='Add [feature name]']",
+      "expectText": "185 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.copy-prefill",
+      "name": "Copy change template prefills title and description",
+      "path": "/?demo=1&compose=1&template=copy",
+      "expectSelector": "body:has([data-template-id='copy'][aria-pressed='true']) #compose-title[value='Copy change: [where]']",
+      "expectText": "149 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.blank-prefill",
+      "name": "Blank option keeps both fields empty",
+      "path": "/?demo=1&compose=1&template=blank",
+      "expectSelector": "#compose-title[value='']",
+      "expectText": "0 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-disabled-empty",
+      "name": "Send is disabled while title or description is empty",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "[data-compose-screen] [data-send-proposal][disabled]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.edit-title",
+      "name": "Prefilled title stays editable",
+      "path": "/?demo=1&compose=1&template=bugfix&set-title=Fix%20the%20retry%20pill",
+      "expectSelector": "#compose-title[value='Fix the retry pill']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.tap-star-follows",
+      "name": "Tapping the star follows the app",
+      "path": "/?demo=1&openfilter=1&tap-follow=staging-demo-notes&clear-follows=1",
+      "expectSelector": "[data-follow-toggle][data-app='staging-demo-notes'][aria-pressed='true']",
+      "expectText": "Unfollow staging-demo-notes",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.edit-body",
+      "name": "Prefilled description stays editable",
+      "path": "/?demo=1&compose=1&template=bugfix&set-body=Edited%20description%20text",
+      "expectSelector": "#compose-body",
+      "expectText": "23 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.tab-appears",
+      "name": "A Following tab appears and opens",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following",
+      "expectSelector": "[data-tab='following'][aria-selected='true']",
+      "expectText": "votes needed",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.edit-send-ready",
+      "name": "Editing the prefilled title leaves Send ready",
+      "path": "/?demo=1&compose=1&template=bugfix&set-title=Custom%20title",
+      "expectSelector": "[data-send-proposal]:not([disabled])",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.tab-lists-followed-only",
+      "name": "Following tab lists only the followed app's open proposals",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following",
+      "expectSelector": "[data-following-cards] [data-proposal-card][data-session-id='demo-4']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.switch-template",
+      "name": "Switching templates replaces the prefill",
+      "path": "/?demo=1&compose=1&switch-template=feature",
+      "expectSelector": "body:has([data-template-id='feature'][aria-pressed='true']) #compose-title[value='Add [feature name]']",
+      "expectText": "185 characters",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.tab-excludes-others",
+      "name": "Following tab leaves out unfollowed apps' proposals",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following",
+      "expectSelector": "body:not(:has([data-following-cards] [data-proposal-card][data-session-id='demo-2']))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.switch-replaces-edit",
+      "name": "Switching templates replaces an edited title too",
+      "path": "/?demo=1&compose=1&template=bugfix&set-title=My%20custom%20title&switch-template=feature",
+      "expectSelector": "#compose-title[value='Add [feature name]']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.count",
+      "name": "Following tab shows how many need a vote",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following",
+      "expectSelector": "[data-following-needed='2']",
+      "expectText": "2 votes needed",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-prefilled",
+      "name": "Sending a prefilled proposal shows confirmation",
+      "path": "/?demo=1&compose=1&template=bugfix&send=1",
+      "expectSelector": "[data-send-confirmation]",
+      "expectText": "Proposal sent",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.unfollow",
+      "name": "Unfollowing removes the star and the app from the tab",
+      "path": "/?demo=1&set-follow=staging-demo-notes&tab=following&openfilter=1&tap-unfollow=staging-demo-notes",
+      "expectSelector": "[data-follow-toggle][data-app='staging-demo-notes'][aria-pressed='false']",
+      "expectText": "No followed apps yet",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-shows-title",
+      "name": "Confirmation names the sent proposal",
+      "path": "/?demo=1&compose=1&template=bugfix&send=1",
+      "expectText": "Fix: [what is broken]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.survives-reload",
+      "name": "The followed set survives a reload",
+      "path": "/?demo=1&set-follow=staging-demo-notes&openfilter=1",
+      "expectSelector": "[data-follow-toggle][data-app='staging-demo-notes'][aria-pressed='true']",
+      "expectText": "Unfollow staging-demo-notes",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-sent-row",
+      "name": "Sent proposal appears in the Sent list",
+      "path": "/?demo=1&compose=1&template=bugfix&send=1",
+      "expectSelector": "[data-sent-row]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.inbox-unaffected",
+      "name": "Inbox still shows proposals from all apps",
+      "path": "/?demo=1&set-follow=staging-demo-notes",
+      "expectSelector": "body:has([data-proposal-card][data-session-id='demo-2']):has([data-proposal-card][data-session-id='demo-4'])",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-edited",
+      "name": "Sending uses the edited title, not the prefill",
+      "path": "/?demo=1&compose=1&template=bugfix&set-title=Fix%20the%20retry%20pill&send=1",
+      "expectText": "Fix the retry pill",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-blank",
+      "name": "A proposal composed without a template sends too",
+      "path": "/?demo=1&compose=1&set-title=Note%20from%20the%20inbox&set-body=Some%20details%20here&send=1",
+      "expectSelector": "[data-send-confirmation]",
+      "expectText": "Proposal sent",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.send-stays-disabled-empty",
+      "name": "Send never fires on an empty form",
+      "path": "/?demo=1&compose=1&send=1",
+      "expectSelector": "body:has([data-compose-screen]):not(:has([data-send-confirmation])) [data-send-proposal][disabled]",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.empty-state",
+      "name": "Empty Following tab shows a hint to star an app",
+      "path": "/?demo=1&tab=following&clear-follows=1",
+      "expectSelector": "[data-tab='following'][aria-selected='true']",
+      "expectText": "No followed apps yet",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.opens-without-demo",
+      "name": "New proposal screen opens from the deep link with no demo data",
+      "path": "/?compose=1",
+      "expectSelector": "[data-compose-screen]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.skips-empty-app",
+      "name": "A followed app with no open proposals is skipped",
+      "path": "/?demo=1&set-follow=staging-demo-notes,staging-demo-archive&tab=following",
+      "expectSelector": "[data-following-group='staging-demo-notes']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.sent-list-state",
+      "name": "Sent list renders a defined state",
+      "path": "/?demo=1&compose=1",
+      "expectSelector": "#sent-list:has([data-sent-empty]), #sent-list:has([data-sent-row])",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.skips-empty-app-absent",
+      "name": "The empty followed app renders no group",
+      "path": "/?demo=1&set-follow=staging-demo-notes,staging-demo-archive&tab=following",
+      "expectSelector": "body:not(:has([data-following-group='staging-demo-archive']))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "compose.back-to-list",
+      "name": "Leaving compose restores the main list",
+      "path": "/?demo=1&compose=1&template=bugfix&back=1",
+      "expectSelector": "[data-proposal-card]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "follow.star-aria",
+      "name": "Star reflects pressed state for screen readers",
+      "path": "/?demo=1&openfilter=1&tap-follow=staging-demo-app&clear-follows=1",
+      "expectSelector": "[data-follow-toggle][data-app='staging-demo-app'][aria-pressed='true'][aria-label='Unfollow staging-demo-app']",
+      "impact": [
+        "public/index.html",
         "dapp.json"
       ]
     }
