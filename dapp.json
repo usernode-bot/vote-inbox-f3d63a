@@ -101,8 +101,42 @@
       "id": "inbox.summary-line",
       "name": "Inbox header shows open and votes-needed summary",
       "path": "/?demo=1",
-      "expectSelector": "#inbox-summary",
-      "expectText": "6 open, 9 votes needed"
+      "expectSelector": "#inbox-summary [data-stat=\"open\"][aria-label=\"6 open, 9 votes needed\"]",
+      "expectText": "9 needed"
+    },
+    {
+      "id": "inbox.stat-cards",
+      "name": "Inbox stat cards show votes this week, streak and rank",
+      "path": "/?demo=1",
+      "expectSelector": "#inbox-summary [data-stat=\"week\"][data-week=\"2\"] ~ [data-stat=\"streak\"][data-streak=\"1\"] ~ [data-stat=\"rank\"][data-rank-of=\"6\"]",
+      "expectText": "You voted 2 times this week and sit at #",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.stat-cards-empty",
+      "name": "Inbox stat cards at zero votes nudge toward the open proposals",
+      "path": "/?demo=1&votes-empty=1",
+      "expectSelector": "#inbox-summary [data-stat=\"week\"][data-week=\"0\"] ~ [data-stat=\"streak\"][data-streak=\"0\"] ~ [data-stat=\"rank\"][data-rank=\"none\"]",
+      "expectText": "No votes yet this week. 6 proposals are waiting for you."
+    },
+    {
+      "id": "inbox.stat-cards-empty-inbox",
+      "name": "Inbox stat cards with an empty inbox and no votes",
+      "path": "/?demo=1&empty=1&votes-empty=1",
+      "expectSelector": "#inbox-summary [data-stat=\"week\"][data-week=\"0\"]",
+      "expectText": "No votes yet this week. New proposals will show up here."
+    },
+    {
+      "id": "inbox.stat-cards-error",
+      "name": "Inbox stat cards say when the stats could not load",
+      "path": "/?demo=1&stats-fail=1",
+      "expectSelector": "#inbox-summary [data-stat=\"week\"][data-stat-error=\"1\"]",
+      "expectText": "Your vote stats could not load. Refresh to try again."
     },
     {
       "id": "inbox.updated-line",
@@ -2851,8 +2885,8 @@
       "id": "snooze.counts-in-summary",
       "name": "Snoozed proposal still counts in the header totals",
       "path": "/?demo=1&set-snooze=demo-2&snooze-days=1",
-      "expectSelector": "#inbox-summary",
-      "expectText": "6 open, 9 votes needed"
+      "expectSelector": "#inbox-summary [data-stat=\"open\"][aria-label=\"6 open, 9 votes needed\"]",
+      "expectText": "9 needed"
     },
     {
       "id": "snooze.per-user",
@@ -3307,8 +3341,8 @@
       "id": "empty.zero-counts",
       "name": "Empty inbox keeps the header counts at zero",
       "path": "/?demo=1&empty=1",
-      "expectSelector": "#inbox-summary",
-      "expectText": "0 open, 0 votes needed",
+      "expectSelector": "#inbox-summary [data-stat=\"open\"][aria-label=\"0 open, 0 votes needed\"]",
+      "expectText": "0 needed",
       "impact": [
         "public/index.html",
         "server.js",

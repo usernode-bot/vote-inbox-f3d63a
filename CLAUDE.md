@@ -262,6 +262,22 @@ user's vote history.
   real click path to the votes filter); `?celeb-motion=reduced` forces the
   reduced-motion presentation (the way `?impact-mobile=1` forces the
   small-screen impact panel).
+- Inbox stat cards (`#inbox-summary`): four tiles in place of the old
+  "X open, Y votes needed" line. Open (sub "N needed"; the exact old phrase
+  rides on the tile's `aria-label`), votes this week (rolling seven days,
+  the Leaderboard's window), day streak (consecutive local days with a
+  vote, ending today or, before today's first vote, yesterday) and rank on
+  the Leaderboard's This week board (`lbRanked(rows, 'week')`), plus one
+  motivational line. Data comes from the existing `/api/my-votes` and
+  `/api/leaderboard` routes, fetched into `state.inboxStats` (kept apart
+  from the tabs' own state) only after each inbox load settles and its
+  hooks have run, never on a page that is reloading (a `beforeunload`
+  flag, so check hooks that `location.replace` send no stat requests),
+  and refetched (debounced) after a vote, retry or undo. Demo (staging + `?demo=1`): the
+  board fetch carries `?lb-me=1`, which ranks the caller by the same
+  `demoVoteRows()` fixture My Votes serves (2 this week, streak 1, "of 6");
+  `?votes-empty=1` / `?no-votes=1` empty both halves; `?stats-fail=1`
+  shows the could-not-load state.
 - `proposal_comments` holds the discussion thread. It is PUBLIC (on
   purpose): comments are in-app content visible to every signed-in
   member, so a stranger seeing every row is fine. Nesting is one level
