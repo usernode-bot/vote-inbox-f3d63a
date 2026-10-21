@@ -397,7 +397,7 @@
       "name": "App filter shows open counts per app",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-count]",
-      "expectText": "(3)",
+      "expectText": "3 waiting",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -435,7 +435,7 @@
       "name": "App filter shows Staging Demo App's open count of 3",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='3']",
-      "expectText": "(3)",
+      "expectText": "3 waiting",
       "impact": [
         "public/index.html",
         "server.js",
@@ -459,7 +459,7 @@
       "name": "App filter shows Staging Demo Notes' open count of 2",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
-      "expectText": "(2)",
+      "expectText": "2 waiting",
       "impact": [
         "public/index.html",
         "server.js",
@@ -484,7 +484,7 @@
       "name": "App filter shows Staging Demo Archive's open count of 0",
       "path": "/?demo=1&openfilter=1",
       "expectSelector": "[data-app-option='staging-demo-archive'] [data-app-count='0']",
-      "expectText": "(0)",
+      "expectText": "0 waiting",
       "impact": [
         "public/index.html",
         "server.js",
@@ -538,7 +538,7 @@
       "name": "Hide voted and hide merged do not change the filter counts",
       "path": "/?demo=1&openfilter=1&hide-voted=1&hide-merged=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='2']",
-      "expectText": "(2)",
+      "expectText": "2 waiting",
       "impact": [
         "public/index.html",
         "dapp.json"
@@ -549,7 +549,7 @@
       "name": "After a data refresh Staging Demo App's open count drops to 2",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count='2']",
-      "expectText": "(2)",
+      "expectText": "2 waiting",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -574,7 +574,7 @@
       "name": "After a data refresh Staging Demo Notes' open count drops to 1",
       "path": "/?demo=1&openfilter=1&turnout-refresh=1",
       "expectSelector": "[data-app-option='staging-demo-notes'] [data-app-count='1']",
-      "expectText": "(1)",
+      "expectText": "1 waiting",
       "impact": [
         "public/index.html",
         "server.js",
@@ -674,7 +674,7 @@
       "name": "App filter shows open proposal count next to each app",
       "path": "/?demo=1&app-filter=open",
       "expectSelector": "[data-app-option='staging-demo-app'] [data-app-count]",
-      "expectText": "(3)",
+      "expectText": "3 waiting",
       "visual": true,
       "impact": [
         "public/index.html",
@@ -3838,6 +3838,19 @@
       ]
     },
     {
+      "id": "app-filter.stats-median",
+      "name": "App filter shows the median time to merge per app",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-median='2d']",
+      "expectText": "Median to merge (30 days): 2d",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "density.menu-control",
       "name": "The header menu has a Density control",
       "path": "/?demo=1&tap-menu=1",
@@ -3850,12 +3863,48 @@
       ]
     },
     {
+      "id": "app-filter.stats-merged-week",
+      "name": "App filter still shows merged this week per app",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-merged='1']",
+      "expectText": "1 merged this week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "density.menu-options",
       "name": "The Density control offers Comfortable and Compact",
       "path": "/?demo=1&tap-menu=1",
       "expectSelector": "body:has([data-density-option='comfortable']):has([data-density-option='compact']) [data-density-menu]",
       "impact": [
         "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-waiting",
+      "name": "App filter shows how many proposals are still waiting per app",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-waiting='3']",
+      "expectText": "3 waiting",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-sparkline",
+      "name": "App filter shows a weekly merge sparkline per app",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-spark='1,0,1,1'] [data-spark-bar]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
         "dapp.json"
       ]
     },
@@ -3871,12 +3920,70 @@
       ]
     },
     {
+      "id": "app-filter.stats-tap-applies",
+      "name": "Tapping an app filter row still applies the filter",
+      "path": "/?demo=1&openfilter=1&mergestats=1&tap-app-option=staging-demo-notes",
+      "expectSelector": "#view:not(:has([data-session-id='demo-2'])) [data-proposal-card][data-session-id='demo-4']",
+      "expectText": "Staging Demo Notes",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "density.default-comfortable",
       "name": "Comfortable is the default density",
       "path": "/?demo=1&density-clear=1",
       "expectSelector": "body[data-density-summary-visible='1'] [data-proposal-card][data-session-id='demo-1'][data-density='comfortable']",
       "impact": [
         "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-dash",
+      "name": "An app with no merge data shows a dash",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-archive']:has([data-app-median='none']):has([data-app-spark='none'])",
+      "expectText": "Median to merge (30 days): –",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-window",
+      "name": "The median uses only merges from the last 30 days",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-app'] [data-app-median='2d'][data-app-merged30='3']",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-history",
+      "name": "The stats match the proposal history",
+      "path": "/?demo=1&openfilter=1&mergestats=1",
+      "expectSelector": "[data-app-option='staging-demo-notes']:has([data-app-median='7d']):has([data-app-waiting='2']):has([data-app-merged='1']):has([data-app-spark='0,0,0,1'])",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-stable-loading",
+      "name": "The filter rows keep their size while the stats load",
+      "path": "/?demo=1&openfilter=1&mergestats=1&stats-layout=1",
+      "expectSelector": "[data-app-filter-panel][data-layout-stable='1']",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
         "dapp.json"
       ]
     },
@@ -3888,6 +3995,18 @@
       "visual": true,
       "impact": [
         "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "app-filter.stats-phone",
+      "name": "The filter stats render at phone width",
+      "path": "/?demo=1&openfilter=1&mergestats=1&filter-phone=1",
+      "expectSelector": "[data-app-filter-panel][data-phone-fit='1'] [data-app-option='staging-demo-app'] [data-app-spark] [data-spark-bar]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
         "dapp.json"
       ]
     },

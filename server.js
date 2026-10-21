@@ -1018,7 +1018,7 @@ function bookmarkRowPayload(r) {
 // checks deterministic. It is never served in production.
 // ---------------------------------------------------------------------------
 
-function demoInbox() {
+function demoInbox(withMergeStats) {
   const apps = [
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
@@ -1050,7 +1050,7 @@ function demoInbox() {
   // stamp for any consumer that does not re-anchor. `mergedAgeMs` stamps
   // when a merged proposal merged (ms ago), for the app filter's
   // merged-this-week count.
-  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters, anchor, mergedAgeMs) => ({
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters, anchor, mergedAgeMs, mergedAnchor) => ({
     sessionId,
     proposalId,
     // Without a configured platform origin (a bare check worker, not real
@@ -1067,6 +1067,11 @@ function demoInbox() {
     proposedAt: ageMs != null ? new Date(Date.now() - ageMs).toISOString() : null,
     mergedAt: mergedAgeMs != null ? new Date(Date.now() - mergedAgeMs).toISOString() : null,
     demoAnchor: anchor || null,
+    // Merge anchor for the merge-stats fixtures (?mergestats=1): the
+    // frontend re-stamps mergedAt to local noon N days back (see
+    // reanchorDemo), so the app filter's median-to-merge reads whole days
+    // no matter when the page is opened.
+    demoMergedAnchor: mergedAnchor || null,
     appSlug: slug,
     appName: apps.find((a) => a.slug === slug).name,
     icon: apps.find((a) => a.slug === slug).icon,
@@ -1115,6 +1120,26 @@ function demoInbox() {
     mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya', 4.5 * D), voter('Priya', 3.5 * D), voter('Raul', 2.5 * D), voter('Sara', 1.5 * D)], { days: 5 }, null),
     mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn', 7.5 * D), voter('Raul', 6.5 * D)], { days: 9 }, 2.5 * D),
   ];
+  // ?mergestats=1 (staging demo only) adds four merged Staging Demo App
+  // fixtures so the app filter's time-to-merge stats have history: opened
+  // day N / merged day M back, with both timestamps re-anchored to local
+  // noon by the frontend, so each opened→merged duration is exactly
+  // M→N days. Coverage: one inside the merged-this-week week (1d), the
+  // median's middle values (2d, 4d — median 2d over three), and one merge
+  // outside the 30-day window (10d) that counts nowhere in the stats.
+  // demo-5's merge is also pinned to noon two days back, so the Notes app
+  // reads a whole 7d median (opened day 9). The default fixture is
+  // unchanged without the flag.
+  if (withMergeStats) {
+    proposals.push(
+      mk('staging-demo-app', 'demo-m1', 90211, 'Staging demo proposal: merged last week', 3, 0, null, 'merged', 2 * D, null, [voter('Maya', 1.5 * D)], { days: 2 }, 1 * D, { days: 1 }),
+      mk('staging-demo-app', 'demo-m2', 90212, 'Staging demo proposal: merged ten days ago', 2, 0, null, 'merged', 12 * D, null, [voter('Omar', 11 * D)], { days: 12 }, 10 * D, { days: 10 }),
+      mk('staging-demo-app', 'demo-m3', 90213, 'Staging demo proposal: merged three weeks ago', 2, 1, null, 'merged', 25 * D, null, [voter('Priya', 24 * D)], { days: 25 }, 21 * D, { days: 21 }),
+      mk('staging-demo-app', 'demo-m4', 90214, 'Staging demo proposal: merged long ago', 4, 0, null, 'merged', 50 * D, null, [voter('Quinn', 49 * D)], { days: 50 }, 40 * D, { days: 40 }),
+    );
+    const pinned = proposals.find((p) => p.sessionId === 'demo-5');
+    if (pinned) pinned.demoMergedAnchor = { days: 2 };
+  }
   // Change summaries for the cards' one-line summary row (demo only). Keyed
   // by sessionId; every fixture not covered gets an explicit null pair so
   // the demo shape matches what normalizeProposal produces in production.
@@ -1222,7 +1247,7 @@ function demoInbox() {
 // last so every variant (and ?allmerged=1, which merges everything) leaves
 // only genuinely queued proposals carrying a position.
 function demoInboxPayload(req) {
-  const demo = demoInbox();
+  const demo = demoInbox(req.query.mergestats === '1');
   // ?empty=1 (staging demo only): the fixture with every proposal removed
   // (the app list kept, so the empty state's Browse apps action opens a
   // populated filter), giving checks a stable URL for the genuinely empty

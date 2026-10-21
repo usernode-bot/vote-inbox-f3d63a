@@ -475,6 +475,13 @@
     // pattern as ?set-filter=.
     var OPEN_TAG_FILTER = params.get('opentagfilter') === '1';
     var TAP_TAG = DEMO ? (params.get('tap-tag') || '') : '';
+    // App-filter stat hooks, all demo only. ?tap-app-option=<slug> taps that
+    // row in the (auto-opened) app filter through the real click handler;
+    // ?stats-layout=1 and ?filter-phone=1 verify the stats list's layout
+    // (see maybeStatsLayout / maybeFilterPhone below).
+    var TAP_APP = DEMO ? (params.get('tap-app-option') || '') : '';
+    var STATS_LAYOUT = DEMO && params.get('stats-layout') === '1';
+    var FILTER_PHONE = DEMO && params.get('filter-phone') === '1';
     // ?watch-mine=1 (demo only) asks the demo watchlist to merge the caller's
     // own real starred rows (recorded via ?set-star=) into the fixture, so a
     // check can observe star → reload → still listed from actual storage.
@@ -6492,6 +6499,10 @@
     // the per-app counts in place (see maybeRerenderFilter). Null while the
     // dropdown is closed.
     var activeFilterRender = null;
+    // The last good app list, so an open dropdown can hold its rows (with
+    // grey placeholder stats) while a refresh loads, instead of collapsing
+    // to nothing. Empty until the first successful load.
+    var lastFilterApps = [];
 
     function filterApps() {
       return (state.inbox && state.inbox.apps) || [];
@@ -6514,23 +6525,78 @@
       return daysBack >= 0 && daysBack <= 6;
     }
 
-    // Per-app numbers for the filter list, tallied from the loaded inbox
+    // Local calendar days between today and a proposal's merge (the same
+    // start-of-day arithmetic mergedThisWeek uses), or null when the
+    // proposal did not merge or its merge time is unusable or in the
+    // future. mergedThisWeek stays as it is.
+    function mergedDaysBack(p) {
+      if (p.status !== 'merged') return null;
+      var t = p.mergedAt ? Date.parse(p.mergedAt) : NaN;
+      if (isNaN(t)) return null;
+      var now = new Date();
+      var d = new Date(t);
+      var startOfDay = function (x) {
+        return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      };
+      var daysBack = Math.floor((startOfDay(now) - startOfDay(d)) / (24 * 3600 * 1000));
+      return daysBack >= 0 ? daysBack : null;
+    }
+
+    // Median time from opened to merged, as "2d" / "5h" / "<1h", or the
+    // dash when there is nothing to measure (no merges in the window).
+    function fmtMergeTime(ms) {
+      if (ms == null) return '–';
+      var H = 3600 * 1000;
+      var D = 24 * H;
+      if (ms >= D) return Math.round(ms / D) + 'd';
+      if (ms >= H) return Math.max(1, Math.round(ms / H)) + 'h';
+      return '<1h';
+    }
+
+    // Per-app stats for the filter list, tallied from the loaded inbox
     // proposals (no extra request), regardless of the current filter or the
-    // Hide switches. Open counts the app's loaded proposals not yet merged
-    // (voted ones are still open, and 'merging' is not merged yet either);
-    // merged counts the app's merged proposals whose merge fell in the last
-    // seven days.
+    // Hide switches. Per app: waiting (not merged and not closed — the old
+    // bracketed open count), merged this week (unchanged), a four-bucket
+    // weekly merge sparkline (oldest first, so the last bucket is this
+    // week and equals merged), and the median opened→merged time over the
+    // proposals that merged in the trailing 30 calendar days (a merge
+    // whose open time is missing or after its merge counts in the chart
+    // and merged, but not in the median). Nothing to measure → null
+    // median; no merges at all in the last 28 days → an empty sparkline.
     function filterStats() {
-      var open = {};
-      var merged = {};
+      var out = {};
       var proposals = (state.inbox && state.inbox.proposals) || [];
       for (var i = 0; i < proposals.length; i++) {
         var p = proposals[i];
         var slug = p.appSlug;
-        if (p.status !== 'merged') open[slug] = (open[slug] || 0) + 1;
-        else if (mergedThisWeek(p)) merged[slug] = (merged[slug] || 0) + 1;
+        var s = out[slug];
+        if (!s) {
+          s = out[slug] = { waiting: 0, merged: 0, spark: [0, 0, 0, 0], durations: [] };
+        }
+        if (p.status !== 'merged' && p.status !== 'closed') s.waiting++;
+        if (p.status !== 'merged') continue;
+        if (mergedThisWeek(p)) s.merged++;
+        var daysBack = mergedDaysBack(p);
+        if (daysBack == null) continue;
+        if (daysBack <= 27) s.spark[3 - Math.floor(daysBack / 7)]++;
+        if (daysBack > 29) continue;
+        var mt = Date.parse(p.mergedAt);
+        var pt = p.proposedAt ? Date.parse(p.proposedAt) : NaN;
+        if (!isNaN(pt) && mt >= pt) s.durations.push(mt - pt);
       }
-      return { open: open, merged: merged };
+      for (var key in out) {
+        var s2 = out[key];
+        s2.durations.sort(function (a, b) { return a - b; });
+        var n = s2.durations.length;
+        s2.medianN = n;
+        s2.median = n
+          ? (n % 2
+            ? s2.durations[(n - 1) / 2]
+            : (s2.durations[n / 2 - 1] + s2.durations[n / 2]) / 2)
+          : null;
+        s2.sparkTotal = s2.spark[0] + s2.spark[1] + s2.spark[2] + s2.spark[3];
+      }
+      return out;
     }
 
     function findFilterApp(slug) {
@@ -6691,7 +6757,14 @@
       return rows;
     }
 
-    function filterRowEl(app, selected, openCount, mergedCount) {
+    // One app-filter row. The "All apps" row keeps its single line; an app
+    // row shows three fixed-height lines so the row's size never depends on
+    // the values (the layout stays stable while the stats load): the name
+    // with a tiny weekly merge sparkline beside it, the waiting / merged-
+    // this-week pair, and the median time to merge over the last 30 days.
+    // While the inbox reloads (loading) every value slot is a grey
+    // placeholder block instead, and no stat values are emitted.
+    function filterRowEl(app, selected, stats, loading) {
       var btn = app
         // App rows carry a follow star, which is a real <button> — it cannot
         // nest inside the row's own <button>, so app rows are divs with the
@@ -6708,20 +6781,63 @@
           ? 'bg-violet-600/10 font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
           : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800');
       if (app) {
+        var s = (!loading && stats && stats[app.slug]) || null;
+        var waiting = s ? s.waiting : 0;
+        var merged = s ? s.merged : 0;
+        var placeholder = ' data-stat-placeholder class="inline-block h-4 rounded bg-zinc-200 animate-pulse dark:bg-zinc-800"';
+        // Sparkline: four bars, oldest first, this week on the right (so it
+        // matches the merged-this-week count). A zero week is a thin flat
+        // stub; with no merges in the last four weeks the same-size box
+        // holds the dash. Borrowed from the digest chart: the app's violet
+        // and grey, no new colours.
+        var sparkHtml;
+        if (loading) {
+          sparkHtml = '<span' + placeholder + ' style="width:20px"></span>';
+        } else if (s && s.sparkTotal > 0) {
+          var bars = '';
+          var max = Math.max(s.spark[0], s.spark[1], s.spark[2], s.spark[3]);
+          for (var i = 0; i < 4; i++) {
+            bars += s.spark[i] > 0
+              ? '<span data-spark-bar class="w-1 rounded-sm bg-violet-500" style="height:'
+                + Math.round(s.spark[i] / max * 100) + '%"></span>'
+              : '<span data-spark-bar class="h-px w-1 bg-zinc-300 dark:bg-zinc-700"></span>';
+          }
+          sparkHtml = '<span data-app-spark="' + s.spark.join(',') + '"'
+            + ' title="Merges per week, last 4 weeks"'
+            + ' class="inline-flex h-3 w-5 shrink-0 items-end gap-px">' + bars + '</span>';
+        } else {
+          sparkHtml = '<span data-app-spark="none"'
+            + ' class="inline-flex h-3 w-5 shrink-0 items-center justify-center text-xs font-normal tabular-nums text-zinc-500 dark:text-zinc-400">–</span>';
+        }
+        // Muted numbers tallied from the loaded inbox. font-normal and the
+        // zinc colour keep them quiet on the selected (semibold, violet)
+        // row; data-app-count / data-app-merged / data-app-median carry the
+        // values for the declared checks (data-app-count keeps its old name
+        // so the existing count selectors keep working).
+        var waitingHtml = loading
+          ? '<span' + placeholder + ' style="width:150px"></span>'
+          : '<span data-app-count="' + waiting + '" data-app-waiting="' + waiting + '">'
+            + waiting + ' waiting</span> · '
+            + '<span data-app-merged="' + merged + '" title="Merged in the last 7 days">'
+            + merged + ' merged this week</span>';
+        var median = s ? s.median : null;
+        var medianHtml = loading
+          ? '<span' + placeholder + ' style="width:130px"></span>'
+          : '<span data-app-median="' + (median == null ? 'none' : fmtMergeTime(median)) + '"'
+            + ' data-app-merged30="' + (s ? s.medianN : 0) + '"'
+            + ' title="Median time from opened to merged, last 30 days">Median to merge (30 days): '
+            + fmtMergeTime(median) + '</span>';
         btn.innerHTML = appAvatar({ appSlug: app.slug, appName: app.name, icon: app.icon })
+          + '<div class="flex min-w-0 flex-1 flex-col gap-0.5">'
+          + '<div data-app-stat-line class="flex h-4 items-center gap-1.5 whitespace-nowrap leading-4">'
           + '<span class="min-w-0 flex-1 truncate">' + esc(app.name) + '</span>'
-          // Muted numbers tallied from the loaded inbox: the app's open
-          // proposals, then its merges from the last seven days. font-normal
-          // and the zinc colour keep them quiet on the selected (semibold,
-          // violet) row; data-app-count / data-app-merged carry the values
-          // for the declared checks.
-          + '<span data-app-count="' + openCount + '"'
-          + ' class="shrink-0 text-xs font-normal tabular-nums text-zinc-500 dark:text-zinc-400">('
-          + openCount + ')</span>'
-          + '<span data-app-merged="' + mergedCount + '" title="Merged in the last 7 days"'
-          + ' class="shrink-0 whitespace-nowrap text-xs font-normal tabular-nums text-zinc-500 dark:text-zinc-400">· '
-          + mergedCount + ' merged this week</span>'
-          + followStarHtml(app.slug)
+          + sparkHtml
+          + followStarHtml(app.slug) + '</div>'
+          + '<div data-app-stat-line class="flex h-4 items-center whitespace-nowrap text-xs font-normal leading-4 tabular-nums text-zinc-500 dark:text-zinc-400">'
+          + waitingHtml + '</div>'
+          + '<div data-app-stat-line class="flex h-4 items-center whitespace-nowrap text-xs font-normal leading-4 tabular-nums text-zinc-500 dark:text-zinc-400">'
+          + medianHtml + '</div>'
+          + '</div>'
           + (selected ? FILTER_CHECK : '');
       } else {
         btn.innerHTML = FILTER_ALL_ICON
@@ -6755,15 +6871,23 @@
 
       function renderList() {
         var query = input.value.trim().toLowerCase();
+        // While a (forced) refresh is in flight the list holds the last good
+        // apps with placeholder stats, so its size never jumps; the flag on
+        // the panel tells checks (and the layout check) that the values are
+        // placeholders right now.
+        var loading = !state.inbox && state.loadingInbox;
         var apps = filterApps();
-        var stats = filterStats();
+        if (loading && lastFilterApps.length) apps = lastFilterApps;
+        else if (!loading) lastFilterApps = apps;
+        var stats = loading ? null : filterStats();
+        if (loading) content.setAttribute('data-stats-loading', '1');
+        else content.removeAttribute('data-stats-loading');
         list.innerHTML = '';
         var shown = 0;
-        if (!query) list.appendChild(filterRowEl(null, state.filter === ''));
+        if (!query) list.appendChild(filterRowEl(null, state.filter === '', stats, loading));
         for (var i = 0; i < apps.length; i++) {
           if (query && apps[i].name.toLowerCase().indexOf(query) === -1) continue;
-          list.appendChild(filterRowEl(apps[i], apps[i].slug === state.filter,
-            stats.open[apps[i].slug] || 0, stats.merged[apps[i].slug] || 0));
+          list.appendChild(filterRowEl(apps[i], apps[i].slug === state.filter, stats, loading));
           shown++;
         }
         if (query && !shown) {
@@ -7075,17 +7199,31 @@
       var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
       (data.proposals || []).forEach(function (p) {
         var a = p.demoAnchor;
-        if (!a) return;
-        var t;
-        if (a.days === 0) {
-          t = now.getTime() - (a.hoursAgo || 0) * 3600000;
-          if (a.clampMin && t < midnight + a.clampMin * 60000) {
-            t = midnight + a.clampMin * 60000;
+        if (a) {
+          var t;
+          if (a.days === 0) {
+            t = now.getTime() - (a.hoursAgo || 0) * 3600000;
+            if (a.clampMin && t < midnight + a.clampMin * 60000) {
+              t = midnight + a.clampMin * 60000;
+            }
+          } else {
+            t = new Date(now.getFullYear(), now.getMonth(), now.getDate() - a.days, 12).getTime();
           }
-        } else {
-          t = new Date(now.getFullYear(), now.getMonth(), now.getDate() - a.days, 12).getTime();
+          p.proposedAt = new Date(t).toISOString();
         }
-        p.proposedAt = new Date(t).toISOString();
+        // Merge anchors stamp mergedAt the same way (local noon N days
+        // back), so a fixture's opened→merged duration is whole days at any
+        // hour — the app filter's median-to-merge reads whole days.
+        var m = p.demoMergedAnchor;
+        if (m) {
+          var tm;
+          if (m.days === 0) {
+            tm = now.getTime() - (m.hoursAgo || 0) * 3600000;
+          } else {
+            tm = new Date(now.getFullYear(), now.getMonth(), now.getDate() - m.days, 12).getTime();
+          }
+          p.mergedAt = new Date(tm).toISOString();
+        }
       });
     }
 
@@ -7127,6 +7265,10 @@
       });
     }
 
+    // One-shot fetch delay used by the ?stats-layout=1 check hook (see
+    // maybeStatsLayout): loadInbox consumes and clears it per call.
+    var inboxHoldMs = 0;
+
     function loadInbox(force) {
       if (state.loadingInbox) {
         // A pull or Refresh tap while a load is still in flight must still
@@ -7138,6 +7280,9 @@
       state.errorInbox = null;
       if (force) state.inbox = null;
       render();
+      // An open app filter holds its rows with placeholder stats while the
+      // refresh loads (see renderList), so it must re-render right away.
+      if (activeFilterRender) activeFilterRender();
       var query = [];
       if (DEMO) query.push('demo=1');
       if (ALL_VOTED) query.push('allvoted=1');
@@ -7176,6 +7321,10 @@
         if (CELEB) query.push('celeb=1');
         if (CELEBVOTE) query.push('celebvote=' + encodeURIComponent(CELEBVOTE));
         if (CELEB_CLEAR) query.push('celeb-clear=1');
+        // Merge-stats fixture variant (?mergestats=1, staging demo only):
+        // extra merged fixtures so the app filter's time-to-merge stats
+        // have history to read. Never sent without demo data.
+        if (params.get('mergestats') === '1') query.push('mergestats=1');
         // Bookmark fixture knobs: the display-only preset, the per-user
         // fixture and the saved-set marker page (that one has nothing to
         // forward itself, but its ?saved-mine= reader lives on the Saved
@@ -7183,7 +7332,16 @@
         if (PRESET_BOOKMARK) query.push('preset-bookmark=' + encodeURIComponent(PRESET_BOOKMARK));
         if (DEMO && params.get('saved-other') === '1') query.push('saved-other=1');
       }
-      return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''))
+      // One-shot delay (the ?stats-layout=1 hook): hold the fetch back so
+      // the open dropdown is observable showing its placeholders mid-refresh.
+      var holdMs = inboxHoldMs;
+      inboxHoldMs = 0;
+      function doFetch() {
+        return api('/api/inbox' + (query.length ? '?' + query.join('&') : ''));
+      }
+      return (holdMs > 0
+        ? new Promise(function (resolve) { setTimeout(resolve, holdMs); }).then(doFetch)
+        : doFetch())
         .then(function (data) {
           state.inbox = data;
           // Pending celebration cards the server recorded (only sent on a
@@ -7210,6 +7368,9 @@
           render();
           maybeRerenderFilter();
           maybeAutoOpenFilter();
+          maybeTapAppOption();
+          maybeStatsLayout();
+          maybeFilterPhone();
           if (APP_FILTER_OPEN && !appFilterOpened && state.inbox
             && state.tab === 'inbox' && !state.errorInbox) {
             appFilterOpened = true;
@@ -8438,6 +8599,100 @@
           location.replace(location.pathname + (q ? '?' + q : '') + location.hash);
         }, 200);
       });
+    }
+
+    // Staging demo hook: ?tap-app-option=<slug> taps that row in the app
+    // filter dropdown — the real control, through the real click handler
+    // (pickFilter) — so selecting an app is reachable by a check. A pick
+    // saves the filter preference, so after the tap the hook reloads once
+    // with the tap parameter removed and clear-set-filter=1: the reloaded
+    // page restores the same filter from storage and then empties storage
+    // (the tap-tag / set-filter pattern). Demo only; one-shot.
+    var tapAppDone = false;
+    function maybeTapAppOption() {
+      if (!DEMO || !TAP_APP || tapAppDone) return;
+      tapAppDone = true;
+      if (!openFilter) openAppFilter();
+      waitFor('[data-app-option="' + TAP_APP + '"]', function (btn) {
+        btn.click();
+        setTimeout(function () {
+          var remaining = new URLSearchParams(params);
+          remaining.delete('tap-app-option');
+          remaining.set('clear-set-filter', '1');
+          var q = remaining.toString();
+          location.replace(location.pathname + (q ? '?' + q : '') + location.hash);
+        }, 200);
+      });
+    }
+
+    // Staging check hook: ?stats-layout=1 verifies the open dropdown's rows
+    // keep their exact size across a refresh — before it, during the load
+    // (placeholders must be up), and after the fresh values land. It drives
+    // the refresh through the real loadInbox with a one-shot fetch hold so
+    // the placeholder state is observable, and stamps data-layout-stable on
+    // the panel. Demo only; one-shot.
+    var statsLayoutDone = false;
+    function maybeStatsLayout() {
+      if (!STATS_LAYOUT || statsLayoutDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      if (!openFilter || !activeFilterRender) return;
+      statsLayoutDone = true;
+      var panel = document.querySelector('[data-app-filter-panel]');
+      if (!panel) return;
+      function measure() {
+        var rows = Array.prototype.slice.call(panel.querySelectorAll('[data-app-option]'));
+        var list = panel.querySelector('[role="listbox"]') || panel;
+        return {
+          rows: rows.map(function (r) { return r.offsetHeight; }),
+          list: list.offsetHeight,
+        };
+      }
+      var before = measure();
+      inboxHoldMs = 800;
+      loadInbox(true);
+      setTimeout(function () {
+        // Mid-hold: the placeholders must be up and the rows unchanged.
+        var during = measure();
+        var loadingOk = panel.getAttribute('data-stats-loading') === '1'
+          && !!panel.querySelector('[data-stat-placeholder]');
+        var tries = 0;
+        (function poll() {
+          tries++;
+          var settled = !state.loadingInbox
+            && panel.getAttribute('data-stats-loading') !== '1';
+          if (!settled && tries < 100) return setTimeout(poll, 100);
+          var after = measure();
+          var same = function (a, b) {
+            return a.rows.length === b.rows.length
+              && a.rows.every(function (h, i) { return h === b.rows[i]; })
+              && a.list === b.list;
+          };
+          panel.setAttribute('data-layout-stable',
+            loadingOk && same(before, during) && same(before, after) ? '1' : '0');
+        })();
+      }, 400);
+    }
+
+    // Staging check hook: ?filter-phone=1 pins the open dropdown to the
+    // width it has on any phone (w-72 = 288px) and checks every app row's
+    // stat lines fit without overflowing, stamping data-phone-fit on the
+    // panel. Demo only; one-shot.
+    var filterPhoneDone = false;
+    function maybeFilterPhone() {
+      if (!FILTER_PHONE || filterPhoneDone) return;
+      if (state.errorInbox || !state.inbox) return;
+      if (!openFilter) return;
+      filterPhoneDone = true;
+      var panel = document.querySelector('[data-app-filter-panel]');
+      if (!panel) return;
+      panel.style.maxWidth = '288px';
+      panel.style.width = '288px';
+      var fits = true;
+      var lines = panel.querySelectorAll('[data-app-stat-line]');
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].scrollWidth > lines[i].clientWidth) { fits = false; break; }
+      }
+      panel.setAttribute('data-phone-fit', fits ? '1' : '0');
     }
 
     // Staging check hook (see TURNOUT_REFRESH): once the first load has
