@@ -12,6 +12,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The tab row scrolls sideways on narrow screens; hide its scrollbar so the
+ * rounded bar keeps today's look (swiping and trackpad scrolling still work).
+ */
+[data-tab-scroll] {
+  scrollbar-width: none;
+}
+[data-tab-scroll]::-webkit-scrollbar {
+  display: none;
+}
+
 /* Merge celebration cards: a gentle drop-in when they appear at the top of
  * the inbox. Only the full-motion presentation animates (the cards carry
  * data-motion="reduced" when the viewer's device asks for reduced motion,

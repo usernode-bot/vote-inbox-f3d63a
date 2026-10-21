@@ -136,7 +136,7 @@
     <div id="demo-banner" class="mb-3 hidden rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Staging demo data, not real proposals</div>
 
     <div id="list-controls" class="sticky top-0 z-20 -mx-4 bg-zinc-50/95 px-4 pb-3 pt-1 backdrop-blur dark:bg-zinc-950/95">
-      <div id="tab-row" class="tab-row flex gap-1 overflow-x-auto rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
+      <div id="tab-row" data-tab-scroll class="tab-row flex gap-1 overflow-x-auto rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900" role="tablist" aria-label="Sections">
         <button data-tab="inbox" class="tab-btn shrink-0 whitespace-nowrap rounded-full px-4 sm:flex-1 py-1.5 text-sm font-semibold transition-colors">Inbox<span class="tab-badge"></span></button>
         <button data-tab="following" class="tab-btn shrink-0 whitespace-nowrap rounded-full px-4 sm:flex-1 py-1.5 text-sm font-semibold transition-colors">Following<span class="tab-badge"></span></button>
         <button data-tab="saved" class="tab-btn shrink-0 whitespace-nowrap rounded-full px-4 sm:flex-1 py-1.5 text-sm font-semibold transition-colors">Saved<span class="tab-badge"></span></button>
@@ -4830,6 +4830,21 @@
             tabCount.textContent = count != null ? ' (' + count + ')' : '';
             tabCount.setAttribute('data-tab-count', count != null ? String(count) : '');
           }
+        }
+      }
+      // The tab row scrolls sideways when the tabs do not fit (a narrow
+      // phone, or a deep link to a far-right tab). Nudge only the row's own
+      // scrollLeft so the page itself never scrolls.
+      var tablist = document.querySelector('[data-tab-scroll]');
+      var activeBtn = tablist ? tablist.querySelector('.tab-btn[aria-selected="true"]') : null;
+      if (tablist && activeBtn && tablist.clientWidth > 0) {
+        var margin = 4;
+        var listRect = tablist.getBoundingClientRect();
+        var btnRect = activeBtn.getBoundingClientRect();
+        if (btnRect.left - margin < listRect.left) {
+          tablist.scrollLeft -= listRect.left - (btnRect.left - margin);
+        } else if (btnRect.right + margin > listRect.right) {
+          tablist.scrollLeft += btnRect.right + margin - listRect.right;
         }
       }
       // The inbox list's filter/search/sort controls belong to the list;
