@@ -559,6 +559,23 @@ async function migrate() {
   `);
   await pool.query(
     'ALTER TABLE my_votes ADD COLUMN IF NOT EXISTS merged_at TIMESTAMPTZ');
+  // Proposals the user composed in the app's New proposal screen. The
+  // app-facing platform API is read-only, so a sent proposal is recorded
+  // here (see the routes below); it is one person's own composed text,
+  // which is the same private-by-nature case as the vote history.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS my_proposals (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username VARCHAR(255) NOT NULL,
+      template VARCHAR(16) NOT NULL DEFAULT 'blank',
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'sent',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    COMMENT ON TABLE my_proposals IS 'staging:private';
+  `);
   // The user's starred proposals and the status each row was last seen in.
   // Like my_votes this is one person's own data (what they watch), so it is
   // staging:private. No foreign keys; proposal content stays on the platform.
@@ -1001,7 +1018,7 @@ function bookmarkRowPayload(r) {
 // checks deterministic. It is never served in production.
 // ---------------------------------------------------------------------------
 
-function demoInbox() {
+function demoInbox(withMergeStats) {
   const apps = [
     { slug: 'staging-demo-app', name: 'Staging Demo App', icon: '📮' },
     { slug: 'staging-demo-notes', name: 'Staging Demo Notes', icon: '🗒️' },
@@ -1033,7 +1050,7 @@ function demoInbox() {
   // stamp for any consumer that does not re-anchor. `mergedAgeMs` stamps
   // when a merged proposal merged (ms ago), for the app filter's
   // merged-this-week count.
-  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters, anchor, mergedAgeMs) => ({
+  const mk = (slug, sessionId, proposalId, title, yes, no, required, status, ageMs, myVote, voters, anchor, mergedAgeMs, mergedAnchor) => ({
     sessionId,
     proposalId,
     // Without a configured platform origin (a bare check worker, not real
@@ -1050,6 +1067,11 @@ function demoInbox() {
     proposedAt: ageMs != null ? new Date(Date.now() - ageMs).toISOString() : null,
     mergedAt: mergedAgeMs != null ? new Date(Date.now() - mergedAgeMs).toISOString() : null,
     demoAnchor: anchor || null,
+    // Merge anchor for the merge-stats fixtures (?mergestats=1): the
+    // frontend re-stamps mergedAt to local noon N days back (see
+    // reanchorDemo), so the app filter's median-to-merge reads whole days
+    // no matter when the page is opened.
+    demoMergedAnchor: mergedAnchor || null,
     appSlug: slug,
     appName: apps.find((a) => a.slug === slug).name,
     icon: apps.find((a) => a.slug === slug).icon,
@@ -1098,6 +1120,26 @@ function demoInbox() {
     mk('staging-demo-app', 'demo-3', 90204, 'Staging demo proposal: export to CSV', 4, 0, 4, 'merging', 5 * D, 'yes', [voter('Maya', 4.5 * D), voter('Priya', 3.5 * D), voter('Raul', 2.5 * D), voter('Sara', 1.5 * D)], { days: 5 }, null),
     mk('staging-demo-notes', 'demo-5', 90205, 'Staging demo proposal: pinned notes', 2, 1, null, 'merged', 9 * D, null, [voter('Quinn', 7.5 * D), voter('Raul', 6.5 * D)], { days: 9 }, 2.5 * D),
   ];
+  // ?mergestats=1 (staging demo only) adds four merged Staging Demo App
+  // fixtures so the app filter's time-to-merge stats have history: opened
+  // day N / merged day M back, with both timestamps re-anchored to local
+  // noon by the frontend, so each opened→merged duration is exactly
+  // M→N days. Coverage: one inside the merged-this-week week (1d), the
+  // median's middle values (2d, 4d — median 2d over three), and one merge
+  // outside the 30-day window (10d) that counts nowhere in the stats.
+  // demo-5's merge is also pinned to noon two days back, so the Notes app
+  // reads a whole 7d median (opened day 9). The default fixture is
+  // unchanged without the flag.
+  if (withMergeStats) {
+    proposals.push(
+      mk('staging-demo-app', 'demo-m1', 90211, 'Staging demo proposal: merged last week', 3, 0, null, 'merged', 2 * D, null, [voter('Maya', 1.5 * D)], { days: 2 }, 1 * D, { days: 1 }),
+      mk('staging-demo-app', 'demo-m2', 90212, 'Staging demo proposal: merged ten days ago', 2, 0, null, 'merged', 12 * D, null, [voter('Omar', 11 * D)], { days: 12 }, 10 * D, { days: 10 }),
+      mk('staging-demo-app', 'demo-m3', 90213, 'Staging demo proposal: merged three weeks ago', 2, 1, null, 'merged', 25 * D, null, [voter('Priya', 24 * D)], { days: 25 }, 21 * D, { days: 21 }),
+      mk('staging-demo-app', 'demo-m4', 90214, 'Staging demo proposal: merged long ago', 4, 0, null, 'merged', 50 * D, null, [voter('Quinn', 49 * D)], { days: 50 }, 40 * D, { days: 40 }),
+    );
+    const pinned = proposals.find((p) => p.sessionId === 'demo-5');
+    if (pinned) pinned.demoMergedAnchor = { days: 2 };
+  }
   // Change summaries for the cards' one-line summary row (demo only). Keyed
   // by sessionId; every fixture not covered gets an explicit null pair so
   // the demo shape matches what normalizeProposal produces in production.
@@ -1205,7 +1247,7 @@ function demoInbox() {
 // last so every variant (and ?allmerged=1, which merges everything) leaves
 // only genuinely queued proposals carrying a position.
 function demoInboxPayload(req) {
-  const demo = demoInbox();
+  const demo = demoInbox(req.query.mergestats === '1');
   // ?empty=1 (staging demo only): the fixture with every proposal removed
   // (the app list kept, so the empty state's Browse apps action opens a
   // populated filter), giving checks a stable URL for the genuinely empty
@@ -2021,6 +2063,36 @@ app.get('/api/my-votes', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// New proposal screen: templates plus sending.
+//
+// Templates are a frontend concern (the picker prefills title and
+// description and everything stays editable); the server only needs to
+// know the valid template ids so a sent row records which one was used.
+// The platform's app-facing API is read-only — there is no endpoint an
+// app can call to submit a proposal into another app's approval
+// pipeline — so "sending" records the composed proposal in this app's
+// own Sent list (my_proposals above). That is also why these routes
+// touch no platform call at all.
+// ---------------------------------------------------------------------------
+
+const PROPOSAL_TEMPLATES = new Set(['blank', 'bugfix', 'feature', 'copy']);
+
+// The signed-in user's sent proposals, newest first. The compose screen's
+// Sent section renders from this; 50 is plenty for a review surface.
+app.get('/api/proposals', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, template, title, status, created_at
+       FROM my_proposals WHERE user_id = $1
+       ORDER BY created_at DESC, id DESC LIMIT 50`,
+      [req.user.id]);
+    res.json({ proposals: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Watchlist: proposals the signed-in user starred, each with its current
 // status and the status it was last seen in, so the tab can badge what
 // changed since the last look.
@@ -2070,6 +2142,35 @@ app.get('/api/watchlist', async (req, res) => {
       [req.user.id]);
     await withCurrentStatuses(rows, userToken);
     res.json({ demo: false, rows: rows.map(watchRowPayload) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Send a composed proposal: validate the edited title and description
+// (the prefill is fully editable, so what arrives is whatever the user
+// left in the fields), record it, and hand the row back so the
+// confirmation and the Sent list can show it without a refetch.
+app.post('/api/proposals', async (req, res) => {
+  const body = req.body || {};
+  const title = typeof body.title === 'string' ? body.title.trim() : '';
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
+  const template = PROPOSAL_TEMPLATES.has(body.template) ? body.template : 'blank';
+  if (!title) return res.status(400).json({ error: 'A title is required' });
+  if (!text) return res.status(400).json({ error: 'A description is required' });
+  if (title.length > 300) {
+    return res.status(400).json({ error: 'Title is too long (300 characters max)' });
+  }
+  if (text.length > 20000) {
+    return res.status(400).json({ error: 'Description is too long (20000 characters max)' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO my_proposals (user_id, username, template, title, body)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, template, title, status, created_at`,
+      [req.user.id, req.user.username, template, title, text]);
+    res.status(201).json({ ok: true, proposal: rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

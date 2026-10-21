@@ -99,7 +99,7 @@ user's vote history.
 
 ## App-specific conventions
 
-- Three local tables: `my_votes` (one person's vote history) and
+- Local tables: `my_votes` (one person's vote history) and
   `watchlist` (one person's starred proposals, plus the status each row
   was last seen in) are both marked `staging:private` (per-person data).
   `saved_searches` (one person's saved inbox searches: name, query,
@@ -108,7 +108,11 @@ user's vote history.
   also `staging:private`. `proposal_reads` (one person's opened proposals:
   append-only session-id rows) is the fifth, also `staging:private`, and
   `bookmarks` (one person's bookmarked proposals: app, title, saved date)
-  is the sixth, also `staging:private`.
+  is the sixth, also `staging:private`. `my_proposals` (proposals composed
+  in the app's New proposal screen — the platform's app-facing API is
+  read-only, so a sent proposal is recorded here and the Sent list renders
+  from it; nothing is submitted to any approval pipeline from this app) is
+  the seventh, also `staging:private`.
   Proposal data stays on the platform — with one exception: the discussion
   thread.
 - Bookmarks: the Bookmark button on every proposal card and in the
@@ -166,6 +170,19 @@ user's vote history.
   `set-read`/`markallread`/`open-merged`/`read-other` first resets the
   caller's rows on the six fixture ids, so checks never depend on earlier
   runs.
+- New since last visit: every successful inbox load saves the newest loaded
+  proposal (`{ id, at proposedAt }`) to localStorage
+  `vote-inbox:newest-seen` — per device and browser, like the Hide voted
+  switch — and resolves it into a baseline time (the remembered proposal's
+  own time when still loaded, else the stored stamp). Cards proposed after
+  that baseline show a small violet "New" badge (`data-new-badge`,
+  aria-label "New since your last visit") beside the title, right after the
+  unread dot; badges persist across re-renders and clear on the next fetch.
+  First visit, blocked storage, a missing proposed date or a zero-proposal
+  load marks nothing New. Demo hook (staging + `?demo=1` only, client-only,
+  nothing forwarded): `?newbadge=1` sets the baseline to the demo-6 fixture,
+  so demo-2 and demo-4 read as New and a later plain `?demo=1` load stays
+  badge-free.
 - Snooze: each person can snooze a proposal for one day or one week from
   the card's Snooze button, so it leaves their inbox until its wake date
   and reappears automatically after it (expiry is lazy: rows whose wake
@@ -177,6 +194,20 @@ user's vote history.
   button that returns the proposal immediately; unsnoozing the last one
   returns to the inbox, and an all-snoozed inbox gets its own empty
   state pointing at the filter.
+- App following: each app row in the app filter carries a star toggle
+  (aria-pressed); following an app (persisted in localStorage
+  `vote-inbox:follows`) adds it to the Following tab, which groups the
+  followed apps' open (non-merged) proposals per app with a summary line
+  ("N open, M votes needed" via `data-following-needed` / `data-following-apps`)
+  and a tab badge. Unfollowing removes the star and the app's group. An app
+  with no open proposals renders no group; a followed proposal counts as
+  needing a vote until it is voted or merged. The Inbox is untouched.
+  Following demo hooks (staging + `?demo=1` only): `?set-follow=<slug,slug>`
+  replaces the caller's followed set (reloads at `clear-set-follow=1`, the
+  same pattern as set-filter); `?clear-follows=1` empties it for that load;
+  `?tap-follow=<slug>` / `?tap-unfollow=<slug>` tap the star through the real
+  delegated handler (boot-time storage adjust makes the tap act from the
+  intended direction).
 - Snooze demo hooks (staging + `?demo=1` only): `?tap-snooze=<id>` opens
   that card's snooze menu; `?set-snooze=<id>&snooze-days=1|7` snoozes for
   real (a DB row for the signed-in account) then reloads at a
@@ -296,6 +327,14 @@ user's vote history.
   if the device were offline, so the Retry-pill flow is reachable by
   checks. The retry queue lives in frontend memory only; it is never
   persisted.
+- Compose check fixtures (demo only, one-shot, replayed through the real
+  controls after the compose screen renders): `?compose=1` itself is a
+  real deep link (all environments, not demo-gated); `&template=<id>`,
+  `&switch-template=<id>`, `&set-title=<text>`, `&set-body=<text>` and
+  `&send=1` walk one user path, and `&back=1` taps the compose screen's
+  back chevron at the end of the chain. Check paths must URL-encode
+  spaces (`%20`): the platform's test reader rejects paths with literal
+  whitespace.
 - Onboarding tour: a three-step panel (what a proposal is, how to vote,
   where My Votes lives) shown to first-time visitors. It renders in its own
   `#tour-slot` above `#view` (never inside the list, so the cards'
@@ -444,6 +483,39 @@ user's vote history.
   last seven calendar days), both tallied from the already-loaded inbox
   data and re-tallied whenever the inbox reloads while the dropdown is
   open. No extra platform calls.
+- App filter merge stats: each app row (not "All apps") carries three
+  fixed-height lines so row size never depends on the values — the name
+  with a four-bar weekly merge sparkline beside it (oldest first, this
+  week on the right so the last bar equals merged-this-week; zero weeks
+  are thin stubs; no merges in 28 days shows `data-app-spark="none"` and
+  a dash), "N waiting · N merged this week" (waiting = not merged and not
+  closed; `data-app-count` stays on the waiting span, so the old
+  `(N)`-text checks now read "N waiting"), and "Median to merge (30
+  days): X" — the median opened→merged time over merges in the trailing
+  30 calendar days ("2d" from one day up, "5h" under a day, "<1h" under
+  an hour; a merge with no open time or merging before opening counts in
+  merged/spark but not the median). No merges in 30 days shows a dash
+  (`data-app-median="none"`). All from `filterStats()` over the loaded
+  inbox, recomputed on every load; while a forced refresh loads, the
+  open dropdown holds the last good apps with grey `animate-pulse`
+  placeholders (`data-stats-loading="1"` on the panel, via
+  `lastFilterApps` — an empty `lastFilterApps` before the first load
+  shows only the All apps row, as before). Demo hooks (staging +
+  `?demo=1` only): `?mergestats=1` serves four merged staging-demo-app
+  fixtures (opened/merged day anchors, durations 1d/2d/4d and a 40-days
+  -back merge outside the window) plus demo-5 pinned to a whole 7d
+  median, so the median/spark values are deterministic; the variant's
+  expected values are app: 3 waiting / 1 this week / 2d (n=3) /
+  spark 1,0,1,1, notes: 2 / 1 / 7d (n=1) / 0,0,0,1, archive: all dashes;
+  `?tap-app-option=<slug>` taps that row through the real handler then
+  reloads with `clear-set-filter=1` (the tap-tag pattern);
+  `?stats-layout=1` refreshes through loadInbox with a one-shot
+  `inboxHoldMs` fetch hold, requires the placeholders mid-hold and stamps
+  `data-layout-stable="1"` when row heights and the list height agree
+  before/during/after; `?filter-phone=1` pins the open panel to 288px and
+  stamps `data-phone-fit` after checking every row's stat lines for
+  overflow. `reanchorDemo` also honours `demoMergedAnchor { days }`
+  (stamps mergedAt to local noon N days back).
 - `?splits=<sessionId>:<yes>-<no>,…` (demo only) overrides named fixture
   proposals' vote counts so the controversy sort's tie behaviour is
   reachable by checks without changing the default fixture's numbers.
