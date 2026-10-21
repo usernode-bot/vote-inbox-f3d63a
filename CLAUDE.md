@@ -279,6 +279,33 @@ user's vote history.
   whatever the platform supplies and stay absent otherwise (no
   placeholder). `?member-query=<text>` (staging demo only) presets the
   search box so the filter and no-match states are check-reachable.
+- Monthly recap: a summary of the previous calendar month over the
+  current tab, opened by the header menu's Monthly recap item (the menu
+  button sits beside the Members button) or the My Votes tab's Monthly
+  recap entry row; `?recap=1` deep-links to it (works in production).
+  Data comes from `GET /api/recap`, computed server-side from the
+  caller's `my_votes` history for the previous month (relative to
+  `req.now`): votes cast, proposals merged, acceptance rate (the share
+  of the month's votes whose proposal merged), most active app by vote
+  count, and week chunks (days 1-7, 8-14, …) that feed the weekly rows
+  and the small trend line. Rank movement has no platform API, so only
+  the demo fixture carries it; in production the field is null and the
+  row does not render (the optional-field contract). The view stamps
+  `data-recap-prev-month="1"` when the server's month really is the one
+  before now, so a wrong-month bug fails the check instead of rendering.
+  Recap demo hooks (staging + `?demo=1` only): `?recap-empty=1` serves a
+  no-activity month (the empty state); `?openmenu=1` opens the header
+  menu on load (pure UI state, honoured without demo too);
+  `?tap-recap=1` clicks the menu's Monthly recap item (pair with
+  `?openmenu=1`); `?tap-recap-entry=1` clicks the My Votes tab's recap
+  entry once the list has rendered; `?tap-recap-share=1` clicks the
+  recap view's share button (pair with `?share=copy` for the
+  deterministic Copied! state). The share button reuses the card share
+  flow, so `?share=copy|sheet` forces its path the same way.
+  Acceptance rate and the week buckets are computed from `my_votes` as
+  it stands today, so a month's numbers can still move while its
+  proposals are unresolved; merged means `status = 'merged'` at read
+  time.
 - Demo thread hooks (staging demo only): `?comment=<text>` posts a
   top-level comment, `?reply-to=<id>&reply=<text>` posts a reply, both
   through the real form. Demo-4 carries fixture comments (negative ids

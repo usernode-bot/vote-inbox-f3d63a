@@ -2093,6 +2093,145 @@ app.get('/api/proposals', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Monthly recap (?recap=1 deep link). A summary of the PREVIOUS calendar
+// month, computed from the caller's own my_votes history: votes cast, how
+// many of those proposals have merged, the acceptance rate (the share of
+// the month's votes whose proposal merged), the most-active app by vote
+// count, and the month's activity grouped into week chunks (the trend
+// line's data). Rank movement has no platform API, so only the demo
+// fixture carries it; in production the field is null and the row does
+// not render (the same optional-field contract as the change summary).
+// ---------------------------------------------------------------------------
+
+function prevMonthStart(now) {
+  const d = new Date(now.getTime());
+  return new Date(d.getFullYear(), d.getMonth() - 1, 1);
+}
+
+function monthKeyOf(date) {
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+}
+
+// Week chunks covering a whole month: days 1-7, 8-14, 15-21, 22-28, then
+// whatever is left. Labels like "Sep 1–7" (an en dash in a numeric range).
+// from/to are inclusive/exclusive Date bounds used to bucket votes.
+function monthWeeks(start) {
+  const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+  const short = start.toLocaleDateString('en-US', { month: 'short' });
+  const weeks = [];
+  for (let from = 1; from <= daysInMonth; from += 7) {
+    const to = Math.min(from + 6, daysInMonth);
+    weeks.push({
+      label: short + ' ' + from + '–' + to,
+      from: new Date(start.getFullYear(), start.getMonth(), from),
+      to: new Date(start.getFullYear(), start.getMonth(), to + 1),
+    });
+  }
+  return weeks;
+}
+
+// Staging demo recap (?demo=1): a fixed fixture for the previous calendar
+// month relative to req.now, so the screen always shows a full month no
+// matter when a check runs. The rank movement is fixture-only (the
+// platform has no rank API). ?recap-empty=1 serves a month with no
+// activity so the empty state is reachable by a check. Request-time
+// injection, staging only.
+function demoRecapPayload(req) {
+  const start = prevMonthStart(req.now);
+  const weeks = monthWeeks(start);
+  // Fixed weekly patterns (12 votes and 4 merges across five chunks, the
+  // 31-day case); a shorter month folds the tail into its last chunk.
+  const votesPattern = [4, 3, 2, 2, 1];
+  const mergedPattern = [2, 1, 1, 0, 0];
+  const spread = (pattern) => {
+    const out = [];
+    for (let i = 0; i < weeks.length; i++) {
+      out.push(i < weeks.length - 1
+        ? pattern[i]
+        : pattern.slice(i).reduce((a, b) => a + b, 0));
+    }
+    return out;
+  };
+  const votes = spread(votesPattern);
+  const merged = spread(mergedPattern);
+  const empty = req.query['recap-empty'] === '1';
+  const votesCast = empty ? 0 : votes.reduce((a, b) => a + b, 0);
+  const proposalsMerged = empty ? 0 : merged.reduce((a, b) => a + b, 0);
+  return {
+    demo: true,
+    month: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+    monthKey: monthKeyOf(start),
+    generatedAt: req.now.toISOString(),
+    votesCast,
+    proposalsMerged,
+    acceptanceRate: votesCast ? Math.round((100 * proposalsMerged) / votesCast) : null,
+    mostActive: empty ? null
+      : { appSlug: 'staging-demo-notes', appName: 'Staging Demo Notes', icon: null, votes: 5 },
+    rank: empty ? null : { before: 9, after: 6 },
+    weeks: weeks.map((w, i) => ({
+      label: w.label,
+      votes: empty ? 0 : votes[i],
+      merged: empty ? 0 : merged[i],
+    })),
+  };
+}
+
+app.get('/api/recap', async (req, res) => {
+  try {
+    if (req.query.demo === '1' && IS_STAGING) {
+      return res.json(demoRecapPayload(req));
+    }
+    const start = prevMonthStart(req.now);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    const weeks = monthWeeks(start);
+    const { rows } = await pool.query(
+      `SELECT app_slug, app_name, status, created_at
+       FROM my_votes
+       WHERE user_id = $1 AND created_at >= $2 AND created_at < $3`,
+      [req.user.id, start, end]);
+    const votesCast = rows.length;
+    let proposalsMerged = 0;
+    const perWeek = weeks.map(() => 0);
+    const perApp = new Map();
+    for (const row of rows) {
+      if (row.status === 'merged') proposalsMerged++;
+      const t = row.created_at ? new Date(row.created_at).getTime() : NaN;
+      if (isFinite(t)) {
+        for (let i = 0; i < weeks.length; i++) {
+          if (t >= weeks[i].from.getTime() && t < weeks[i].to.getTime()) {
+            perWeek[i]++;
+            break;
+          }
+        }
+      }
+      const key = row.app_slug || '';
+      const cur = perApp.get(key)
+        || { appSlug: row.app_slug, appName: row.app_name || row.app_slug, icon: null, votes: 0 };
+      cur.votes++;
+      perApp.set(key, cur);
+    }
+    let mostActive = null;
+    for (const app of perApp.values()) {
+      if (!mostActive || app.votes > mostActive.votes) mostActive = app;
+    }
+    return res.json({
+      demo: false,
+      month: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      monthKey: monthKeyOf(start),
+      generatedAt: req.now.toISOString(),
+      votesCast,
+      proposalsMerged,
+      acceptanceRate: votesCast ? Math.round((100 * proposalsMerged) / votesCast) : null,
+      mostActive,
+      rank: null,
+      weeks: weeks.map((w, i) => ({ label: w.label, votes: perWeek[i], merged: null })),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // Watchlist: proposals the signed-in user starred, each with its current
 // status and the status it was last seen in, so the tab can badge what
 // changed since the last look.

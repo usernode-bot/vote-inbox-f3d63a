@@ -3003,12 +3003,36 @@
       ]
     },
     {
+      "id": "recap.menu-link",
+      "name": "Header menu links to the Recap screen",
+      "path": "/?demo=1&openmenu=1&tap-recap=1",
+      "expectSelector": "[data-recap-month]",
+      "expectText": "Votes cast",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "tour.first-visit",
       "name": "A first visit shows the tour at step 1",
       "path": "/?demo=1&tour-reset=1",
       "expectSelector": "[data-tour]",
       "expectText": "What a proposal is",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.prev-month",
+      "name": "Recap covers the previous month",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-prev-month='1']",
       "impact": [
         "public/index.html",
         "server.js",
@@ -3028,11 +3052,35 @@
       ]
     },
     {
+      "id": "recap.votes-cast",
+      "name": "Recap shows votes cast",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-votes]",
+      "expectText": "Votes cast",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "leaderboard.tab",
       "name": "Leaderboard tab opens with its range toggle",
       "path": "/?demo=1&tab=leaderboard",
       "expectSelector": "[data-tab='leaderboard'][aria-selected='true']",
       "expectText": "This week",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.merged",
+      "name": "Recap shows proposals merged",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-merged]",
+      "expectText": "Proposals merged",
       "impact": [
         "public/index.html",
         "server.js",
@@ -3053,12 +3101,36 @@
       ]
     },
     {
+      "id": "recap.acceptance",
+      "name": "Recap shows the acceptance rate",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-acceptance]",
+      "expectText": "Acceptance rate",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "leaderboard.rank",
       "name": "Board ranks by votes cast this week",
       "path": "/?demo=1&tab=leaderboard",
       "expectSelector": "[data-lb-rank='1'] [data-lb-handle='@staging-demo-user']",
       "expectText": "5 votes",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.most-active",
+      "name": "Recap names the most active app",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-app]",
+      "expectText": "Staging Demo Notes",
       "impact": [
         "public/index.html",
         "server.js",
@@ -3078,11 +3150,35 @@
       ]
     },
     {
+      "id": "recap.rank",
+      "name": "Recap shows rank movement",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-rank]",
+      "expectText": "Up 3 places",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "detail.card-tap",
       "name": "Card tap opens the detail view",
       "path": "/?demo=1&tap-card=1",
       "expectSelector": "[data-proposal-detail][data-session-id='demo-2']",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.weeks",
+      "name": "Recap groups activity by week",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-weeks]",
+      "expectText": "Weekly activity",
       "impact": [
         "public/index.html",
         "server.js",
@@ -3103,11 +3199,35 @@
       ]
     },
     {
+      "id": "recap.trend",
+      "name": "Recap draws a weekly trend line",
+      "path": "/?demo=1&recap=1",
+      "expectSelector": "[data-recap-trend] polyline",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "my-votes.shareimg-merged",
       "name": "The card shows my merged count",
       "path": "/?tab=votes&demo=1&shareimg=fallback&tap-shareimg=1",
       "expectSelector": "[data-share-card][data-merged='1']",
       "expectText": "1 merged",
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.share",
+      "name": "Share copies a recap link",
+      "path": "/?demo=1&recap=1&share=copy&tap-recap-share=1",
+      "expectSelector": "[data-recap-top] [data-share-link]",
+      "expectText": "Copied!",
+      "visual": true,
       "impact": [
         "public/index.html",
         "server.js",
@@ -3448,6 +3568,19 @@
       ]
     },
     {
+      "id": "recap.empty",
+      "name": "A month with no activity shows an empty recap",
+      "path": "/?demo=1&recap=1&recap-empty=1",
+      "expectSelector": "[data-recap-empty]",
+      "expectText": "No activity",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "detail.deep-link",
       "name": "Deep link opens the detail view directly",
       "path": "/?demo=1&proposal=demo-4",
@@ -3541,6 +3674,18 @@
       "path": "/?demo=1&proposal=demo-4&scroll-detail=1",
       "expectSelector": "[data-detail-actions][data-sticky-observed='1'] [data-vote='yes']",
       "visual": true,
+      "impact": [
+        "public/index.html",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "recap.from-votes",
+      "name": "Recap is reachable from My Votes",
+      "path": "/?tab=votes&demo=1&tap-recap-entry=1",
+      "expectSelector": "[data-recap-month]",
+      "expectText": "Votes cast",
       "impact": [
         "public/index.html",
         "server.js",
