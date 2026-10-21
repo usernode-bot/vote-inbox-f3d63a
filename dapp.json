@@ -7,6 +7,17 @@
   "secrets": [],
   "tests": [
     {
+      "id": "header.tab-row-scrolls",
+      "name": "Header drops the duplicate title and tabs keep their spacing",
+      "path": "/?demo=1&tab=leaderboard",
+      "expectSelector": "body:has(header h1[data-app-title].sr-only):has([data-tab-scroll].overflow-x-auto [data-tab='leaderboard'][aria-selected='true'].whitespace-nowrap)",
+      "impact": [
+        "public/index.html",
+        "styles/tailwind-input.css",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "inbox.demo-list",
       "name": "Inbox lists open proposals",
       "path": "/?demo=1",
