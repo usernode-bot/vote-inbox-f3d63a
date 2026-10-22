@@ -312,6 +312,11 @@
 
     <div id="tour-slot"></div>
 
+    <!-- Keyboard triage: its own slot above #view, like the tour, so the
+         list's own structure (first card, group containers) is untouched.
+         Empty until the first j/k/y/n key press. -->
+    <div id="kbd-slot" data-kbd-slot></div>
+
     <div id="view" class="flex flex-col gap-3 pt-3" aria-live="polite"></div>
 
     <!-- Polite announcement for merge celebration cards: filled once per
@@ -361,6 +366,14 @@
     // Neither is ever sent without demo data.
     var TAP_NO = params.get('tap-no') === '1';
     var CONFIRM_NO = params.get('confirm-no') === '1';
+    // Keyboard-triage check hooks, all demo only. ?keys=<letters> dispatches
+    // one real keydown per letter on document (or on the search box with
+    // ?kbd-in-search=1), so the checks drive onTriageKey exactly as a person
+    // would. ?confirm-no=1 (above) answers the No-confirm dialog an n opens,
+    // and ?kbd-then=votes clicks the My Votes tab once the sequence settles.
+    var KEY_SEQ = DEMO ? (params.get('keys') || '') : '';
+    var KBD_THEN = DEMO ? (params.get('kbd-then') || '') : '';
+    var KBD_IN_SEARCH = DEMO && params.get('kbd-in-search') === '1';
     // ?failvote=1 (demo only) makes the NEXT vote cast on this load fail the
     // way an offline device does: the request never leaves the page, the
     // card keeps its vote mark and a Retry pill appears. Gives checks and
@@ -935,6 +948,10 @@
       // load and hook flow is untouched. null until the first answer.
       inboxStats: null,
       loadingInboxStats: false,
+      // Keyboard triage position over the inbox's currently rendered cards.
+      // Memory only and never persisted: a reload starts over. sessionId
+      // re-anchors the index after a re-render (filters, a vote).
+      kbd: { active: false, sessionId: null, index: 0, done: false },
     };
 
     // ------------------------------------------------------------------
@@ -6468,6 +6485,8 @@
         if (el) el.classList.add('hidden');
       }
       document.getElementById('view').innerHTML = composeHtml();
+      var composeKbdSlot = document.getElementById('kbd-slot');
+      if (composeKbdSlot) composeKbdSlot.innerHTML = '';
       if (!state.compose.sentLoaded) loadSent();
       runComposeFixtures();
     }
@@ -6551,6 +6570,7 @@
           : '';
       }
       enhanceTitles();
+      syncKeyboardTriage();
       updateLbPin();
       if (DEMO) stampDensityBasic();
     }
@@ -7713,7 +7733,12 @@
           if (t > max) t = max;
           if (t < min) t = min;
         } else {
-          t = midnight - a.weeksAgo * 7 * 24 * 3600 * 1000
+          // weekday counts from Monday inside that row's own week (the same
+          // 0 = Monday scale the this-week branch uses). Anchor on this
+          // week's Monday first, then step back whole weeks, so a row in an
+          // earlier week can never drift forward into the current one.
+          var thisMonday = midnight - todayIdx * 24 * 3600 * 1000;
+          t = thisMonday - a.weeksAgo * 7 * 24 * 3600 * 1000
             + Math.min(Math.max(a.weekday, 0), 6) * 24 * 3600 * 1000 + 12 * 3600000;
         }
         r.created_at = new Date(t).toISOString();
@@ -7910,6 +7935,7 @@
           }
           maybeTurnoutRefresh();
           maybeTapNo();
+          maybeKeyHooks();
           maybeTapShare();
           maybeApplyBulkHooks();
           maybeRerenderTagFilter();
@@ -8795,6 +8821,170 @@
       return null;
     }
 
+    // ------------------------------------------------------------------
+    // Keyboard triage (j/k move, y yes, n no). Works over the cards that
+    // are rendered right now, in DOM order, so every filter and sort narrows
+    // what the keys walk. Focus is a marker added after render on the card
+    // the person is on; votes go through the card's own Yes/No buttons, so
+    // the ordinary vote path (and Undo) applies unchanged.
+    // ------------------------------------------------------------------
+
+    // Whole literal so the Tailwind compiler sees every variant. The same
+    // violet ring the app's focused inputs use.
+    var KBD_FOCUS_CLASS = 'ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-50 dark:ring-violet-400 dark:ring-offset-zinc-950';
+
+    function kbdCards() {
+      return Array.prototype.slice.call(document.querySelectorAll('#view [data-proposal-card]'));
+    }
+
+    // The keys walk the Inbox only: not compose, not the Members overlay,
+    // not a proposal's detail, not compare, and not another tab. The
+    // Snoozed view is still the inbox tab, so it counts.
+    function kbdListVisible() {
+      if (state.screen === 'compose') return false;
+      if (state.tab !== 'inbox') return false;
+      if (state.membersView) return false;
+      if (state.detail && findProposal(state.detail)) return false;
+      if (state.compareView) return false;
+      return true;
+    }
+
+    function kbdTypingTarget(el) {
+      if (!el || !el.tagName) return false;
+      var tag = el.tagName.toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select'
+        || !!el.isContentEditable;
+    }
+
+    // An open dropdown, sheet or dialog owns the keyboard while it is up.
+    function kbdBlockedOverlay() {
+      if (openFilter || openTag || filterSheet) return true;
+      var home = document.getElementById('filter-sheet-home');
+      if (home && !home.hidden) return true;
+      var overlays = document.querySelectorAll('[aria-modal="true"], [role="dialog"], [role="alertdialog"]');
+      for (var i = 0; i < overlays.length; i++) {
+        if (overlays[i].getClientRects && overlays[i].getClientRects().length) return true;
+      }
+      return false;
+    }
+
+    function kbdProgressHtml(index, total) {
+      return '<div data-kbd-progress class="flex items-center justify-between gap-2 pt-3 text-xs">'
+        + '<span data-kbd-count class="font-semibold text-zinc-600 dark:text-zinc-300">Card ' + (index + 1) + ' of ' + total + '</span>'
+        + '<span data-kbd-hint class="text-zinc-500 dark:text-zinc-400">j next · k back · y yes · n no</span>'
+        + '</div>';
+    }
+
+    function kbdDoneHtml() {
+      return '<div data-kbd-done role="status" class="mt-3 flex items-center gap-2 rounded-2xl border border-violet-500/40 bg-violet-600/10 p-3 text-sm font-semibold text-violet-700 dark:text-violet-300">'
+        + '<svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg>'
+        + '<span>All caught up</span>'
+        + '<span class="text-xs font-normal text-zinc-500 dark:text-zinc-400">You reached the end of this list. Press k to go back.</span>'
+        + '</div>';
+    }
+
+    // Called at the end of render(): re-reads the cards, re-anchors the
+    // position onto the same proposal when it is still on screen, and marks
+    // the focused card. Clears the slot whenever the list is not on screen.
+    function syncKeyboardTriage() {
+      var slot = document.getElementById('kbd-slot');
+      if (!slot) return;
+      var kb = state.kbd;
+      if (!kb.active || !kbdListVisible()) {
+        slot.innerHTML = '';
+        return;
+      }
+      var cards = kbdCards();
+      if (!cards.length) {
+        slot.innerHTML = '';
+        return;
+      }
+      // A filter or a vote may have moved or removed the proposal the
+      // person was on. Keep following it while it is rendered; when it is
+      // gone, keep the index so focus lands on the card that took its place
+      // (or past the end, which means caught up).
+      var found = -1;
+      if (kb.sessionId) {
+        for (var i = 0; i < cards.length; i++) {
+          if (cards[i].getAttribute('data-session-id') === kb.sessionId) { found = i; break; }
+        }
+      }
+      if (found >= 0) {
+        kb.index = found;
+        kb.done = false;
+      } else if (kb.index >= cards.length) {
+        kb.done = true;
+      }
+      for (var c = 0; c < cards.length; c++) {
+        cards[c].setAttribute('data-kbd-pos', String(c + 1));
+        cards[c].removeAttribute('data-kbd-focused');
+        cards[c].removeAttribute('aria-current');
+        cards[c].classList.remove.apply(cards[c].classList, KBD_FOCUS_CLASS.split(' '));
+      }
+      if (kb.done) {
+        kb.sessionId = null;
+        slot.innerHTML = kbdDoneHtml();
+        return;
+      }
+      kb.sessionId = cards[kb.index].getAttribute('data-session-id');
+      cards[kb.index].setAttribute('data-kbd-focused', '1');
+      cards[kb.index].setAttribute('aria-current', 'true');
+      cards[kb.index].classList.add.apply(cards[kb.index].classList, KBD_FOCUS_CLASS.split(' '));
+      slot.innerHTML = kbdProgressHtml(kb.index, cards.length);
+    }
+
+    function onTriageKey(event) {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      var key = event.key;
+      if (key !== 'j' && key !== 'k' && key !== 'y' && key !== 'n') return;
+      if (kbdTypingTarget(event.target) || kbdTypingTarget(document.activeElement)) return;
+      if (kbdBlockedOverlay()) return;
+      if (!kbdListVisible()) return;
+      var cards = kbdCards();
+      if (!cards.length) return;
+      // Holding y or n must never cast more than once.
+      if ((key === 'y' || key === 'n') && event.repeat) return;
+      event.preventDefault();
+      var kb = state.kbd;
+      if (!kb.active) {
+        kb.active = true;
+        kb.index = 0;
+        kb.done = false;
+      }
+      if (key === 'j') {
+        // The move below decides the position; drop the anchor so the
+        // sync's re-anchor step does not drag it back to the old card.
+        kb.sessionId = null;
+        if (!kb.done) {
+          if (kb.index < cards.length - 1) kb.index += 1;
+          else kb.done = true;
+        }
+      } else if (key === 'k') {
+        kb.sessionId = null;
+        if (kb.done) {
+          kb.done = false;
+          kb.index = cards.length - 1;
+        } else {
+          kb.index = Math.max(0, kb.index - 1);
+        }
+      } else if (!kb.done) {
+        // The card's own button, through the existing delegated handler, so
+        // a keyboard vote is the same vote a tap casts.
+        var focused = cards[kb.index];
+        var button = focused
+          ? focused.querySelector('[data-vote="' + (key === 'y' ? 'yes' : 'no') + '"]:not([disabled])')
+          : null;
+        if (button) button.click();
+      }
+      syncKeyboardTriage();
+      if (key === 'j' || key === 'k') {
+        var next = document.querySelector('#view [data-proposal-card][data-kbd-focused]');
+        if (next && next.scrollIntoView) {
+          try { next.scrollIntoView({ block: 'nearest' }); } catch (e) { /* old browser */ }
+        }
+      }
+    }
+
     // Staging demo hook: ?demo=1&tap-share=<sessionId> clicks that card's
     // share button once the demo inbox has rendered — the real button,
     // through the real delegated click handler — so the copy confirmation
@@ -8999,6 +9189,107 @@
           }
         }, 100);
       });
+    }
+
+    // Staging demo hook: ?demo=1&keys=<letters> dispatches one real keydown
+    // per letter on document (or on the search box with ?kbd-in-search=1)
+    // once the inbox has rendered, so the checks walk the same handler a
+    // person's keys do. Before a y/n, any vote already on the focused card
+    // is cleared (the ?cast= precedent), so repeated runs start clean; after
+    // a y it waits for the vote to settle before the next letter.
+    var keyHooksDone = false;
+    function kbdTargetCard() {
+      var cards = kbdCards();
+      if (!cards.length) return null;
+      if (state.kbd.active && !state.kbd.done) {
+        return cards[Math.min(state.kbd.index, cards.length - 1)];
+      }
+      return cards[0];
+    }
+    function clearKbdTargetVote() {
+      var card = kbdTargetCard();
+      if (!card) return Promise.resolve();
+      var id = card.getAttribute('data-session-id');
+      var p = findProposal(id);
+      if (!p || !p.myVote) return Promise.resolve();
+      return api('/api/unvote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ sessionId: id }),
+      }).catch(function () {}).then(function () {
+        p.myVote = null;
+        render();
+      });
+    }
+    function waitForPendingVotes() {
+      return new Promise(function (resolve) {
+        var tries = 0;
+        (function wait() {
+          var busy = false;
+          for (var id in state.pending) {
+            if (state.pending[id]) { busy = true; break; }
+          }
+          if (!busy || ++tries > 80) return resolve();
+          setTimeout(wait, 50);
+        })();
+      });
+    }
+    function kbdDispatchKey(target, key) {
+      var event;
+      try {
+        event = new KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true });
+      } catch (e) {
+        event = document.createEvent('KeyboardEvent');
+        event.initKeyboardEvent('keydown', true, true, window, key, 0, '', false, '');
+      }
+      target.dispatchEvent(event);
+    }
+    function maybeKeyHooks() {
+      if (!DEMO || !KEY_SEQ || keyHooksDone) return;
+      if (!kbdListVisible()) return;
+      if (!kbdCards().length) return;
+      keyHooksDone = true;
+      var input = document.getElementById('inbox-search');
+      var target = KBD_IN_SEARCH && input ? input : document;
+      if (KBD_IN_SEARCH && input) input.focus();
+      var letters = KEY_SEQ.split('');
+      var i = 0;
+      function finish() {
+        if (KBD_THEN === 'votes') {
+          var tab = document.querySelector('[data-tab="votes"]');
+          if (tab) tab.click();
+        }
+      }
+      function pressNoConfirm() {
+        return new Promise(function (resolve) {
+          var tries = 0;
+          (function wait() {
+            var confirmBtn = findButtonByText('No, reject');
+            if (confirmBtn) { confirmBtn.click(); waitForPendingVotes().then(resolve); }
+            else if (++tries > 40) resolve();
+            else setTimeout(wait, 100);
+          })();
+        });
+      }
+      function step() {
+        if (i >= letters.length) return finish();
+        var key = letters[i++];
+        if (key !== 'j' && key !== 'k' && key !== 'y' && key !== 'n') return step();
+        var action;
+        if ((key === 'y' || key === 'n') && !KBD_IN_SEARCH) {
+          action = clearKbdTargetVote().then(function () {
+            kbdDispatchKey(target, key);
+            if (key === 'y') return waitForPendingVotes();
+            if (key === 'n' && CONFIRM_NO) return pressNoConfirm();
+            return null;
+          });
+        } else {
+          kbdDispatchKey(target, key);
+          action = Promise.resolve();
+        }
+        action.then(function () { setTimeout(step, 40); });
+      }
+      step();
     }
 
     // Staging demo hook: ?demo=1&cast=<sessionId>:<choice> casts one vote
@@ -10260,6 +10551,8 @@
     // ------------------------------------------------------------------
     // Boot: render the shell instantly, then fetch the active tab's data.
     // ------------------------------------------------------------------
+
+    document.addEventListener('keydown', onTriageKey);
 
     // Staging check hooks run before the first render, so the page shows
     // their result as if it had come from a tap.

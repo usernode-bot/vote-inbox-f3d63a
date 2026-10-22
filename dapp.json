@@ -4767,6 +4767,271 @@
         "public/index.html",
         "dapp.json"
       ]
+    },
+    {
+      "id": "kbd.hidden-by-default",
+      "name": "Cards show no keyboard triage until a key is pressed",
+      "path": "/?demo=1",
+      "expectSelector": "body:has(#view [data-proposal-card]):not(:has([data-kbd-progress])):not(:has([data-kbd-done]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.first-key-starts-card-1",
+      "name": "k starts the triage on the first card",
+      "path": "/?demo=1&keys=k",
+      "expectSelector": "[data-kbd-count]",
+      "expectText": "Card 1 of 6",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.j-next-count",
+      "name": "j advances the progress line",
+      "path": "/?demo=1&keys=j",
+      "expectSelector": "[data-kbd-count]",
+      "expectText": "Card 2 of 6",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.j-nav-order",
+      "name": "j moves focus to the next rendered card",
+      "path": "/?demo=1&keys=j",
+      "expectSelector": "[data-age-group='today'] [data-age-cards] > [data-proposal-card]:nth-child(2)[data-kbd-focused]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.j-crosses-group",
+      "name": "j crosses an age heading into the next group",
+      "path": "/?demo=1&keys=jj",
+      "expectSelector": "[data-age-group='week'] [data-age-cards] > [data-proposal-card]:first-child[data-kbd-focused]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.k-back-count",
+      "name": "k moves the progress line back one card",
+      "path": "/?demo=1&keys=jjk",
+      "expectSelector": "[data-kbd-count]",
+      "expectText": "Card 2 of 6",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.k-stops-at-first",
+      "name": "k stops on the first card",
+      "path": "/?demo=1&keys=kk",
+      "expectSelector": "[data-proposal-card][data-kbd-pos='1'][data-kbd-focused]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.focus-ring",
+      "name": "The focused card shows the violet ring",
+      "path": "/?demo=1&keys=j",
+      "expectSelector": "[data-proposal-card][data-kbd-focused].ring-2.ring-violet-500",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.single-focus",
+      "name": "Only one card is focused at a time",
+      "path": "/?demo=1&keys=jj",
+      "expectSelector": "body:has([data-kbd-pos='3'][data-kbd-focused]):has([data-kbd-pos='2']:not([data-kbd-focused])):has([data-kbd-pos='1']:not([data-kbd-focused]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.y-votes-yes",
+      "name": "y votes yes on the focused card",
+      "path": "/?demo=1&keys=y",
+      "expectSelector": "[data-kbd-pos='1'][data-kbd-focused]",
+      "expectText": "You voted yes",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.y-undo-toast",
+      "name": "A keyboard yes shows the Undo toast",
+      "path": "/?demo=1&keys=y",
+      "expectText": "Undo",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.y-targets-focused",
+      "name": "y votes on the focused card, not the first one",
+      "path": "/?demo=1&keys=jy",
+      "expectSelector": "body:has([data-kbd-pos='1'] [data-vote='yes']):not(:has([data-kbd-pos='2'] [data-vote='yes']))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.n-opens-confirm",
+      "name": "n opens the Reject this proposal? confirm",
+      "path": "/?demo=1&keys=n",
+      "expectText": "No, reject",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.n-confirm-casts",
+      "name": "Confirming with n records a No vote",
+      "path": "/?demo=1&keys=n&confirm-no=1",
+      "expectSelector": "[data-kbd-pos='1'][data-kbd-focused]",
+      "expectText": "You voted no",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.caught-up",
+      "name": "Moving past the last card shows All caught up",
+      "path": "/?demo=1&keys=jjjjjj",
+      "expectSelector": "[data-kbd-done]",
+      "expectText": "All caught up",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.caught-up-clears-focus",
+      "name": "All caught up leaves the progress line and ring off",
+      "path": "/?demo=1&keys=jjjjjj",
+      "expectSelector": "body:has([data-kbd-done]):not(:has([data-kbd-focused])):not(:has([data-kbd-progress]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.k-leaves-caught-up",
+      "name": "k from All caught up returns to the last card",
+      "path": "/?demo=1&keys=jjjjjjk",
+      "expectSelector": "[data-kbd-count]",
+      "expectText": "Card 6 of 6",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.filter-hide-voted-count",
+      "name": "The count follows the Hide voted filter",
+      "path": "/?demo=1&hide-voted=1&keys=j",
+      "expectSelector": "[data-kbd-count]",
+      "expectText": "Card 2 of 4",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.filter-search-count",
+      "name": "The count follows the search filter",
+      "path": "/?demo=1&q=pinned&keys=k",
+      "expectSelector": "[data-kbd-count]",
+      "expectText": "Card 1 of 1",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.filter-caught-up",
+      "name": "A filtered single card reaches All caught up",
+      "path": "/?demo=1&q=pinned&keys=j",
+      "expectSelector": "[data-kbd-done]",
+      "expectText": "All caught up",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.filter-vote-shrinks",
+      "name": "A keyboard vote under Hide voted shrinks the count",
+      "path": "/?demo=1&hide-voted=1&keys=y",
+      "expectSelector": "[data-kbd-count]",
+      "expectText": "Card 1 of 3",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.controversy-order",
+      "name": "The keys follow the controversy sort order",
+      "path": "/?demo=1&sort=controversy&keys=jj",
+      "expectSelector": "#view > [data-proposal-card]:nth-child(3)[data-kbd-focused]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.my-votes-untouched",
+      "name": "A keyboard vote leaves earlier My Votes rows untouched",
+      "path": "/?demo=1&keys=y&kbd-then=votes",
+      "expectSelector": "[data-vote-row][data-session-id='demo-v2']",
+      "expectText": "You voted no",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.not-on-other-tabs",
+      "name": "The keys do nothing outside the Inbox",
+      "path": "/?demo=1&tab=votes&keys=j",
+      "expectSelector": "body:has([data-tab='votes'][aria-selected='true']):not(:has([data-kbd-progress]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "kbd.ignored-in-search",
+      "name": "The keys are ignored while typing in search",
+      "path": "/?demo=1&kbd-in-search=1&keys=j",
+      "expectSelector": "body:has(#view [data-proposal-card]):not(:has([data-kbd-progress])):not(:has([data-kbd-focused]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     }
   ]
 }

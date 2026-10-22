@@ -551,5 +551,21 @@ user's vote history.
   proposals sink; equal gaps break by title) ranks the whole loaded inbox,
   so it renders one flat list — the age-group headers only apply to the
   default and Newest sorts, where the day buckets are the point.
+- Keyboard triage: on the Inbox, j moves to the next card, k to the
+  previous, y votes Yes and n opens the usual No-confirm dialog, all over
+  the currently rendered (filtered, sorted) cards in DOM order. An
+  in-memory `state.kbd` keeps the position; a line in `#kbd-slot` above
+  `#view` reads "Card 3 of 12" with the key hint, and passing the last
+  card shows "All caught up" (k returns to the last card). The focused
+  card gets `data-kbd-focused`, `aria-current` and the app's violet ring;
+  every card carries `data-kbd-pos` while active. Keys are ignored in
+  text fields, open dropdowns/sheets/dialogs, other tabs, detail, compare,
+  compose and Members. Votes go through the card's own Yes/No buttons, so
+  My Votes and the Undo toast are unchanged. Demo hooks (staging +
+  `?demo=1` only): `?keys=<letters>` dispatches real keydowns (letters in
+  order, e.g. `jjy`), `?confirm-no=1` answers a No confirm,
+  `?kbd-then=votes` switches to My Votes afterwards, and
+  `?kbd-in-search=1` dispatches them at the search box (the ignored
+  path).
 - Keep the inbox fetch bounded: parallel with concurrency limit 8 and a
   10 s overall budget, plus short TTL caches (apps 60 s, promoted 30 s).
