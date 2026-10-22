@@ -483,6 +483,23 @@ user's vote history.
   any viewport, and `?tap-impact-toggle=1` taps the open detail's
   toggle after render (the real click path). Expansion state is per
   proposal in frontend memory only.
+- Vote activity sparkline on the proposal detail: a "Vote activity"
+  card between the vote ring and the Timeline plots votes per local
+  hour (a proposal under two days old) or per local day from the
+  proposal's opening (or its merge, once merged) to now; lives over 14
+  days become 14 equal stretches of whole days. The series is built in
+  the browser from data the detail already loads: each yes voter's
+  `votedAt` plus the caller's own vote stamp (`p.myVoteAt`, set the
+  moment they vote and cleared on rollback or Undo, so the chart moves
+  without a reload). Points outside the range clamp into the first or
+  last bucket, the line scales to the busiest bucket, ties name the
+  latest one, and fewer than two timed votes shows "Not enough vote
+  activity yet" with no chart (the Timeline is unaffected). Demo hooks
+  (staging + `?demo=1` only): `?spark-vote=yes|no` unvotes then casts
+  through the real `castVote` on the open detail, `?tap-spark-vote=1`
+  does the same through the real Yes button, and `?spark-none=1` drops
+  every loaded voter's timestamp for that load, so the empty state is
+  reachable without a fixture change.
 - Proposal detail screen: the Discuss button on a card opens it
   (existing `?proposal=<sessionId>` deep link also lands there). It shows
   a full untruncated description (`data-proposal-description`; empty
