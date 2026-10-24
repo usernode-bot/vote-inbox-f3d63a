@@ -335,8 +335,30 @@ user's vote history.
   `?watch-empty=1` empties the tab (the empty state).
 - `?failvote=1` (demo only) makes the next vote cast on that load fail as
   if the device were offline, so the Retry-pill flow is reachable by
-  checks. The retry queue lives in frontend memory only; it is never
-  persisted.
+  checks. The failed vote now persists like any other (see the pending-votes
+  bullet below) and auto-retries on reload or reconnect.
+- Pending votes are persisted: every vote is written to localStorage
+  (`vote-inbox:pending-votes`, one list per signed-in member, one entry per
+  proposal, oldest first) before its request leaves the page, and its entry
+  is dropped only when the server answers — on success, or on a refusal
+  that rolls the card back. The list is rehydrated into `state.retryQueue`
+  at boot, replayed oldest-first one at a time after each inbox load and on
+  the window `online` event, and skipped without a request when the loaded
+  inbox already shows that proposal voted the same way. A vote is rolled
+  back only on a server refusal (or its Undo), never because the device is
+  still offline. Without a parseable member id (the iframe token's `id`) or
+  with storage refused, the queue stays memory-only. A small amber Offline
+  pill (`[data-offline-indicator]`) sits at the start of the header row,
+  before Members, hidden when `navigator.onLine` is not false and toggled by
+  the browser's `online`/`offline` events. Offline votes now toast "Vote not
+  sent yet: it will send when you reconnect." Demo hooks (staging + `?demo=1`
+  only): `?queue-reload=hold|send` (with `cast` + `failvote`) reloads after
+  the failed vote, holding or allowing the replay; `?replay-hold=1` blocks
+  auto-replay for one load; `?fire-online=1` / `?fire-offline=1` dispatch
+  the events; `?seed-queue=<id>:<yes|no>` replaces the caller's stored queue
+  with one fixture entry; `?replay-refuse=1` makes the replay answer with a
+  409 refusal. Demo loads stamp `body[data-replayed-votes]`,
+  `[data-replay-skipped]` and `[data-replay-failed]` when a pass ends.
 - Compose check fixtures (demo only, one-shot, replayed through the real
   controls after the compose screen renders): `?compose=1` itself is a
   real deep link (all environments, not demo-gated); `&template=<id>`,
