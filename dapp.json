@@ -185,6 +185,68 @@
       ]
     },
     {
+      "id": "inbox.vote-queue-survives-reload",
+      "name": "An offline vote stays queued with its Retry pill after a reload",
+      "path": "/?demo=1&cast=demo-2:yes&failvote=1&queue-reload=hold",
+      "expectSelector": "[data-retry-vote][data-session='demo-2']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.vote-queue-replays-on-load",
+      "name": "A stored offline vote is sent by itself on the next load",
+      "path": "/?demo=1&cast=demo-2:yes&failvote=1&queue-reload=send",
+      "expectSelector": "body[data-replayed-votes='1']:not(:has([data-retry-row]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.vote-queue-replays-online",
+      "name": "A stored offline vote is sent when the connection returns",
+      "path": "/?demo=1&cast=demo-2:yes&failvote=1&fire-online=1",
+      "expectSelector": "body[data-replayed-votes='1']:not(:has([data-retry-row]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.offline-pill",
+      "name": "The header shows an Offline pill when the connection drops",
+      "path": "/?demo=1&fire-offline=1",
+      "expectSelector": "[data-offline-indicator]:not([hidden])",
+      "expectText": "Offline",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.vote-queue-refused",
+      "name": "A refused queued vote is rolled back and forgotten",
+      "path": "/?demo=1&seed-queue=demo-2:yes&replay-refuse=1",
+      "expectSelector": "body[data-replay-failed='1']:not(:has([data-retry-row]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.vote-queue-no-duplicate",
+      "name": "A queued vote the platform already has is dropped, not resent",
+      "path": "/?demo=1&seed-queue=demo-3:yes",
+      "expectSelector": "body[data-replay-skipped='1'][data-replayed-votes='0']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "my-votes.demo",
       "name": "My Votes shows history with status",
       "path": "/?tab=votes&demo=1",

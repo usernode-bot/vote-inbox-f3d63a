@@ -102,8 +102,15 @@
 <body class="min-h-screen bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
   <main class="mx-auto max-w-md px-4 pb-20">
     <header class="flex items-center justify-end gap-2 pb-3 pt-5">
+      <span id="offline-pill" data-offline-indicator role="status" aria-label="You are offline. Votes will send when you reconnect." hidden
+        class="hidden flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-semibold text-amber-700 dark:text-amber-300">
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.5a10 10 0 0 1 5.2-2.7"/><path d="M19 12.5a10 10 0 0 0-2.3-1.6"/><circle cx="12" cy="20" r="1"/></svg>
+        <span>Offline</span>
+      </span>
       <!-- The Homeroom header above the app already shows "Vote Inbox", so the
-           visible title here was a truncated duplicate. Kept for screen readers. -->
+           visible title here was a truncated duplicate. Kept for screen readers.
+           It sits directly before the Members button so the header keeps its
+           title-then-actions order in the DOM. -->
       <h1 data-app-title class="sr-only">Vote Inbox</h1>
       <button id="members-btn" data-members-link type="button" aria-label="Members"
         class="mr-auto flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-600 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
@@ -367,6 +374,22 @@
     // reviewers a deterministic URL for the offline-retry state; production
     // never honours it.
     var FAILVOTE = DEMO && params.get('failvote') === '1';
+    // Pending-vote persistence hooks (demo only), all driving the real
+    // queue. ?queue-reload=hold|send reloads after a failed vote (see
+    // maybeAutoCast): 'hold' stops this load's replay so the rehydrated
+    // retry row is observable, 'send' lets the reload send the vote
+    // automatically. ?replay-hold=1 stops auto-replay for one load.
+    // ?fire-online=1 / ?fire-offline=1 dispatch the browser events so the
+    // reconnect/offline paths are reachable. ?seed-queue=<id>:<yes|no>
+    // starts the load with one stored vote. ?replay-refuse=1 makes the
+    // replay request reject with an HTTP 409, exercising the refusal path.
+    var QUEUE_RELOAD = DEMO && (params.get('queue-reload') === 'hold'
+      || params.get('queue-reload') === 'send') ? params.get('queue-reload') : '';
+    var REPLAY_HOLD = DEMO && params.get('replay-hold') === '1';
+    var FIRE_ONLINE = DEMO && params.get('fire-online') === '1';
+    var FIRE_OFFLINE = DEMO && params.get('fire-offline') === '1';
+    var SEED_QUEUE = DEMO ? (params.get('seed-queue') || '') : '';
+    var REPLAY_REFUSE = DEMO && params.get('replay-refuse') === '1';
     // Vote-activity sparkline hooks (demo only): ?spark-vote=yes|no runs the
     // real castVote on the open detail (unvoting first, so repeated runs
     // start clean), so the chart's in-place update is observable without a
@@ -851,9 +874,10 @@
       // The watchlist tab's rows are marked seen once per load of its data,
       // right after they render, so the next visit only badges new changes.
       watchSeenMarked: false,
-      // In-memory retry queue for votes that failed offline: sessionId ->
-      // { choice, payload, snapshot }. Never persisted; a page reload
-      // clears it and the next inbox load shows the platform's truth.
+      // Votes that failed offline: sessionId -> { choice, payload, snapshot,
+      // at, queuedAt }. Rehydrated from localStorage at boot (see
+      // PENDING_VOTES_KEY) and written there before each request, so a
+      // reload keeps them until the server answers.
       retryQueue: {},
       queuedInbox: false,
       queuedVotes: false,
@@ -1029,6 +1053,130 @@
 
     function saveHideVoted(on) {
       try { localStorage.setItem(HIDE_VOTED_KEY, on ? '1' : '0'); } catch (e) { /* not persistable here */ }
+    }
+
+    // ------------------------------------------------------------------
+    // Pending votes. A vote is written to localStorage before its request
+    // leaves the page, so an offline vote is never lost to a reload. The
+    // list lives under one key, scoped to the signed-in member (the
+    // iframe token's id) and ordered oldest first with at most one entry
+    // per proposal. With no member id — or when storage is refused — the
+    // queue stays in memory only, as it was before.
+    // ------------------------------------------------------------------
+
+    var PENDING_VOTES_KEY = 'vote-inbox:pending-votes';
+
+    function decodeMemberId(token) {
+      try {
+        var part = String(token || '').split('.')[1];
+        if (!part) return '';
+        part = part.replace(/-/g, '+').replace(/_/g, '/');
+        while (part.length % 4) part += '=';
+        var raw = atob(part);
+        var json = '';
+        for (var i = 0; i < raw.length; i++) {
+          json += '%' + ('00' + raw.charCodeAt(i).toString(16)).slice(-2);
+        }
+        var claims = JSON.parse(decodeURIComponent(json));
+        return claims && claims.id != null ? String(claims.id) : '';
+      } catch (e) { return ''; }
+    }
+
+    var MEMBER_ID = decodeMemberId(TOKEN);
+
+    function readPendingVotes() {
+      if (!MEMBER_ID) return [];
+      try {
+        var all = JSON.parse(localStorage.getItem(PENDING_VOTES_KEY) || '{}');
+        var list = all && all[MEMBER_ID];
+        return Array.isArray(list) ? list : [];
+      } catch (e) { return []; }
+    }
+
+    function writePendingVotes(list) {
+      if (!MEMBER_ID) return;
+      try {
+        var all = {};
+        try { all = JSON.parse(localStorage.getItem(PENDING_VOTES_KEY) || '{}') || {}; } catch (e2) { all = {}; }
+        if (list && list.length) all[MEMBER_ID] = list;
+        else delete all[MEMBER_ID];
+        localStorage.setItem(PENDING_VOTES_KEY, JSON.stringify(all));
+      } catch (e) { /* not persistable here */ }
+    }
+
+    function savePendingVote(entry) {
+      var list = readPendingVotes().filter(function (e) {
+        return e && e.sessionId !== entry.sessionId;
+      });
+      list.push(entry);
+      writePendingVotes(list);
+    }
+
+    function dropPendingVote(sessionId) {
+      writePendingVotes(readPendingVotes().filter(function (e) {
+        return e && e.sessionId !== sessionId;
+      }));
+    }
+
+    // Demo hook: ?seed-queue=<id>:<yes|no> replaces the caller's stored
+    // queue with one fake fixture entry, through the real helper, before
+    // the boot rehydrate reads it back.
+    if (SEED_QUEUE) {
+      var seedQueueMatch = SEED_QUEUE.match(/^(.+):(yes|no)$/);
+      if (seedQueueMatch) {
+        var seedNow = new Date().toISOString();
+        writePendingVotes([]);
+        savePendingVote({
+          sessionId: seedQueueMatch[1],
+          choice: seedQueueMatch[2],
+          payload: {
+            sessionId: seedQueueMatch[1],
+            choice: seedQueueMatch[2],
+            appSlug: 'staging-demo-app',
+            appName: 'Staging Demo App',
+            title: 'Staging demo proposal',
+            demo: true,
+          },
+          at: seedNow,
+          queuedAt: seedNow,
+        });
+      }
+    }
+
+    // Rehydrate the stored list into the in-memory queue before the first
+    // load, so the cards come back marked and the replay can send them.
+    if (MEMBER_ID) {
+      readPendingVotes().forEach(function (entry) {
+        if (!entry || !entry.sessionId || !entry.payload) return;
+        state.retryQueue[entry.sessionId] = {
+          choice: entry.choice,
+          payload: entry.payload,
+          snapshot: null,
+          at: entry.at,
+          queuedAt: entry.queuedAt,
+        };
+      });
+    }
+
+    // Offline pill in the header. Only the hidden state changes: the page
+    // never re-renders for it, so the rest of the header stays untouched.
+    function setOfflinePill(offline) {
+      var pill = document.getElementById('offline-pill');
+      if (!pill) return;
+      pill.hidden = !offline;
+      pill.classList.toggle('hidden', !offline);
+    }
+
+    window.addEventListener('offline', function () { setOfflinePill(true); });
+    window.addEventListener('online', function () {
+      setOfflinePill(false);
+      replayPendingVotes();
+    });
+    setOfflinePill(navigator.onLine === false);
+    // Demo hook: ?fire-offline=1 dispatches the browser event once the
+    // first render is in place.
+    if (FIRE_OFFLINE) {
+      setTimeout(function () { window.dispatchEvent(new Event('offline')); }, 0);
     }
 
     var hideVotedParam = params.get('hide-voted');
@@ -8049,7 +8197,9 @@
           applyNewSince(data);
           resolveCompareSelection();
           state.inboxLoadedAt = new Date().toISOString();
+          resetReplayCounts();
           reapplyRetryQueue();
+          replayPendingVotes();
           pruneSelection();
           maybeAutoCast();
           maybeDigestVote();
@@ -8543,6 +8693,17 @@
       p.myVoteAt = new Date().toISOString();
       render();
       var payload = votePayload(sessionId, choice, p, snapshot);
+      // Persist before the request leaves the page: a reload or a closed
+      // tab must not lose an offline vote. The entry is dropped only when
+      // the server answers (success, or a refusal that rolls the card back).
+      var queuedAt = new Date().toISOString();
+      savePendingVote({
+        sessionId: sessionId,
+        choice: choice,
+        payload: payload,
+        at: p.myVoteAt,
+        queuedAt: queuedAt,
+      });
       var request;
       if (FAILVOTE && state.inbox && state.inbox.demo) {
         // Demo fixture only: one simulated offline failure per load.
@@ -8559,6 +8720,7 @@
       // the server or went to the retry queue (the catch below swallows the
       // error either way), so the bulk pass can await it cast by cast.
       return request.then(function () {
+        dropPendingVote(sessionId);
         upsertLocalVote(payload); // history updates in place; refetched next tab open
         refreshInboxStatsSoon();
         // The leaderboard ranks by votes cast, so a fresh vote moves it;
@@ -8575,12 +8737,29 @@
         });
       }).catch(function (err) {
         if (isOfflineFailure(err)) {
-          // Offline: keep the card marked and queue an in-memory retry.
-          // The vote never reached the platform, so My Votes stays without
-          // it until a retry succeeds.
-          state.retryQueue[sessionId] = { choice: choice, payload: payload, snapshot: snapshot, at: p.myVoteAt };
-          toast('Vote not sent: you seem offline. Tap Retry on the card.');
+          // Offline: keep the card marked and queue a retry. The vote is
+          // already stored, so it survives a reload; the entry stays until
+          // the server answers.
+          state.retryQueue[sessionId] = {
+            choice: choice,
+            payload: payload,
+            snapshot: snapshot,
+            at: p.myVoteAt,
+            queuedAt: queuedAt,
+          };
+          toast('Vote not sent yet: it will send when you reconnect.');
+          // Demo hooks: observe the queued state across a reload, or fire
+          // the browser's online event straight after the vote was queued.
+          if (QUEUE_RELOAD) {
+            var remaining = new URLSearchParams(params);
+            ['cast', 'failvote', 'queue-reload'].forEach(function (k) { remaining.delete(k); });
+            if (QUEUE_RELOAD === 'hold') remaining.set('replay-hold', '1');
+            location.replace(location.pathname + '?' + remaining.toString() + location.hash);
+          } else if (FIRE_ONLINE) {
+            setTimeout(function () { window.dispatchEvent(new Event('online')); }, 0);
+          }
         } else {
+          dropPendingVote(sessionId);
           p.myVote = snapshot.myVote;
           p.yes = snapshot.yes;
           p.no = snapshot.no;
@@ -8595,59 +8774,161 @@
 
     // Retry a vote that failed offline: resend the exact same request. On
     // success the card's optimistic state is now the platform's truth, the
-    // pill goes away and My Votes refetches. Still offline: the card stays
-    // marked and queued. A server refusal (the platform answered and said
-    // no) rolls the card back like any other failed vote.
-    function retryVote(sessionId) {
+    // stored entry and the pill go away and My Votes refetches. Still
+    // offline: the card stays marked and queued. A server refusal (the
+    // platform answered and said no) rolls the card back like any other
+    // failed vote. Works without the proposal being loaded (an inbox load
+    // that failed while offline) and without a snapshot (a vote rehydrated
+    // from storage): Undo then subtracts this vote from the card's counts.
+    // Resolves to 'sent', 'offline', 'refused' or 'none'.
+    function retryVote(sessionId, opts) {
+      var quiet = !!(opts && opts.quiet);
       var entry = state.retryQueue[sessionId];
       var p = findProposal(sessionId);
-      if (!entry || !p || state.pending[sessionId]) return;
+      if (!entry || state.pending[sessionId]) return Promise.resolve('none');
       state.pending[sessionId] = true;
       render();
-      api('/api/vote', {
-        method: 'POST',
-        headers: headers({ 'content-type': 'application/json' }),
-        body: JSON.stringify(entry.payload),
-      }).then(function () {
+      var request;
+      if (REPLAY_REFUSE) {
+        // Demo hook: reject the way a server refusal arrives.
+        var refusal = new Error('Request failed (409)');
+        refusal.status = 409;
+        request = Promise.reject(refusal);
+      } else {
+        request = api('/api/vote', {
+          method: 'POST',
+          headers: headers({ 'content-type': 'application/json' }),
+          body: JSON.stringify(entry.payload),
+        });
+      }
+      return request.then(function () {
         delete state.retryQueue[sessionId];
+        dropPendingVote(sessionId);
+        replayCounts.sent += 1;
         upsertLocalVote(entry.payload); // history updates in place; refetched next tab open
         refreshInboxStatsSoon();
         state.leaderboard = null; // same as castVote: the board re-ranks
         if (state.tab === 'leaderboard') loadLeaderboard(true);
+        var undoSnapshot = entry.snapshot;
+        if (!undoSnapshot && p) {
+          undoSnapshot = {
+            myVote: null,
+            yes: Math.max(0, p.yes - (entry.choice === 'yes' ? 1 : 0)),
+            no: Math.max(0, p.no - (entry.choice === 'no' ? 1 : 0)),
+            myVoteAt: null,
+          };
+        }
         toast('Vote recorded', {
           duration: 5000,
           action: {
             label: 'Undo',
-            handler: function () { undoVote(sessionId, entry.choice, entry.snapshot); },
+            handler: function () { undoVote(sessionId, entry.choice, undoSnapshot); },
           },
         });
+        return 'sent';
       }).catch(function (err) {
         if (isOfflineFailure(err)) {
-          toast('Still offline. Your vote stays on the card to retry.');
-        } else {
-          delete state.retryQueue[sessionId];
+          if (!quiet) toast('Still offline. Your vote stays on the card to retry.');
+          return 'offline';
+        }
+        delete state.retryQueue[sessionId];
+        dropPendingVote(sessionId);
+        replayCounts.failed += 1;
+        if (p && entry.snapshot) {
           p.myVote = entry.snapshot.myVote;
           p.yes = entry.snapshot.yes;
           p.no = entry.snapshot.no;
           p.myVoteAt = entry.snapshot.myVoteAt;
-          toast('Vote failed: ' + (err.message || 'try again'));
         }
-      }).then(function () {
+        toast('Vote failed: ' + (err.message || 'try again'));
+        return 'refused';
+      }).then(function (result) {
         delete state.pending[sessionId];
         render();
+        return result;
       });
     }
 
-    // Reapply the in-memory retry queue to a freshly loaded inbox: a card
-    // whose vote never reached the platform stays marked voted, with its
-    // optimistic count restored, until a retry succeeds. Entries whose
-    // proposal is no longer listed are dropped: there is no card left to
-    // retry them on.
+    // Counts for the demo checks: how many queued votes this load sent,
+    // skipped (already voted on the platform) and had refused. Never shown
+    // in the UI; stamped on <body> only on demo loads.
+    var replayCounts = { sent: 0, skipped: 0, failed: 0 };
+
+    function resetReplayCounts() {
+      replayCounts = { sent: 0, skipped: 0, failed: 0 };
+    }
+
+    function stampReplayCounts() {
+      if (!DEMO || !document.body) return;
+      document.body.setAttribute('data-replayed-votes', String(replayCounts.sent));
+      document.body.setAttribute('data-replay-skipped', String(replayCounts.skipped));
+      document.body.setAttribute('data-replay-failed', String(replayCounts.failed));
+    }
+
+    // Send the stored votes oldest first, one request at a time. A vote is
+    // dropped without sending when the freshly loaded inbox already shows
+    // that proposal voted the same way (it reached the platform before the
+    // page closed, or someone voted from another device). The chain stops
+    // at the first still-offline failure so the remaining votes keep their
+    // order for the next reconnect.
+    var replaying = false;
+
+    function replayPendingVotes() {
+      if (navigator.onLine === false || replaying || REPLAY_HOLD) return Promise.resolve();
+      var ids = [];
+      for (var id in state.retryQueue) {
+        if (state.retryQueue[id] && !state.pending[id]) ids.push(id);
+      }
+      if (!ids.length) { stampReplayCounts(); return Promise.resolve(); }
+      ids.sort(function (a, b) {
+        var qa = (state.retryQueue[a] && state.retryQueue[a].queuedAt) || '';
+        var qb = (state.retryQueue[b] && state.retryQueue[b].queuedAt) || '';
+        return qa < qb ? -1 : qa > qb ? 1 : 0;
+      });
+      replaying = true;
+      var stopped = false;
+      var chain = Promise.resolve();
+      ids.forEach(function (sessionId) {
+        chain = chain.then(function () {
+          if (stopped) return;
+          if (!state.retryQueue[sessionId] || state.pending[sessionId]) return;
+          return retryVote(sessionId, { quiet: true }).then(function (result) {
+            if (result === 'offline') stopped = true;
+          });
+        });
+      });
+      return chain.then(function () {
+        replaying = false;
+        stampReplayCounts();
+      }, function () {
+        replaying = false;
+        stampReplayCounts();
+      });
+    }
+
+    // Reapply the retry queue to a freshly loaded inbox: a card whose vote
+    // never reached the platform stays marked voted, with its optimistic
+    // count restored, until a replay succeeds. A card the platform already
+    // shows voted the same way needs no request: the entry is dropped.
+    // Entries whose proposal is not listed stay queued (the replay still
+    // sends them; the platform decides what happens).
     function reapplyRetryQueue() {
       for (var sessionId in state.retryQueue) {
         var entry = state.retryQueue[sessionId];
         var p = findProposal(sessionId);
-        if (!p) { delete state.retryQueue[sessionId]; continue; }
+        if (!p) continue;
+        if (p.myVote === entry.choice) {
+          delete state.retryQueue[sessionId];
+          dropPendingVote(sessionId);
+          replayCounts.skipped += 1;
+          continue;
+        }
+        entry.snapshot = {
+          myVote: p.myVote,
+          yes: p.yes,
+          no: p.no,
+          myVoteAt: p.myVoteAt,
+        };
         p.myVote = entry.choice;
         p.myVoteAt = entry.at;
         if (entry.choice === 'yes') p.yes += 1; else p.no += 1;
@@ -10532,6 +10813,14 @@
       if (AUTO_CAST) loadInbox(true);
     }
     else loadInbox(true);
+
+    // The inbox path replays waiting votes once its fresh cards are in (so
+    // a vote the platform already has is recognised). The other tabs never
+    // read the inbox, so their waiting votes go out right away.
+    if (state.tab !== 'inbox' && state.tab !== 'following'
+      && state.screen !== 'compose' && !state.membersView) {
+      replayPendingVotes();
+    }
 
     // The pinned own-position chip follows the scroll: visible while the
     // own row is above or below the fold, gone while it is on screen.
