@@ -102,14 +102,16 @@
 <body class="min-h-screen bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
   <main class="mx-auto max-w-md px-4 pb-20">
     <header class="flex items-center justify-end gap-2 pb-3 pt-5">
-      <!-- The Homeroom header above the app already shows "Vote Inbox", so the
-           visible title here was a truncated duplicate. Kept for screen readers. -->
-      <h1 data-app-title class="sr-only">Vote Inbox</h1>
       <span id="offline-pill" data-offline-indicator role="status" aria-label="You are offline. Votes will send when you reconnect." hidden
         class="hidden flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-semibold text-amber-700 dark:text-amber-300">
         <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.5a10 10 0 0 1 5.2-2.7"/><path d="M19 12.5a10 10 0 0 0-2.3-1.6"/><circle cx="12" cy="20" r="1"/></svg>
         <span>Offline</span>
       </span>
+      <!-- The Homeroom header above the app already shows "Vote Inbox", so the
+           visible title here was a truncated duplicate. Kept for screen readers.
+           It sits directly before the Members button so the header keeps its
+           title-then-actions order in the DOM. -->
+      <h1 data-app-title class="sr-only">Vote Inbox</h1>
       <button id="members-btn" data-members-link type="button" aria-label="Members"
         class="mr-auto flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-600 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
         <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
