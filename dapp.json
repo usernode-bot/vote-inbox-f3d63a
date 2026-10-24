@@ -5032,6 +5032,226 @@
         "public/index.html",
         "dapp.json"
       ]
+    },
+    {
+      "id": "detail.spark-renders",
+      "name": "The vote activity card draws a chart on the proposal detail",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-vote-spark][data-spark-state='chart'] svg[role='img'] [data-spark-line]",
+      "expectText": "Vote activity",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-placement",
+      "name": "The vote activity card sits between the vote summary and the timeline",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-proposal-detail] > article + [data-vote-spark] + [data-timeline]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-total",
+      "name": "The chart's caption gives the total number of votes",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-vote-spark][data-spark-total='7'] [data-spark-caption]",
+      "expectText": "7 votes",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-hourly",
+      "name": "A proposal under two days old is charted by the hour",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-vote-spark][data-spark-unit='hour']",
+      "expectText": "busiest hour",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-aria",
+      "name": "The chart describes its total and busiest moment to screen readers",
+      "path": "/?demo=1&proposal=demo-4",
+      "expectSelector": "[data-vote-spark] svg[aria-label*='7 votes']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-daily",
+      "name": "An older proposal is charted by the day",
+      "path": "/?demo=1&proposal=demo-3",
+      "expectSelector": "[data-vote-spark][data-spark-unit='day'][data-spark-total='4']",
+      "expectText": "busiest day",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-daily-buckets",
+      "name": "The daily chart has one point per day of the proposal's life",
+      "path": "/?demo=1&proposal=demo-3",
+      "expectSelector": "[data-vote-spark][data-spark-buckets='6'] [data-spark-line][data-spark-points='6']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-scale",
+      "name": "The chart scales to the busiest day",
+      "path": "/?demo=1&proposal=demo-3",
+      "expectSelector": "[data-vote-spark][data-spark-max='1']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-two-votes",
+      "name": "Two timed votes are enough to draw the chart",
+      "path": "/?demo=1&proposal=demo-6",
+      "expectSelector": "[data-vote-spark][data-spark-state='chart'][data-spark-total='2']",
+      "expectText": "2 votes",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-merged",
+      "name": "A merged proposal's chart ends at its merge",
+      "path": "/?demo=1&proposal=demo-5",
+      "expectSelector": "[data-vote-spark][data-spark-end='merged'][data-spark-total='2']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-untimed-own-vote",
+      "name": "An earlier vote with no timestamp does not count as activity",
+      "path": "/?demo=1&proposal=demo-1",
+      "expectSelector": "[data-vote-spark][data-spark-total='3'][data-spark-mine='0']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-empty-one",
+      "name": "A single timed vote shows the quiet empty line, not a chart",
+      "path": "/?demo=1&proposal=demo-2",
+      "expectSelector": "body:has([data-vote-spark][data-spark-state='empty'][data-spark-total='1'] [data-spark-empty]):not(:has([data-vote-spark] svg))",
+      "expectText": "Not enough vote activity yet",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-empty-none",
+      "name": "No timed votes shows the empty line with a zero total",
+      "path": "/?demo=1&proposal=demo-4&spark-none=1",
+      "expectSelector": "[data-vote-spark][data-spark-state='empty'][data-spark-total='0'] [data-spark-empty]",
+      "expectText": "Not enough vote activity yet",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-empty-keeps-timeline",
+      "name": "The timeline still lists voters while the chart is empty",
+      "path": "/?demo=1&proposal=demo-4&spark-none=1",
+      "expectSelector": "body:has([data-vote-spark][data-spark-state='empty']) [data-timeline][data-timeline-votes='7']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-vote-yes",
+      "name": "Casting a yes vote updates the chart without a reload",
+      "path": "/?demo=1&proposal=demo-4&spark-vote=yes",
+      "expectSelector": "[data-vote-spark][data-spark-total='8'][data-spark-mine='1']",
+      "expectText": "8 votes",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-vote-no",
+      "name": "Casting a no vote is also counted as activity",
+      "path": "/?demo=1&proposal=demo-6&spark-vote=no",
+      "expectSelector": "[data-vote-spark][data-spark-total='3'][data-spark-mine='1']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-vote-from-empty",
+      "name": "The first timed vote turns the empty line into a chart",
+      "path": "/?demo=1&proposal=demo-2&spark-vote=yes",
+      "expectSelector": "[data-vote-spark][data-spark-state='chart'][data-spark-total='2'] [data-spark-line]",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-tap-vote",
+      "name": "Tapping the detail's Yes button updates the chart",
+      "path": "/?demo=1&proposal=demo-4&tap-spark-vote=1",
+      "expectSelector": "body:has([data-voted-pill]) [data-vote-spark][data-spark-total='8']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-vote-keeps-timeline",
+      "name": "Voting does not add a row to the timeline",
+      "path": "/?demo=1&proposal=demo-4&spark-vote=yes",
+      "expectSelector": "body:has([data-vote-spark][data-spark-total='8']) [data-timeline][data-timeline-votes='7']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "detail.spark-offline-vote",
+      "name": "An offline-queued vote stays on the chart",
+      "path": "/?demo=1&proposal=demo-4&failvote=1&spark-vote=yes",
+      "expectSelector": "body:has([data-detail-actions] [data-retry-row]) [data-vote-spark][data-spark-total='8']",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "id": "inbox.no-spark-on-cards",
+      "name": "Inbox cards are unchanged and show no sparkline",
+      "path": "/?demo=1",
+      "expectSelector": "body:has([data-proposal-card]):not(:has([data-vote-spark]))",
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
     }
   ]
 }

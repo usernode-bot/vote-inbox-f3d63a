@@ -380,6 +380,16 @@
     // reviewers a deterministic URL for the offline-retry state; production
     // never honours it.
     var FAILVOTE = DEMO && params.get('failvote') === '1';
+    // Vote-activity sparkline hooks (demo only): ?spark-vote=yes|no runs the
+    // real castVote on the open detail (unvoting first, so repeated runs
+    // start clean), so the chart's in-place update is observable without a
+    // reload; ?tap-spark-vote=1 does the same through a tap on the real Yes
+    // button; ?spark-none=1 drops every loaded voter's timestamp for that
+    // load, which makes the empty state reachable with no fixture change.
+    var SPARK_VOTE = DEMO && (params.get('spark-vote') === 'yes' || params.get('spark-vote') === 'no')
+      ? params.get('spark-vote') : '';
+    var TAP_SPARK_VOTE = DEMO && params.get('tap-spark-vote') === '1';
+    var SPARK_NONE = DEMO && params.get('spark-none') === '1';
     // ?share=copy|sheet (demo only) forces which path the share button uses,
     // so the automated checks can pin either label without depending on
     // whether the headless browser exposes navigator.share.
@@ -3729,6 +3739,161 @@
         + '</div>';
     }
 
+    // Vote activity sparkline: how many votes came in during each local
+    // hour (a proposal under two days old) or local day (anything older),
+    // from the proposal's opening (or its merge, once merged) to now.
+    // Built only from timestamps the detail already holds — each yes
+    // voter's votedAt, plus the caller's own vote stamp (p.myVoteAt) while
+    // this session's vote is in place — so there is no new data source.
+    // Lives longer than 14 days are grouped into 14 equal stretches of
+    // whole days so the chart never crowds. Points outside the range are
+    // clamped into the first or last bucket, so the counts always sum to
+    // the total. Fewer than two timed votes has no line to draw.
+    function sparkSeries(p) {
+      var HOUR = 3600000;
+      var DAY = 86400000;
+      var points = [];
+      var voters = Array.isArray(p.yesVoters) ? p.yesVoters : [];
+      for (var i = 0; i < voters.length; i++) {
+        var v = voters[i];
+        if (!v || typeof v.username !== 'string' || !v.username) continue;
+        var t = typeof v.votedAt === 'string' && v.votedAt ? Date.parse(v.votedAt) : NaN;
+        if (isFinite(t)) points.push(t);
+      }
+      var mineT = typeof p.myVoteAt === 'string' && p.myVoteAt ? Date.parse(p.myVoteAt) : NaN;
+      var mine = isFinite(mineT);
+      if (mine) points.push(mineT);
+      var total = points.length;
+      var end = Date.now();
+      var mergedEnd = false;
+      if (p.status === 'merged' && p.mergedAt && isFinite(Date.parse(p.mergedAt))) {
+        end = Date.parse(p.mergedAt);
+        mergedEnd = true;
+      }
+      var start = p.proposedAt && isFinite(Date.parse(p.proposedAt))
+        ? Date.parse(p.proposedAt)
+        : (points.length ? Math.min.apply(null, points) : end);
+      if (end < start) end = start;
+      var unit = end - start < 48 * HOUR ? 'hour' : 'day';
+      var startDate = new Date(start);
+      var base;
+      var n;
+      var width = 1;
+      if (unit === 'hour') {
+        base = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), startDate.getHours()).getTime();
+        n = Math.round((end - base) / HOUR) + 1;
+      } else {
+        base = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
+        var endDate = new Date(end);
+        var days = Math.round((new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()).getTime() - base) / DAY) + 1;
+        if (days < 1) days = 1;
+        width = days > 14 ? Math.ceil(days / 14) : 1;
+        n = Math.ceil(days / width);
+      }
+      // A single bucket has nothing to scale against: keep one empty bucket
+      // in front of it so even the shortest life draws a line.
+      if (n === 1) {
+        n = 2;
+        if (unit === 'hour') {
+          base -= HOUR;
+        } else {
+          var b = new Date(base);
+          b.setDate(b.getDate() - width);
+          base = b.getTime();
+        }
+      }
+      function bucketStart(k) {
+        if (unit === 'hour') return base + k * HOUR;
+        var d = new Date(base);
+        d.setDate(d.getDate() + k * width);
+        return d.getTime();
+      }
+      var counts = [];
+      for (var c = 0; c < n; c++) counts.push(0);
+      for (var j = 0; j < points.length; j++) {
+        var idx;
+        if (unit === 'hour') {
+          idx = Math.floor((points[j] - base) / HOUR);
+        } else {
+          var pd = new Date(points[j]);
+          var midnight = new Date(pd.getFullYear(), pd.getMonth(), pd.getDate()).getTime();
+          idx = Math.floor(Math.round((midnight - base) / DAY) / width);
+        }
+        if (idx < 0) idx = 0;
+        if (idx >= n) idx = n - 1;
+        counts[idx] += 1;
+      }
+      return {
+        total: total,
+        mine: mine,
+        state: total < 2 ? 'empty' : 'chart',
+        unit: unit,
+        width: width,
+        counts: counts,
+        mergedEnd: mergedEnd,
+        bucketStart: bucketStart,
+      };
+    }
+
+    function sparklineSection(p) {
+      var s = sparkSeries(p);
+      var title = '<h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Vote activity</h3>';
+      var totalWord = s.total === 1 ? 'vote' : 'votes';
+      var attrs = ' data-spark-total="' + s.total + '" data-spark-unit="' + s.unit + '"'
+        + ' data-spark-mine="' + (s.mine ? 1 : 0) + '"';
+      if (s.state === 'empty') {
+        return '<section data-vote-spark data-spark-state="empty"' + attrs + ' class="' + CARD_CLASS + '">'
+          + title
+          + '<p data-spark-empty class="text-xs text-zinc-500 dark:text-zinc-400">Not enough vote activity yet</p>'
+          + '</section>';
+      }
+      var counts = s.counts;
+      var n = counts.length;
+      var max = 1;
+      var best = 0;
+      for (var i = 0; i < n; i++) {
+        if (counts[i] > max) max = counts[i];
+        // Ties go to the latest bucket, so the caption names the most
+        // recent busy hour or day.
+        if (counts[i] >= counts[best]) best = i;
+      }
+      function round2(x) { return Math.round(x * 100) / 100; }
+      var linePts = [];
+      for (var k = 0; k < n; k++) {
+        var x = k * 240 / (n - 1);
+        var y = 44 - (counts[k] / max) * 40;
+        linePts.push(round2(x) + ',' + round2(y));
+      }
+      var line = linePts.join(' ');
+      var area = line + ' 240,48 0,48';
+      var start = new Date(s.bucketStart(best));
+      var label = s.unit === 'hour'
+        ? start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+        : start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      var momentWord = s.unit === 'hour' ? 'busiest hour' : (s.width > 1 ? 'busiest stretch from' : 'busiest day');
+      var bestCount = counts[best];
+      var bestWord = bestCount === 1 ? 'vote' : 'votes';
+      var caption = s.total + ' ' + totalWord + ' · ' + momentWord + ' ' + label
+        + ' (' + bestCount + ' ' + bestWord + ')';
+      var aria = 'Vote activity: ' + s.total + ' ' + totalWord + ', ' + momentWord + ' ' + label
+        + ' with ' + bestCount + ' ' + bestWord;
+      return '<section data-vote-spark data-spark-state="chart"' + attrs
+        + ' data-spark-width="' + s.width + '" data-spark-buckets="' + n + '"'
+        + ' data-spark-max="' + max + '" data-spark-last="' + counts[n - 1] + '"'
+        + ' data-spark-end="' + (s.mergedEnd ? 'merged' : 'now') + '"'
+        + ' class="' + CARD_CLASS + '">'
+        + title
+        + '<svg viewBox="0 0 240 48" preserveAspectRatio="none"'
+        + ' class="h-12 w-full" role="img" aria-label="' + esc(aria) + '">'
+        + '<polygon data-spark-area class="fill-violet-500/10 dark:fill-violet-400/10" points="' + area + '"></polygon>'
+        + '<polyline data-spark-line data-spark-points="' + n + '" fill="none" stroke-width="2"'
+        + ' vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"'
+        + ' class="stroke-violet-500 dark:stroke-violet-400" points="' + line + '"></polyline>'
+        + '</svg>'
+        + '<p data-spark-caption class="text-xs text-zinc-500 dark:text-zinc-400">' + esc(caption) + '</p>'
+        + '</section>';
+    }
+
     // Numbered timeline of the proposal's life so far: Opened first, then
     // one row per yes vote (display name, avatar chip and, when the
     // platform response carries per-vote timestamps, when the vote was
@@ -3903,6 +4068,7 @@
         + '<p class="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">'
         + (p.author ? '<span data-detail-author>by @' + esc(p.author) + '</span>' : '') + '</p>'
         + '</article>'
+        + sparklineSection(p)
         + timelineSection(p)
         + relatedSection(p)
         + impactPanel(p)
@@ -7720,6 +7886,11 @@
       var now = new Date();
       var todayIdx = (now.getDay() + 6) % 7;
       var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      // "N weeks ago" counts back from THIS week's Monday, not from today:
+      // from today, a later weekday in an earlier week (say a Friday, one
+      // week back, read on a Thursday) would land back inside this week and
+      // throw the digest's week buckets off.
+      var monday = midnight - todayIdx * 24 * 3600 * 1000;
       var rows = data.votes || [];
       rows.forEach(function (r) {
         var a = r && r.demo_anchor;
@@ -7733,12 +7904,7 @@
           if (t > max) t = max;
           if (t < min) t = min;
         } else {
-          // weekday counts from Monday inside that row's own week (the same
-          // 0 = Monday scale the this-week branch uses). Anchor on this
-          // week's Monday first, then step back whole weeks, so a row in an
-          // earlier week can never drift forward into the current one.
-          var thisMonday = midnight - todayIdx * 24 * 3600 * 1000;
-          t = thisMonday - a.weeksAgo * 7 * 24 * 3600 * 1000
+          t = monday - a.weeksAgo * 7 * 24 * 3600 * 1000
             + Math.min(Math.max(a.weekday, 0), 6) * 24 * 3600 * 1000 + 12 * 3600000;
         }
         r.created_at = new Date(t).toISOString();
@@ -7899,6 +8065,7 @@
           // the change summary uses.
           state.celebrations = Array.isArray(data.celebrations) ? data.celebrations : [];
           if (data.demo) reanchorDemo(data);
+          maybeSparkNone();
           applyNewSince(data);
           resolveCompareSelection();
           state.inboxLoadedAt = new Date().toISOString();
@@ -7906,6 +8073,7 @@
           pruneSelection();
           maybeAutoCast();
           maybeDigestVote();
+          maybeSparkVote();
           maybeAutoExpand();
           maybePresetSummary();
           if (alertsPolling) announceNewProposals();
@@ -8386,11 +8554,14 @@
     function castVote(sessionId, choice) {
       var p = findProposal(sessionId);
       if (!p || state.pending[sessionId]) return;
-      var snapshot = { myVote: p.myVote, yes: p.yes, no: p.no };
+      var snapshot = { myVote: p.myVote, yes: p.yes, no: p.no, myVoteAt: p.myVoteAt };
       state.pending[sessionId] = true;
-      // Optimistic: show the vote immediately, roll back on failure.
+      // Optimistic: show the vote immediately, roll back on failure. The
+      // caller's own vote also becomes a sparkline point straight away —
+      // whether it was yes or no, since only this app knows when it happened.
       p.myVote = choice;
       if (choice === 'yes') p.yes += 1; else p.no += 1;
+      p.myVoteAt = new Date().toISOString();
       render();
       var payload = votePayload(sessionId, choice, p, snapshot);
       var request;
@@ -8428,12 +8599,13 @@
           // Offline: keep the card marked and queue an in-memory retry.
           // The vote never reached the platform, so My Votes stays without
           // it until a retry succeeds.
-          state.retryQueue[sessionId] = { choice: choice, payload: payload, snapshot: snapshot };
+          state.retryQueue[sessionId] = { choice: choice, payload: payload, snapshot: snapshot, at: p.myVoteAt };
           toast('Vote not sent: you seem offline. Tap Retry on the card.');
         } else {
           p.myVote = snapshot.myVote;
           p.yes = snapshot.yes;
           p.no = snapshot.no;
+          p.myVoteAt = snapshot.myVoteAt;
           toast('Vote failed: ' + (err.message || 'try again'));
         }
       }).then(function () {
@@ -8478,6 +8650,7 @@
           p.myVote = entry.snapshot.myVote;
           p.yes = entry.snapshot.yes;
           p.no = entry.snapshot.no;
+          p.myVoteAt = entry.snapshot.myVoteAt;
           toast('Vote failed: ' + (err.message || 'try again'));
         }
       }).then(function () {
@@ -8497,6 +8670,7 @@
         var p = findProposal(sessionId);
         if (!p) { delete state.retryQueue[sessionId]; continue; }
         p.myVote = entry.choice;
+        p.myVoteAt = entry.at;
         if (entry.choice === 'yes') p.yes += 1; else p.no += 1;
       }
     }
@@ -8515,6 +8689,7 @@
           p.myVote = snapshot.myVote;
           p.yes = snapshot.yes;
           p.no = snapshot.no;
+          p.myVoteAt = snapshot.myVoteAt;
         }
         removeLocalVote(sessionId); // history updates in place; refetched next tab open
         refreshInboxStatsSoon();
@@ -9359,6 +9534,53 @@
           p.myVote = null;
           castVote(m[1], m[2]);
         });
+    }
+
+    // Vote-activity sparkline demo hooks (see SPARK_VOTE above). The
+    // ?spark-vote= hook unvotes the open detail's proposal first (errors
+    // swallowed), the way ?cast= and ?digest-vote= do, then casts through
+    // the real castVote so the chart's in-place update is the shipped code.
+    // ?tap-spark-vote=1 takes the same path through a tap on the detail's
+    // real Yes button. Both run once the inbox holds the proposal, and are
+    // one-shot. ?spark-none=1 runs on every demo load it is on: it drops
+    // every loaded voter's timestamp for that load only, so the chart's
+    // empty state is reachable while the Timeline keeps its voter rows.
+    var sparkVoteDone = false;
+    function maybeSparkVote() {
+      if (!DEMO || sparkVoteDone) return;
+      if (!SPARK_VOTE && !TAP_SPARK_VOTE) return;
+      if (state.errorInbox || !state.inbox || !state.detail) return;
+      var p = findProposal(state.detail);
+      if (!p) return;
+      sparkVoteDone = true;
+      api('/api/unvote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ sessionId: p.sessionId }),
+      }).catch(function () {})
+        .then(function () {
+          p.myVote = null;
+          if (!TAP_SPARK_VOTE) {
+            castVote(p.sessionId, SPARK_VOTE);
+            return;
+          }
+          render();
+          waitFor('[data-detail-actions] [data-vote="yes"]:not([disabled])', function (btn) {
+            btn.click();
+          });
+        });
+    }
+
+    function maybeSparkNone() {
+      if (!DEMO || !SPARK_NONE || state.errorInbox || !state.inbox) return;
+      var list = state.inbox.proposals || [];
+      for (var i = 0; i < list.length; i++) {
+        var voters = list[i] && list[i].yesVoters;
+        if (!Array.isArray(voters)) continue;
+        for (var j = 0; j < voters.length; j++) {
+          if (voters[j]) voters[j].votedAt = '';
+        }
+      }
     }
 
     // Staging check fixture: ?demo=1&openfilter=1 opens the app filter
