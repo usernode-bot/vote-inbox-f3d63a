@@ -335,8 +335,24 @@ user's vote history.
   `?watch-empty=1` empties the tab (the empty state).
 - `?failvote=1` (demo only) makes the next vote cast on that load fail as
   if the device were offline, so the Retry-pill flow is reachable by
-  checks. The retry queue lives in frontend memory only; it is never
-  persisted.
+  checks. Pending votes: the retry queue is mirrored to localStorage
+  (`vote-inbox:pending-votes`, entries tagged with the signed-in account id
+  and a client vote id), so a vote cast offline survives a reload; it is
+  resent on load and on every `online` event, one proposal at a time under
+  the `state.pending` lock, and leaves the queue only after the platform
+  has it (a 409 on a resend counts as sent). Each automatic pass tries a
+  vote 3 times (waits 1.5 s, 4 s) while the device reports a connection;
+  after the last failure the card reverts and an error toast says so. The
+  header shows an amber Offline pill (`#offline-indicator`, count badge =
+  waiting votes) while `navigator.onLine` is false. Demo hooks (staging +
+  `?demo=1` only): `?offline=1` treats the load as offline until an online
+  event; `?reconnect=1` fires the real online handler once a `?cast=` vote
+  settles; `?failvote=always` fails every send the offline way (the
+  give-up path); `?pending-reload=1` reloads after a queued `?cast=` at a
+  `?pending=1` marker, the opt-in that lets a demo load take saved demo
+  entries (without it they are discarded, so checks never leak into each
+  other). Body stamps: `data-pending-votes`, `data-pending-synced`,
+  `data-pending-gaveup`.
 - Compose check fixtures (demo only, one-shot, replayed through the real
   controls after the compose screen renders): `?compose=1` itself is a
   real deep link (all environments, not demo-gated); `&template=<id>`,

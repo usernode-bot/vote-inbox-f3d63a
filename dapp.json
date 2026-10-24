@@ -173,6 +173,34 @@
       ]
     },
     {
+      "id": "inbox.offline-indicator",
+      "name": "Header shows the offline indicator while disconnected",
+      "path": "/?demo=1&offline=1",
+      "expectSelector": "#offline-indicator[data-offline=\"1\"]:not([hidden])",
+      "expectText": "Offline",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "A vote cast offline is saved and still waiting after a reload",
+      "path": "/?demo=1&offline=1&cast=demo-2:yes&pending-reload=1",
+      "expectSelector": "body[data-pending-votes=\"1\"] #offline-indicator [data-pending-count]:not([hidden])",
+      "expectText": "Retry vote"
+    },
+    {
+      "name": "A waiting vote sends itself when the connection returns",
+      "path": "/?demo=1&offline=1&cast=demo-2:yes&reconnect=1",
+      "expectSelector": "body[data-pending-synced=\"1\"][data-pending-votes=\"0\"]"
+    },
+    {
+      "name": "A vote that still fails after the last retry is withdrawn",
+      "path": "/?demo=1&cast=demo-2:yes&failvote=always&reconnect=1",
+      "expectSelector": "body[data-pending-gaveup=\"1\"][data-pending-votes=\"0\"]"
+    },
+    {
       "id": "inbox.vote-retry",
       "name": "Failed offline vote keeps the card marked with a Retry pill",
       "path": "/?demo=1&cast=demo-2:yes&failvote=1",
