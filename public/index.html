@@ -110,6 +110,17 @@
         <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Members</span>
       </button>
+      <!-- Shown only while the device is offline; the badge counts votes
+           waiting in the pending queue to send on reconnect. -->
+      <span id="offline-indicator" data-offline-indicator data-offline="0" role="status" hidden
+        title="Offline" aria-label="Offline"
+        class="hidden h-9 shrink-0 items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-semibold text-amber-700 dark:text-amber-300">
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M8.5 16.43a5 5 0 0 1 7 0"/><path d="M5 12.86a10 10 0 0 1 5.17-2.69"/><path d="M19 12.86a10 10 0 0 0-2-1.43"/><path d="M2 8.82a15 15 0 0 1 4.18-2.65"/><path d="M22 8.82a15 15 0 0 0-11.29-3.76"/><path d="m2 2 20 20"/></svg>
+        <!-- The word only fits beside Members from sm up; on a phone the
+             icon, the amber pill and its label say it. -->
+        <span class="hidden sm:inline">Offline</span>
+        <span data-pending-count hidden class="rounded-full bg-amber-500/20 px-1.5 text-xs font-semibold"></span>
+      </span>
       <button id="new-proposal-btn" data-new-proposal aria-label="New proposal" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
         <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
       </button>
@@ -367,6 +378,20 @@
     // reviewers a deterministic URL for the offline-retry state; production
     // never honours it.
     var FAILVOTE = DEMO && params.get('failvote') === '1';
+    // Pending-vote queue hooks (demo only). ?failvote=always makes every
+    // send on this load fail the offline way, so the give-up path after the
+    // last automatic retry is reachable. ?offline=1 treats the device as
+    // offline until the next real (or ?reconnect=1) online event: the header
+    // shows the offline indicator and votes queue without being sent.
+    // ?reconnect=1 fires the real online handler once a ?cast= vote settles.
+    // ?pending-reload=1 reloads once a ?cast= vote has queued, at a
+    // ?pending=1 marker URL that opts the demo load into the stored queue,
+    // so what a check sees is the persisted state. Production ignores all.
+    var FAILVOTE_ALWAYS = DEMO && params.get('failvote') === 'always';
+    var OFFLINE_DEMO = DEMO && params.get('offline') === '1';
+    var RECONNECT_DEMO = DEMO && params.get('reconnect') === '1';
+    var PENDING_RELOAD = DEMO && params.get('pending-reload') === '1';
+    var PENDING_OPT_IN = DEMO && params.get('pending') === '1';
     // Vote-activity sparkline hooks (demo only): ?spark-vote=yes|no runs the
     // real castVote on the open detail (unvoting first, so repeated runs
     // start clean), so the chart's in-place update is observable without a
@@ -8543,17 +8568,16 @@
       p.myVoteAt = new Date().toISOString();
       render();
       var payload = votePayload(sessionId, choice, p, snapshot);
+      // The client id rides along with every send of this vote, so a queued
+      // copy is always recognisably the same vote, never a second one.
+      payload.clientVoteId = newClientVoteId();
       var request;
       if (FAILVOTE && state.inbox && state.inbox.demo) {
         // Demo fixture only: one simulated offline failure per load.
         FAILVOTE = false;
         request = Promise.reject(simulatedOfflineError());
       } else {
-        request = api('/api/vote', {
-          method: 'POST',
-          headers: headers({ 'content-type': 'application/json' }),
-          body: JSON.stringify(payload),
-        });
+        request = sendVoteRequest(payload);
       }
       // The full chain resolves whether the vote recorded, was refused by
       // the server or went to the retry queue (the catch below swallows the
@@ -8575,11 +8599,23 @@
         });
       }).catch(function (err) {
         if (isOfflineFailure(err)) {
-          // Offline: keep the card marked and queue an in-memory retry.
-          // The vote never reached the platform, so My Votes stays without
-          // it until a retry succeeds.
-          state.retryQueue[sessionId] = { choice: choice, payload: payload, snapshot: snapshot, at: p.myVoteAt };
-          toast('Vote not sent: you seem offline. Tap Retry on the card.');
+          // Offline: keep the card marked and queue the vote. The queue is
+          // saved on this device, so a reload keeps it, and it sends itself
+          // on the next load or when the connection returns. The vote never
+          // reached the platform, so My Votes stays without it until then.
+          state.retryQueue[sessionId] = {
+            id: payload.clientVoteId,
+            owner: PENDING_OWNER,
+            sessionId: sessionId,
+            choice: choice,
+            payload: payload,
+            snapshot: snapshot,
+            at: p.myVoteAt,
+          };
+          saveRetryQueue();
+          toast(isOffline()
+            ? 'You are offline. Your vote will send when you reconnect.'
+            : 'Vote not sent: you seem offline. Tap Retry on the card.');
         } else {
           p.myVote = snapshot.myVote;
           p.yes = snapshot.yes;
@@ -8604,16 +8640,14 @@
       if (!entry || !p || state.pending[sessionId]) return;
       state.pending[sessionId] = true;
       render();
-      api('/api/vote', {
-        method: 'POST',
-        headers: headers({ 'content-type': 'application/json' }),
-        body: JSON.stringify(entry.payload),
+      sendVoteRequest(entry.payload).catch(function (err) {
+        // 409: an earlier send of this vote did reach the platform (only its
+        // answer was lost), so the vote is in. Count it as sent, not twice.
+        if (err && err.status === 409) return null;
+        throw err;
       }).then(function () {
-        delete state.retryQueue[sessionId];
-        upsertLocalVote(entry.payload); // history updates in place; refetched next tab open
-        refreshInboxStatsSoon();
-        state.leaderboard = null; // same as castVote: the board re-ranks
-        if (state.tab === 'leaderboard') loadLeaderboard(true);
+        dropQueued(sessionId);
+        onQueuedVoteSent(entry);
         toast('Vote recorded', {
           duration: 5000,
           action: {
@@ -8625,11 +8659,8 @@
         if (isOfflineFailure(err)) {
           toast('Still offline. Your vote stays on the card to retry.');
         } else {
-          delete state.retryQueue[sessionId];
-          p.myVote = entry.snapshot.myVote;
-          p.yes = entry.snapshot.yes;
-          p.no = entry.snapshot.no;
-          p.myVoteAt = entry.snapshot.myVoteAt;
+          dropQueued(sessionId);
+          revertQueued(entry);
           toast('Vote failed: ' + (err.message || 'try again'));
         }
       }).then(function () {
@@ -8644,15 +8675,249 @@
     // proposal is no longer listed are dropped: there is no card left to
     // retry them on.
     function reapplyRetryQueue() {
+      var dropped = false;
       for (var sessionId in state.retryQueue) {
         var entry = state.retryQueue[sessionId];
         var p = findProposal(sessionId);
-        if (!p) { delete state.retryQueue[sessionId]; continue; }
+        if (!p) {
+          // A send already in flight finishes on its own; leave it be.
+          if (!state.pending[sessionId]) { delete state.retryQueue[sessionId]; dropped = true; }
+          continue;
+        }
         p.myVote = entry.choice;
         p.myVoteAt = entry.at;
         if (entry.choice === 'yes') p.yes += 1; else p.no += 1;
       }
+      if (dropped) saveRetryQueue();
     }
+
+    // ------------------------------------------------------------------
+    // Pending votes, saved on this device. The retry queue above is
+    // mirrored to localStorage, so a vote cast offline survives a reload,
+    // and it is resent automatically when the app loads and whenever the
+    // connection returns (the window's online event). One entry per
+    // proposal, carrying the client id its first send had; an entry leaves
+    // the queue only after the platform has the vote (or refused it), and
+    // state.pending locks a proposal while any send is in flight, so the
+    // same vote is never posted twice. Each automatic pass tries a vote up
+    // to MAX_SEND_ATTEMPTS times while the device reports a connection;
+    // after the last failure the vote is withdrawn: the card goes back to
+    // unvoted and an error toast says so. Entries are tagged with the
+    // signed-in account, so another account on the same device never sends
+    // them. Storage can be refused in an iframe; the queue then lives in
+    // memory only, as before.
+    // ------------------------------------------------------------------
+
+    var PENDING_VOTES_KEY = 'vote-inbox:pending-votes';
+    var PENDING_OWNER_KEY = 'vote-inbox:pending-owner';
+    var MAX_SEND_ATTEMPTS = 3;
+    var RETRY_DELAYS_MS = [1500, 4000];
+    var forcedOffline = OFFLINE_DEMO;
+    var flushingVotes = false;
+    var pendingSynced = 0;
+    var pendingGaveUp = 0;
+
+    function isOffline() {
+      return forcedOffline || navigator.onLine === false;
+    }
+
+    // The signed-in account's id from the iframe token's payload (display
+    // only: the server verifies the token). An offline load carries no
+    // token, so the last account seen on this device is remembered.
+    var PENDING_OWNER = (function () {
+      var id = '';
+      try {
+        var part = TOKEN.split('.')[1] || '';
+        var json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+        if (json && json.id != null) id = String(json.id);
+      } catch (e) { /* no token or not decodable */ }
+      try {
+        if (id) localStorage.setItem(PENDING_OWNER_KEY, id);
+        else id = localStorage.getItem(PENDING_OWNER_KEY) || '';
+      } catch (e) { /* not persistable here */ }
+      return id;
+    })();
+
+    function newClientVoteId() {
+      return 'cv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    }
+
+    function readStoredQueue() {
+      try {
+        var list = JSON.parse(localStorage.getItem(PENDING_VOTES_KEY) || '[]');
+        return Array.isArray(list) ? list : [];
+      } catch (e) { return []; }
+    }
+
+    // Entries this load owns: the signed-in account's, demo or real to
+    // match this load. Everything else in storage is kept untouched.
+    function ownsStoredEntry(e) {
+      return !!(e && e.payload && e.owner === PENDING_OWNER
+        && !!e.payload.demo === !!DEMO);
+    }
+
+    function saveRetryQueue() {
+      var keep = readStoredQueue().filter(function (e) { return !ownsStoredEntry(e); });
+      for (var sid in state.retryQueue) keep.push(state.retryQueue[sid]);
+      try {
+        if (keep.length) localStorage.setItem(PENDING_VOTES_KEY, JSON.stringify(keep));
+        else localStorage.removeItem(PENDING_VOTES_KEY);
+      } catch (e) { /* not persistable here: the queue stays in memory */ }
+      updateOfflineIndicator();
+    }
+
+    // Boot: take this account's saved entries into the queue. A demo load
+    // only takes saved demo entries when it opts in with ?pending=1 (the
+    // default demo stays deterministic); without it they are discarded.
+    function loadRetryQueue() {
+      var dropped = false;
+      readStoredQueue().forEach(function (e) {
+        if (!ownsStoredEntry(e) || typeof e.sessionId !== 'string') return;
+        if (DEMO && !PENDING_OPT_IN) { dropped = true; return; }
+        state.retryQueue[e.sessionId] = e;
+      });
+      if (dropped) saveRetryQueue();
+    }
+
+    function dropQueued(sessionId) {
+      delete state.retryQueue[sessionId];
+      saveRetryQueue();
+    }
+
+    // Put a card back the way it was before a queued vote. Works on a card
+    // from a later load too (reapplyRetryQueue added the vote on top of the
+    // platform's counts), so it subtracts rather than restoring old counts.
+    function revertQueued(entry) {
+      var p = findProposal(entry.sessionId);
+      if (!p || p.myVote !== entry.choice) return;
+      p.myVote = entry.snapshot ? entry.snapshot.myVote : null;
+      p.myVoteAt = entry.snapshot ? entry.snapshot.myVoteAt : null;
+      if (entry.choice === 'yes') p.yes = Math.max(0, p.yes - 1);
+      else p.no = Math.max(0, p.no - 1);
+    }
+
+    function onQueuedVoteSent(entry) {
+      upsertLocalVote(entry.payload); // history updates in place; refetched next tab open
+      refreshInboxStatsSoon();
+      state.leaderboard = null; // same as castVote: the board re-ranks
+      if (state.tab === 'leaderboard') loadLeaderboard(true);
+    }
+
+    // The one place a vote POST leaves the page. Offline (or a demo hook
+    // standing in for it), it fails the way a fetch does with no
+    // connection, without trying.
+    function sendVoteRequest(payload) {
+      if (isOffline() || (FAILVOTE_ALWAYS && payload.demo)) {
+        return Promise.reject(simulatedOfflineError());
+      }
+      return api('/api/vote', {
+        method: 'POST',
+        headers: headers({ 'content-type': 'application/json' }),
+        body: JSON.stringify(payload),
+      });
+    }
+
+    // Send one queued vote, retrying with a short wait while the device
+    // still reports a connection. Resolves 'sent', 'refused' (the platform
+    // answered no), 'gaveup' (the last attempt failed), 'waiting' (the
+    // connection went away: kept for the next online event) or 'skip'.
+    function sendQueued(sessionId, attempt) {
+      var entry = state.retryQueue[sessionId];
+      if (!entry || state.pending[sessionId]) return Promise.resolve('skip');
+      if (isOffline()) return Promise.resolve('waiting');
+      state.pending[sessionId] = true;
+      render();
+      return sendVoteRequest(entry.payload).then(function () {
+        return 'sent';
+      }, function (err) {
+        if (err && err.status === 409) return 'sent'; // an earlier send got through
+        if (!isOfflineFailure(err)) return 'refused';
+        if (isOffline()) return 'waiting';
+        return attempt >= MAX_SEND_ATTEMPTS ? 'gaveup' : 'retry';
+      }).then(function (outcome) {
+        delete state.pending[sessionId];
+        if (outcome === 'sent') {
+          dropQueued(sessionId);
+          onQueuedVoteSent(entry);
+        } else if (outcome === 'refused' || outcome === 'gaveup') {
+          dropQueued(sessionId);
+          revertQueued(entry);
+        }
+        render();
+        if (outcome !== 'retry') return outcome;
+        return new Promise(function (resolve) {
+          setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1] || 4000);
+        }).then(function () { return sendQueued(sessionId, attempt + 1); });
+      });
+    }
+
+    // One automatic pass over the queue, a vote at a time. Runs on load and
+    // on every online event; a pass already running is never doubled.
+    function flushPendingVotes() {
+      if (flushingVotes || isOffline()) return Promise.resolve();
+      var ids = Object.keys(state.retryQueue).filter(function (id) { return !state.pending[id]; });
+      if (!ids.length) return Promise.resolve();
+      flushingVotes = true;
+      var sent = 0;
+      var failed = 0;
+      var seq = Promise.resolve();
+      ids.forEach(function (sessionId) {
+        seq = seq.then(function () { return sendQueued(sessionId, 1); }).then(function (outcome) {
+          if (outcome === 'sent') sent += 1;
+          else if (outcome === 'refused' || outcome === 'gaveup') failed += 1;
+        });
+      });
+      return seq.catch(function () {}).then(function () {
+        flushingVotes = false;
+        pendingSynced += sent;
+        pendingGaveUp += failed;
+        updateOfflineIndicator();
+        if (failed) {
+          toast('Could not send ' + failed + (failed === 1 ? ' vote' : ' votes')
+            + '. ' + (failed === 1 ? 'It was' : 'They were') + ' removed, so please vote again.',
+            { priority: true, duration: 6000 });
+        } else if (sent) {
+          toast('Sent ' + sent + ' waiting ' + (sent === 1 ? 'vote' : 'votes'));
+        }
+        // Votes queued while this pass ran get their own pass.
+        if (sent && Object.keys(state.retryQueue).some(function (id) { return !state.pending[id]; })) {
+          flushPendingVotes();
+        }
+      });
+    }
+
+    // Header offline indicator plus the body stamps checks read.
+    function updateOfflineIndicator() {
+      var count = Object.keys(state.retryQueue).length;
+      var offline = isOffline();
+      var el = document.getElementById('offline-indicator');
+      if (el) {
+        el.hidden = !offline;
+        // The display utility would beat the hidden attribute, so toggle it.
+        el.classList.toggle('hidden', !offline);
+        el.classList.toggle('flex', offline);
+        el.setAttribute('data-offline', offline ? '1' : '0');
+        el.title = 'Offline' + (count ? ', ' + count + ' to send' : '');
+        el.setAttribute('aria-label', 'Offline' + (count
+          ? '. ' + count + (count === 1 ? ' vote waits' : ' votes wait') + ' to send.'
+          : ''));
+        var badge = el.querySelector('[data-pending-count]');
+        if (badge) {
+          badge.hidden = !count;
+          badge.textContent = String(count);
+        }
+      }
+      document.body.setAttribute('data-pending-votes', String(count));
+      document.body.setAttribute('data-pending-synced', String(pendingSynced));
+      document.body.setAttribute('data-pending-gaveup', String(pendingGaveUp));
+    }
+
+    window.addEventListener('online', function () {
+      forcedOffline = false;
+      updateOfflineIndicator();
+      flushPendingVotes();
+    });
+    window.addEventListener('offline', updateOfflineIndicator);
 
     // Undo a just-cast vote: drop this app's record of it and roll the card
     // back to its pre-vote counts so the user can vote again. The platform's
@@ -9205,7 +9470,21 @@
         }).catch(function () {})
           .then(function () {
             p.myVote = null;
-            castVote(m[1], m[2]);
+            return castVote(m[1], m[2]);
+          })
+          .then(function () {
+            if (PENDING_RELOAD && state.retryQueue[m[1]]) {
+              // The vote queued and was saved: reload at the marker URL that
+              // opts the demo load into the stored queue.
+              var url = new URL(location.href);
+              ['cast', 'pending-reload', 'failvote'].forEach(function (k) { url.searchParams.delete(k); });
+              url.searchParams.set('pending', '1');
+              url.searchParams.set('pending-reloaded', '1');
+              location.replace(url.pathname + url.search + url.hash);
+            } else if (RECONNECT_DEMO) {
+              // The connection "returns": the real online handler runs.
+              window.dispatchEvent(new Event('online'));
+            }
           });
       });
     }
@@ -10499,7 +10778,13 @@
         savedSearchesSettled = true;
         maybeTapSearch();
       });
+    // Votes saved on this device from an earlier visit rejoin the queue
+    // before the first render, so their cards come up marked.
+    loadRetryQueue();
     render();
+    updateOfflineIndicator();
+    // ...and resend themselves now when there is a connection.
+    flushPendingVotes();
     // Tour check hooks need the first render's DOM (the tour panel), so
     // they run right after it, before the tab data fetch starts.
     runTourHooks();
